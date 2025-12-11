@@ -96,12 +96,19 @@
                         <div class="px-4 pb-3 pt-2 space-y-3 border-t border-neutral-100 dark:border-neutral-800">
                             @foreach($dadosBasicos['polo'] as $poloItem)
                                 @php
-                                    $tipoPolo = $poloItem['polo'] ?? 'N/A';
+                                    // O atributo 'polo' pode vir como string ou array (quando é atributo XML)
+                                    $tipoPolo = $poloItem['polo'] ?? $poloItem['@attributes']['polo'] ?? 'N/A';
+
+                                    // Se veio como array, pega o primeiro valor ou o atributo
+                                    if (is_array($tipoPolo)) {
+                                        $tipoPolo = $tipoPolo['@attributes']['polo'] ?? $tipoPolo[0] ?? 'N/A';
+                                    }
+
                                     $tipoPoloTexto = match($tipoPolo) {
                                         'AT' => 'AUTOR',
                                         'PA' => 'PARTE ADVERSA',
                                         'RE' => 'RÉU',
-                                        default => $tipoPolo
+                                        default => is_string($tipoPolo) ? $tipoPolo : 'N/A'
                                     };
 
                                     $partes = $poloItem['parte'] ?? [];
@@ -271,7 +278,7 @@
                                                             </div>
                                                         </div>
                                                         <button
-                                                            onclick="visualizarDocumento('{{ $numeroProcesso }}', '{{ $documento['idDocumento'] }}')"
+                                                            onclick="visualizarDocumento('{{ $numeroProcesso }}', '{{ $documento["idDocumento"] }}')"
                                                             class="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded transition"
                                                         >
                                                             Visualizar
@@ -295,9 +302,10 @@
     </div>
 
     <!-- Modal para visualização de documento -->
-    <div id="documentModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center p-4 hidden">
-        <div class="bg-white dark:bg-gray-800 rounded-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+    <div id="documentModal" class="fixed inset-0 z-50 hidden" style="padding: 16px;">
+        <div class="absolute inset-0 bg-black bg-opacity-50" style="margin: -16px;"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden flex flex-col shadow-2xl" style="width: 100%; height: 100%;">
+            <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-shrink-0">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Visualização de Documento</h3>
                 <button onclick="fecharModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,7 +314,7 @@
                 </button>
             </div>
 
-            <div id="documentContent" class="flex-1 overflow-auto p-6">
+            <div id="documentContent" class="flex-1 min-h-0 overflow-hidden flex flex-col">
                 <div class="flex items-center justify-center py-12">
                     <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                 </div>
@@ -339,12 +347,32 @@
             toggleEmptyMovements(true);
         });
 
+        // Função para converter base64 em Blob
+        function base64ToBlob(base64, contentType = '') {
+            const byteCharacters = atob(base64);
+            const byteArrays = [];
+
+            for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                const slice = byteCharacters.slice(offset, offset + 512);
+                const byteNumbers = new Array(slice.length);
+
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+
+            return new Blob(byteArrays, { type: contentType });
+        }
+
         function visualizarDocumento(numeroProcesso, idDocumento) {
             const modal = document.getElementById('documentModal');
             const content = document.getElementById('documentContent');
 
             modal.classList.remove('hidden');
-            modal.classList.add('flex');
+            modal.classList.add('block');
             content.innerHTML = '<div class="flex items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>';
 
             fetch('{{ route("eproc.visualizar") }}', {
@@ -361,11 +389,88 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    content.innerHTML = `
-                        <div class="prose dark:prose-invert max-w-none">
-                            <pre class="whitespace-pre-wrap text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded">${JSON.stringify(data.documento, null, 2)}</pre>
-                        </div>
-                    `;
+                    const doc = data.documento;
+                    const tamanho = doc.tamanhoConteudo ? (doc.tamanhoConteudo / 1024).toFixed(2) : 'N/A';
+                    const mimetype = doc.conteudo?.mimetype || 'Não especificado';
+                    const hash = doc.conteudo?.hash?.hash || 'Não disponível';
+                    const algoritmo = doc.conteudo?.hash?.algoritmo || '';
+
+                    // Verifica se tem conteúdo base64 para renderizar o PDF
+                    if (data.temConteudo && data.conteudoBase64) {
+                        const pdfBase64 = data.conteudoBase64;
+                        const pdfBlob = base64ToBlob(pdfBase64, 'application/pdf');
+                        const pdfUrl = URL.createObjectURL(pdfBlob);
+
+                        content.innerHTML = `
+                            <div class="flex items-center justify-between px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex-shrink-0">
+                                <h3 class="text-base font-semibold text-blue-900 dark:text-blue-100">
+                                    ${doc.descricao || 'Documento'}
+                                </h3>
+                                <a href="${pdfUrl}" download="${doc.descricao || 'documento'}.pdf"
+                                   class="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 rounded transition flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                    Download
+                                </a>
+                            </div>
+                            <div class="flex-1 min-h-0 bg-white dark:bg-gray-800">
+                                <iframe
+                                    src="${pdfUrl}"
+                                    class="w-full h-full"
+                                    frameborder="0"
+                                    title="Visualização do PDF"
+                                ></iframe>
+                            </div>
+                        `;
+                    } else {
+                        // Mostra apenas metadados se não tiver conteúdo
+                        content.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                                    <h3 class="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                                        ${doc.descricao || 'Documento'}
+                                    </h3>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                        <div>
+                                            <span class="font-medium text-gray-700 dark:text-gray-300">ID do Documento:</span>
+                                            <p class="text-gray-600 dark:text-gray-400 font-mono text-xs mt-1">${doc.idDocumento}</p>
+                                        </div>
+                                        <div>
+                                            <span class="font-medium text-gray-700 dark:text-gray-300">Tipo:</span>
+                                            <p class="text-gray-600 dark:text-gray-400 mt-1">${mimetype}</p>
+                                        </div>
+                                        <div>
+                                            <span class="font-medium text-gray-700 dark:text-gray-300">Tamanho:</span>
+                                            <p class="text-gray-600 dark:text-gray-400 mt-1">${tamanho} KB</p>
+                                        </div>
+                                        <div>
+                                            <span class="font-medium text-gray-700 dark:text-gray-300">Nível de Sigilo:</span>
+                                            <p class="text-gray-600 dark:text-gray-400 mt-1">${doc.nivelSigilo || '0'}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Hash ${algoritmo}</h4>
+                                    <p class="text-xs font-mono text-gray-600 dark:text-gray-400 break-all">${hash}</p>
+                                </div>
+
+                                <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                                    <div class="flex items-start gap-3">
+                                        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <div class="text-sm text-amber-800 dark:text-amber-200">
+                                            <p class="font-medium mb-1">Conteúdo não disponível</p>
+                                            <p>O conteúdo completo do documento não foi retornado pela API. Apenas os metadados estão disponíveis.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
                 } else {
                     content.innerHTML = `
                         <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-4">

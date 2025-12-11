@@ -3,10 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 use App\Services\EprocService;
 use Exception;
-use Illuminate\Support\Facades\Log;
 
 class EprocController extends Controller
 {
@@ -64,9 +62,26 @@ class EprocController extends Controller
             // Extrai os dados do processo da resposta
             $processoData = $resultado['processo'] ?? [];
 
+            // Normaliza os dados básicos
+            $dadosBasicos = $processoData['dadosBasicos'] ?? [];
+
+            // Normaliza os polos para garantir que o atributo 'polo' seja uma string
+            if (isset($dadosBasicos['polo'])) {
+                $dadosBasicos['polo'] = $this->normalizarPolos($dadosBasicos['polo']);
+            }
+
             // Associa documentos aos movimentos
+            // Garante que sempre serão arrays, mesmo quando vazio
             $movimentos = $processoData['movimento'] ?? [];
             $documentos = $processoData['documento'] ?? [];
+
+            // Garante que são arrays (proteção adicional)
+            if (!is_array($movimentos)) {
+                $movimentos = [$movimentos];
+            }
+            if (!is_array($documentos)) {
+                $documentos = [$documentos];
+            }
 
             // Agrupa documentos por idMovimento
             $documentosPorMovimento = [];
@@ -87,7 +102,7 @@ class EprocController extends Controller
             }
 
             return view('document_analysis.eproc.processo', [
-                'dadosBasicos' => $processoData['dadosBasicos'] ?? [],
+                'dadosBasicos' => $dadosBasicos,
                 'movimentos' => $movimentos,
                 'documentos' => $documentos,
                 'numeroProcesso' => $numeroProcesso
@@ -111,14 +126,76 @@ class EprocController extends Controller
             $numeroProcesso = $request->input('numero_processo');
             $idDocumento = $request->input('id_documento');
 
+            // Consulta o documento com conteúdo completo em base64
             $resultado = $this->eprocService->consultarDocumentosProcesso(
                 $numeroProcesso,
                 [$idDocumento]
             );
 
+            // Extrai os documentos da resposta
+            // Pode estar em diferentes locais dependendo da estrutura do SOAP
+            $documentos = [];
+            if (isset($resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'])) {
+                $documentos = $resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'];
+            } elseif (isset($resultado['documentos'])) {
+                $documentos = $resultado['documentos'];
+            } elseif (isset($resultado['processo']['documento'])) {
+                $documentos = $resultado['processo']['documento'];
+            } elseif (isset($resultado['documento'])) {
+                $documentos = $resultado['documento'];
+            }
+
+            // Garante que é array
+            if (!is_array($documentos)) {
+                $documentos = [$documentos];
+            } elseif (isset($documentos['idDocumento'])) {
+                // É um único documento, transforma em array
+                $documentos = [$documentos];
+            }
+
+            // Busca o documento específico pelo ID
+            $documentoEncontrado = null;
+            foreach ($documentos as $doc) {
+                if (isset($doc['idDocumento']) && $doc['idDocumento'] === $idDocumento) {
+                    $documentoEncontrado = $doc;
+                    break;
+                }
+            }
+
+            if (!$documentoEncontrado) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Documento não encontrado na resposta do webservice',
+                    'debug' => [
+                        'estrutura_resposta' => array_keys($resultado),
+                        'total_documentos' => count($documentos)
+                    ]
+                ], 404);
+            }
+
+            // Extrai o conteúdo base64 se existir
+            // Após processamento MTOM, o conteúdo deve estar em 'conteudo'
+            $conteudoBase64 = null;
+
+            // Caso 1: Conteúdo direto (após processamento MTOM)
+            if (isset($documentoEncontrado['conteudo']['conteudo'])) {
+                $conteudoBase64 = $documentoEncontrado['conteudo']['conteudo'];
+            }
+            // Caso 2: Conteúdo como string direta
+            elseif (isset($documentoEncontrado['conteudo']) && is_string($documentoEncontrado['conteudo'])) {
+                $conteudoBase64 = $documentoEncontrado['conteudo'];
+            }
+            // Caso 3: Conteúdo em outro local (fallback)
+            elseif (isset($documentoEncontrado['content'])) {
+                $conteudoBase64 = $documentoEncontrado['content'];
+            }
+
             return response()->json([
                 'success' => true,
-                'documento' => $resultado
+                'documento' => $documentoEncontrado,
+                'conteudoBase64' => $conteudoBase64,
+                'temConteudo' => !empty($conteudoBase64),
+                'tamanhoBase64' => $conteudoBase64 ? strlen($conteudoBase64) : 0
             ]);
 
         } catch (Exception $e) {
@@ -127,5 +204,54 @@ class EprocController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Normaliza os polos para garantir que o atributo 'polo' seja sempre uma string
+     * O SOAP pode retornar o atributo XML 'polo' de formas diferentes
+     */
+    protected function normalizarPolos(array $polos): array
+    {
+        // Garante que seja um array de polos
+        if (!is_array($polos)) {
+            return [];
+        }
+
+        // Se for um único polo (array associativo), transforma em array de polos
+        if (isset($polos['parte']) || isset($polos['polo'])) {
+            $polos = [$polos];
+        }
+
+        // Normaliza cada polo
+        foreach ($polos as &$polo) {
+            if (!is_array($polo)) {
+                continue;
+            }
+
+            // Extrai o atributo 'polo' se estiver em diferentes formatos
+            if (isset($polo['@attributes']['polo'])) {
+                // Caso 1: Atributo está em @attributes
+                $polo['polo'] = $polo['@attributes']['polo'];
+            } elseif (isset($polo['polo']) && is_array($polo['polo'])) {
+                // Caso 2: 'polo' é um array (pode ter @attributes dentro)
+                if (isset($polo['polo']['@attributes']['polo'])) {
+                    $polo['polo'] = $polo['polo']['@attributes']['polo'];
+                } elseif (isset($polo['polo'][0])) {
+                    // Caso 3: 'polo' é array numérico, pega o primeiro
+                    $polo['polo'] = $polo['polo'][0];
+                } else {
+                    // Caso 4: Usa a primeira chave do array
+                    $polo['polo'] = array_values($polo['polo'])[0] ?? 'N/A';
+                }
+            }
+            // Se 'polo' já é string, deixa como está
+
+            // Garante que 'polo' seja sempre string
+            if (!isset($polo['polo']) || !is_string($polo['polo'])) {
+                $polo['polo'] = 'N/A';
+            }
+        }
+
+        return $polos;
     }
 }
