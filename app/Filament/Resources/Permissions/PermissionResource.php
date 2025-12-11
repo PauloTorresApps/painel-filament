@@ -22,7 +22,7 @@ class PermissionResource extends Resource
     protected static ?string $model = Permission::class;
     protected static ?string $modelLabel = 'Permissões';
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?string $recordTitleAttribute = 'Permissões';
 

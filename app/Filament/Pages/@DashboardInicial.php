@@ -10,7 +10,7 @@ class DashboardInicial extends Page
 {
     protected string $view = 'filament.pages.dashboard-inicial';
     // protected static BackedEnum|string|null $navigationIcon = 'heroicon-o-home';
-    protected static ?string $navigationLabel = 'Dashboard Inicial';
+    protected static ?string $navigationLabel = 'cial';
     // protected static string|null|UnitEnum $navigationGroup = 'Aplicação';
 
     // protected static string|BackedEnum|null $navigationIcon = Heroicon::UserCircle;

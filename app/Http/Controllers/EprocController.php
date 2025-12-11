@@ -15,11 +15,6 @@ class EprocController extends Controller
         $this->eprocService = $eprocService;
     }
 
-    public function index()
-    {
-        return view('document_analysis.eproc.index');
-    }
-
     public function debug()
     {
         try {
@@ -101,12 +96,16 @@ class EprocController extends Controller
                 $movimento['documentos'] = $documentosPorMovimento[$idMov] ?? [];
             }
 
-            return view('document_analysis.eproc.processo', [
+            // Armazena os dados no cache por 10 minutos
+            $cacheKey = 'processo_' . md5($numeroProcesso . auth()->id());
+            cache()->put($cacheKey, [
                 'dadosBasicos' => $dadosBasicos,
                 'movimentos' => $movimentos,
                 'documentos' => $documentos,
                 'numeroProcesso' => $numeroProcesso
-            ]);
+            ], now()->addMinutes(10));
+
+            return redirect()->route('filament.admin.pages.process-details', ['key' => $cacheKey]);
 
         } catch (Exception $e) {
             return back()

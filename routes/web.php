@@ -5,9 +5,7 @@ use Laravel\Fortify\Features;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
 
-Route::get('/', function () {
-    return view('welcome');
-})->name('home');
+Route::redirect('/', '/admin');
 
 Route::view('dashboard', 'dashboard')
     ->middleware(['auth', 'verified'])
@@ -30,14 +28,14 @@ Route::middleware(['auth'])->group(function () {
             ),
         )
         ->name('two-factor.show');
+
+        Route::redirect('document_analysis/eproc', '/admin/process-analysis')->name('eproc');
+        Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
+        Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
+        Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
+        
+        Route::get('analyze_contract', function () {
+            // return view('analyze_contract');
+            echo "Análise de Contratos";
+        })->name('analyze_contract');
 });
-
-Route::get('document_analysis/eproc', [EprocController::class, 'index'])->name('eproc');
-Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
-Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
-Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
-
-Route::get('analyze_contract', function () {
-    // return view('analyze_contract');
-    echo "Análise de Contratos";
-})->name('analyze_contract');

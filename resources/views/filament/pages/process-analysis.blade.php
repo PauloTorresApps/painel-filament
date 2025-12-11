@@ -1,0 +1,258 @@
+<x-filament-panels::page>
+    {{-- Mensagens de erro e sucesso --}}
+    @if($errors->any())
+        <div class="mb-6">
+            <div class="fi-section rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
+                <div class="fi-section-content p-6">
+                    <div class="flex items-start gap-3">
+                        <div class="flex items-center justify-center rounded-full bg-danger-50 dark:bg-danger-400/10 w-10 h-10">
+                            <x-filament::icon
+                                icon="heroicon-o-exclamation-circle"
+                                class="w-5 h-5 text-danger-600 dark:text-danger-400"
+                            />
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-base font-semibold text-danger-600 dark:text-danger-400">
+                                Erros encontrados
+                            </h3>
+                            <ul class="mt-2 space-y-1 text-sm text-danger-600 dark:text-danger-400">
+                                @foreach($errors->all() as $error)
+                                    <li class="flex items-start gap-2">
+                                        <span class="mt-1">•</span>
+                                        <span>{{ $error }}</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="mb-6">
+            <div class="fi-section rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
+                <div class="fi-section-content p-6">
+                    <div class="flex items-start gap-3">
+                        <div class="flex items-center justify-center rounded-full bg-danger-50 dark:bg-danger-400/10 w-10 h-10">
+                            <x-filament::icon
+                                icon="heroicon-o-exclamation-triangle"
+                                class="w-5 h-5 text-danger-600 dark:text-danger-400"
+                            />
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-base font-semibold text-danger-600 dark:text-danger-400">
+                                Erro
+                            </h3>
+                            <p class="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                                {{ session('error') }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if(session('success'))
+        <div class="mb-6">
+            <div class="fi-section rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
+                <div class="fi-section-content p-6">
+                    <div class="flex items-start gap-3">
+                        <div class="flex items-center justify-center rounded-full bg-success-50 dark:bg-success-400/10 w-10 h-10">
+                            <x-filament::icon
+                                icon="heroicon-o-check-circle"
+                                class="w-5 h-5 text-success-600 dark:text-success-400"
+                            />
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-base font-semibold text-success-600 dark:text-success-400">
+                                Sucesso
+                            </h3>
+                            <p class="mt-1 text-sm text-success-600 dark:text-success-400">
+                                {{ session('success') }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {{-- Formulário de consulta (2/3 da largura) --}}
+        <div class="lg:col-span-2">
+            <x-filament::section
+                icon="heroicon-o-magnifying-glass"
+                icon-color="primary"
+            >
+                <x-slot name="heading">
+                    Consulta de Processos
+                </x-slot>
+
+                <x-slot name="description">
+                    Digite o número do processo para consultar informações, movimentos e documentos.
+                </x-slot>
+
+                <form action="{{ route('eproc.consultar') }}" method="POST" class="space-y-6" id="consultaForm">
+                    @csrf
+
+                    {{-- Campo Número do Processo --}}
+                    <div>
+                        <x-filament::input.wrapper
+                            label="Número do Processo"
+                            required
+                            :error="$errors->first('numero_processo')"
+                        >
+                            <x-filament::input
+                                type="text"
+                                name="numero_processo"
+                                placeholder="0000000-00.0000.0.00.0000"
+                                value="{{ old('numero_processo') }}"
+                                required
+                                autofocus
+                                class="font-mono"
+                            />
+                        </x-filament::input.wrapper>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Digite o número completo do processo no formato padrão CNJ
+                        </p>
+                    </div>
+
+                    {{-- Campos de Data --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <x-filament::input.wrapper
+                            label="Data Inicial (Opcional)"
+                            helper-text="Filtrar eventos a partir desta data"
+                            :error="$errors->first('data_inicial')"
+                        >
+                            <x-filament::input
+                                type="date"
+                                name="data_inicial"
+                                value="{{ old('data_inicial') }}"
+                            />
+                        </x-filament::input.wrapper>
+
+                        <x-filament::input.wrapper
+                            label="Data Final (Opcional)"
+                            helper-text="Filtrar eventos até esta data"
+                            :error="$errors->first('data_final')"
+                        >
+                            <x-filament::input
+                                type="date"
+                                name="data_final"
+                                value="{{ old('data_final') }}"
+                            />
+                        </x-filament::input.wrapper>
+                    </div>
+
+                    {{-- Botão de Submit --}}
+                    <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <x-filament::button
+                            type="submit"
+                            icon="heroicon-o-magnifying-glass"
+                            size="lg"
+                        >
+                            Consultar Processo
+                        </x-filament::button>
+                    </div>
+                </form>
+            </x-filament::section>
+        </div>
+
+        {{-- Informações e ajuda (1/3 da largura) --}}
+        <div class="lg:col-span-1">
+            <x-filament::section
+                icon="heroicon-o-information-circle"
+                icon-color="info"
+            >
+                <x-slot name="heading">
+                    Informações
+                </x-slot>
+
+                <div class="space-y-4 text-sm">
+                    <p class="text-gray-600 dark:text-gray-400">
+                        Este sistema permite consultar processos judiciais via webservice SOAP.
+                    </p>
+
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                            Funcionalidades:
+                        </p>
+                        <ul class="space-y-2">
+                            <li class="flex items-start gap-2">
+                                <x-filament::icon
+                                    icon="heroicon-m-check"
+                                    class="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5"
+                                />
+                                <span class="text-gray-600 dark:text-gray-400">
+                                    Consulta de dados do processo
+                                </span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <x-filament::icon
+                                    icon="heroicon-m-check"
+                                    class="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5"
+                                />
+                                <span class="text-gray-600 dark:text-gray-400">
+                                    Visualização de movimentos processuais
+                                </span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <x-filament::icon
+                                    icon="heroicon-m-check"
+                                    class="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5"
+                                />
+                                <span class="text-gray-600 dark:text-gray-400">
+                                    Lista de documentos vinculados
+                                </span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <x-filament::icon
+                                    icon="heroicon-m-check"
+                                    class="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5"
+                                />
+                                <span class="text-gray-600 dark:text-gray-400">
+                                    Visualização da íntegra dos documentos
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-500">
+                            <x-filament::icon
+                                icon="heroicon-m-information-circle"
+                                class="w-4 h-4 inline-block"
+                            />
+                            Os dados são consultados em tempo real diretamente do sistema E-Proc.
+                        </p>
+                    </div>
+                </div>
+            </x-filament::section>
+        </div>
+    </div>
+
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('consultaForm');
+            const loadingOverlay = document.getElementById('global-loading');
+
+            if (form && loadingOverlay) {
+                form.addEventListener('submit', function(e) {
+                    // Mostra o loading
+                    loadingOverlay.classList.add('active');
+
+                    // Desabilita o botão para evitar múltiplos cliques
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+                });
+            }
+        });
+    </script>
+    @endpush
+</x-filament-panels::page>
