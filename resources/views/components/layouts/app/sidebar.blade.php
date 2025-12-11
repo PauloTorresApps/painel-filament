@@ -140,6 +140,8 @@
 
         {{ $slot }}
 
+        <x-loading />
+
         @fluxScripts
     </body>
 </html>

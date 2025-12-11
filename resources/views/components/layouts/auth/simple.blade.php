@@ -17,6 +17,9 @@
                 </div>
             </div>
         </div>
+
+        <x-loading />
+
         @fluxScripts
     </body>
 </html>
