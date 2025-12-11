@@ -11,23 +11,37 @@
                 <x-app-logo />
             </a>
 
-            <flux:navlist variant="outline">
-                <flux:navlist.group :heading="__('Plataforma')" class="grid">
-                    <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Painel') }}</flux:navlist.item>
-                </flux:navlist.group>
-            </flux:navlist>
+            @if(auth()->user()->can('access_admin'))
+                <flux:navlist variant="outline">
+                    <flux:navlist.group :heading="__('Plataforma')" class="grid">
+                        <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Painel') }}</flux:navlist.item>
+                    </flux:navlist.group>
+                </flux:navlist>
+            @endif
 
-             <flux:navlist variant="outline">
-                <flux:navlist.group :heading="__('Administrador')" class="grid">
-                    <flux:navlist.item icon="home" :href="route('filament.admin.pages.dashboard')" :current="request()->routeIs('filament.admin.pages.dashboard')" wire:navigate>{{ __('Painel Administrativo') }}</flux:navlist.item>
-                </flux:navlist.group>
-            </flux:navlist>
+            @if(auth()->user()->can('access_admin'))
+                <flux:navlist variant="outline">
+                    <flux:navlist.group :heading="__('Administrador')" class="grid">
+                        <flux:navlist.item icon="home" :href="route('filament.admin.pages.dashboard')" :current="request()->routeIs('filament.admin.pages.dashboard')" wire:navigate>{{ __('Painel Administrativo') }}</flux:navlist.item>
+                    </flux:navlist.group>
+                </flux:navlist>
+            @endif
 
-             <flux:navlist variant="outline">
-                <flux:navlist.group :heading="__('Análise de Documentos')" class="grid">
-                    <flux:navlist.item icon="home" :href="route('eproc')" :current="request()->routeIs('eproc')" wire:navigate>{{ __('EPROC-TO') }}</flux:navlist.item>
-                </flux:navlist.group>
-            </flux:navlist>
+            @if(auth()->user()->can('analyze_process'))
+                <flux:navlist variant="outline">
+                    <flux:navlist.group :heading="__('Análise de Processos')" class="grid">
+                        <flux:navlist.item icon="home" :href="route('eproc')" :current="request()->routeIs('eproc')" wire:navigate>{{ __('EPROC-TO') }}</flux:navlist.item>
+                    </flux:navlist.group>
+                </flux:navlist>
+            @endif
+
+            @if(auth()->user()->can('analyze_contract'))
+                <flux:navlist variant="outline">
+                    <flux:navlist.group :heading="__('Análise de Documentos')" class="grid">
+                        <flux:navlist.item icon="home" :href="route('analyze_contract')" :current="request()->routeIs('analyze_contract')" wire:navigate>{{ __('Análise de Contratos') }}</flux:navlist.item>
+                    </flux:navlist.group>
+                </flux:navlist>
+            @endif
 
             <flux:spacer />
 
