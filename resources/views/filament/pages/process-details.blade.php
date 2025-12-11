@@ -406,150 +406,200 @@
             </div>
         </div>
     </div>
-
     @push('scripts')
-        <script>
-            function toggleEmptyMovements(hide) {
-                const items = document.querySelectorAll('.movimento-item');
-                const visibleCount = document.getElementById('visibleCount');
-                let visible = 0;
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
-                items.forEach(item => {
-                    const hasDocs = item.dataset.hasDocs === 'true';
-                    if (hide && !hasDocs) {
-                        item.style.display = 'none';
-                    } else {
-                        item.style.display = 'block';
-                        visible++;
-                    }
-                });
-
-                visibleCount.textContent = `Exibindo ${visible} de ${items.length}`;
+    <script>
+        // --- 1. CONFIGURAÇÃO SEGURA DO WORKER (CORS BYPASS) ---
+        async function configurarPdfWorker() {
+            if (window.pdfWorkerConfigured) return;
+            const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            try {
+                const response = await fetch(workerUrl);
+                const workerCode = await response.text();
+                const blob = new Blob([workerCode], { type: "text/javascript" });
+                pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                window.pdfWorkerConfigured = true;
+            } catch (e) {
+                console.error("Erro no worker:", e);
+                // Fallback (pode falhar em alguns navegadores, mas tentamos)
+                pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
             }
+        }
 
-            document.addEventListener('DOMContentLoaded', function() {
-                toggleEmptyMovements(true);
+        // --- 2. VARIÁVEIS DE ESTADO ---
+        let currentPdf = null;
+        let currentScale = 1.5;
+
+        // --- 3. FUNÇÕES AUXILIARES ---
+        function escapeHtml(text) {
+            if(!text) return '';
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function toggleEmptyMovements(hide) {
+            const items = document.querySelectorAll('.movimento-item');
+            const visibleCount = document.getElementById('visibleCount');
+            let visible = 0;
+            items.forEach(item => {
+                const hasDocs = item.dataset.hasDocs === 'true';
+                if (hide && !hasDocs) { item.style.display = 'none'; } 
+                else { item.style.display = 'block'; visible++; }
             });
+            if(visibleCount) visibleCount.textContent = `Exibindo ${visible} de ${items.length}`;
+        }
 
-            function escapeHtml(text) {
-                const map = {
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#039;'
-                };
-                return text.replace(/[&<>"']/g, m => map[m]);
-            }
+        // Função para desenhar as páginas (permite re-renderizar ao dar zoom)
+        async function renderizarPaginas() {
+            const container = document.getElementById('pdf-viewer-container');
+            if (!container || !currentPdf) return;
 
-            function base64ToBlob(base64, contentType = '') {
-                const byteCharacters = atob(base64);
-                const byteArrays = [];
+            // Limpa container e mostra loading rápido
+            container.innerHTML = '<div class="py-10 flex justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>';
 
-                for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-                    const slice = byteCharacters.slice(offset, offset + 512);
-                    const byteNumbers = new Array(slice.length);
+            // Atualiza porcentagem de zoom na tela
+            const zoomLabel = document.getElementById('zoom-level');
+            if(zoomLabel) zoomLabel.innerText = Math.round(currentScale * 100) + '%';
 
-                    for (let i = 0; i < slice.length; i++) {
-                        byteNumbers[i] = slice.charCodeAt(i);
-                    }
+            // Prepara um fragmento para inserir tudo de uma vez (melhora performance)
+            const fragment = document.createDocumentFragment();
 
-                    const byteArray = new Uint8Array(byteNumbers);
-                    byteArrays.push(byteArray);
-                }
+            for (let pageNum = 1; pageNum <= currentPdf.numPages; pageNum++) {
+                const page = await currentPdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: currentScale });
+                
+                // Wrapper da página
+                const pageWrapper = document.createElement('div');
+                pageWrapper.className = "mb-6 inline-block shadow-lg rounded bg-white relative";
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                canvas.style.maxWidth = "100%";
+                canvas.style.height = "auto";
 
-                return new Blob(byteArrays, { type: contentType });
-            }
+                pageWrapper.appendChild(canvas);
+                fragment.appendChild(pageWrapper);
 
-            function visualizarDocumento(numeroProcesso, idDocumento) {
-                const modal = document.getElementById('documentModal');
-                const content = document.getElementById('documentContent');
-
-                console.log('INICIO - Visualizando documento:', numeroProcesso, idDocumento);
-
-                modal.classList.remove('hidden');
-                content.innerHTML = '<div class="flex items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div><p class="ml-3 text-gray-600 dark:text-gray-400">Carregando documento...</p></div>';
-
-                console.log('Fazendo fetch...');
-
-                fetch('{{ route("eproc.visualizar") }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    },
-                    body: JSON.stringify({
-                        numero_processo: numeroProcesso,
-                        id_documento: idDocumento
-                    })
-                })
-                .then(function(response) {
-                    console.log('Status da resposta:', response.status);
-                    if (!response.ok) {
-                        throw new Error('HTTP error status: ' + response.status);
-                    }
-                    return response.json();
-                })
-                .then(function(data) {
-                    console.log('Resposta do servidor:', data);
-                    if (data.success) {
-                        const doc = data.documento;
-
-                        if (data.temConteudo && data.conteudoBase64) {
-                            console.log('TEM CONTEUDO - Convertendo base64...');
-                            try {
-                                var pdfBlob = base64ToBlob(data.conteudoBase64, 'application/pdf');
-                                console.log('Blob criado - size:', pdfBlob.size);
-
-                                var pdfUrl = URL.createObjectURL(pdfBlob);
-                                console.log('URL criada:', pdfUrl);
-
-                                var descricao = escapeHtml(doc.descricao || 'Documento');
-
-                                // Monta o HTML do viewer
-                                var html = '<div class="flex flex-col h-full">';
-                                html += '<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">';
-                                html += '<h4 class="text-base font-semibold text-gray-900 dark:text-white">' + descricao + '</h4>';
-                                html += '<div class="flex gap-2">';
-                                html += '<a href="' + pdfUrl + '" target="_blank" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">';
-                                html += '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>';
-                                html += 'Nova Aba</a>';
-                                html += '<a href="' + pdfUrl + '" download="documento.pdf" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition">';
-                                html += '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>';
-                                html += 'Download</a>';
-                                html += '</div></div>';
-                                html += '<div class="flex-1 bg-gray-100 dark:bg-gray-900 overflow-hidden">';
-                                html += '<iframe src="' + pdfUrl + '#toolbar=1&navpanes=1&scrollbar=1" class="w-full h-full border-0"></iframe>';
-                                html += '</div></div>';
-
-                                content.innerHTML = html;
-                                console.log('PDF renderizado no modal');
-                            } catch (conversionError) {
-                                console.error('Erro ao converter:', conversionError);
-                                content.innerHTML = '<div class="text-center py-12"><h3 class="text-lg font-semibold mb-2">Erro ao processar documento</h3><p>' + conversionError.message + '</p></div>';
-                            }
-                        } else {
-                            content.innerHTML = '<div class="text-center py-12"><h3 class="text-lg font-semibold mb-2">Conteúdo não disponível</h3><p>O documento não possui conteúdo.</p></div>';
-                        }
-                    } else {
-                        content.innerHTML = '<div class="text-center py-12"><h3 class="text-lg font-semibold mb-2">Erro</h3><p>' + (data.error || 'Erro desconhecido') + '</p></div>';
-                    }
-                })
-                .catch(function(error) {
-                    console.error('ERRO:', error);
-                    content.innerHTML = '<div class="text-center py-12"><h3 class="text-lg font-semibold mb-2">Erro ao carregar</h3><p>' + error.message + '</p><button onclick="fecharModal()" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded">Fechar</button></div>';
+                // Renderiza assincronamente
+                page.render({
+                    canvasContext: context,
+                    viewport: viewport
                 });
             }
 
-            function fecharModal() {
-                document.getElementById('documentModal').classList.add('hidden');
-            }
+            container.innerHTML = ''; // Remove loading
+            container.appendChild(fragment);
+        }
 
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    fecharModal();
+        // --- 4. FUNÇÃO PRINCIPAL ---
+        async function visualizarDocumento(numeroProcesso, idDocumento) {
+            const modal = document.getElementById('documentModal');
+            const content = document.getElementById('documentContent');
+
+            if (typeof pdfjsLib === 'undefined') { alert("Erro ao carregar biblioteca PDF."); return; }
+            await configurarPdfWorker();
+
+            // Reset
+            currentPdf = null;
+            currentScale = 1.2; // Zoom inicial padrão
+
+            modal.classList.remove('hidden');
+            content.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-[500px]">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
+                    <p class="text-gray-600 font-medium">Carregando documento...</p>
+                </div>`;
+
+            fetch('{{ route("eproc.visualizar") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                body: JSON.stringify({ numero_processo: numeroProcesso, id_documento: idDocumento })
+            })
+            .then(r => r.json())
+            .then(async data => {
+                if (data.success && data.conteudoBase64) {
+                    const docTitle = escapeHtml(data.documento.descricao || 'Documento');
+
+                    // Setup da Interface (Toolbar + Container)
+                    content.innerHTML = `
+                        <div class="flex flex-col h-[90vh] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
+                            <div class="flex flex-wrap gap-2 justify-between items-center p-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm z-10 shrink-0">
+                                 <span class="font-bold text-gray-700 dark:text-gray-200 truncate max-w-[200px] text-sm" title="${docTitle}">${docTitle}</span>
+                                 
+                                 <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                                    <button onclick="mudarZoom(-0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                                    </button>
+                                    <span id="zoom-level" class="text-xs font-mono w-12 text-center font-bold text-gray-600 dark:text-gray-300">120%</span>
+                                    <button onclick="mudarZoom(0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                    </button>
+                                 </div>
+
+                                 <button id="btn-download-pdf" class="flex items-center gap-2 text-sm bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded transition shadow">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    <span class="hidden sm:inline">Baixar</span>
+                                 </button>
+                            </div>
+                            
+                            <div id="pdf-viewer-container" class="flex-1 overflow-y-auto p-6 text-center bg-gray-200/50 dark:bg-gray-900/50 scroll-smooth">
+                                <div class="animate-pulse flex justify-center mt-10">
+                                    <div class="h-96 w-3/4 bg-gray-300 dark:bg-gray-700 rounded"></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Processamento Binário
+                    const base64Clean = data.conteudoBase64.replace(/^data:application\/pdf;base64,/, "").replace(/\s/g, '');
+                    const binaryString = atob(base64Clean);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) { bytes[i] = binaryString.charCodeAt(i); }
+
+                    // Setup Download
+                    const blob = new Blob([bytes], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(blob);
+                    document.getElementById('btn-download-pdf').onclick = () => {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `${docTitle}.pdf`;
+                        link.click();
+                    };
+
+                    // Renderização Inicial
+                    try {
+                        currentPdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+                        await renderizarPaginas();
+                    } catch (renderError) {
+                        console.error(renderError);
+                        document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-8 text-center text-red-500">Erro ao renderizar: ${renderError.message}</div>`;
+                    }
+                } else {
+                    content.innerHTML = '<div class="flex items-center justify-center h-[400px] text-gray-500">Documento sem conteúdo.</div>';
                 }
+            })
+            .catch(error => {
+                console.error(error);
+                content.innerHTML = '<div class="flex items-center justify-center h-[400px] text-red-500">Erro de conexão.</div>';
             });
-        </script>
-    @endpush
+        }
+
+        function mudarZoom(delta) {
+            if (!currentPdf) return;
+            const novoZoom = currentScale + delta;
+            // Limites de zoom (50% a 300%)
+            if (novoZoom >= 0.5 && novoZoom <= 3.0) {
+                currentScale = novoZoom;
+                renderizarPaginas();
+            }
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleEmptyMovements(true);
+        });
+    </script>
+@endpush
 </x-filament-panels::page>
