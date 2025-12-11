@@ -410,7 +410,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
     <script>
-        // --- 1. CONFIGURAÇÃO SEGURA DO WORKER (CORS BYPASS) ---
+        // --- 1. CONFIGURAÇÃO DO WORKER ---
         async function configurarPdfWorker() {
             if (window.pdfWorkerConfigured) return;
             const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -421,17 +421,16 @@
                 pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
                 window.pdfWorkerConfigured = true;
             } catch (e) {
-                console.error("Erro no worker:", e);
-                // Fallback (pode falhar em alguns navegadores, mas tentamos)
+                console.error("Erro worker:", e);
                 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
             }
         }
 
-        // --- 2. VARIÁVEIS DE ESTADO ---
+        // --- 2. VARIÁVEIS GLOBAIS ---
         let currentPdf = null;
-        let currentScale = 1.5;
+        let currentScale = 1.2;
 
-        // --- 3. FUNÇÕES AUXILIARES ---
+        // --- 3. AUXILIARES ---
         function escapeHtml(text) {
             if(!text) return '';
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -449,28 +448,31 @@
             if(visibleCount) visibleCount.textContent = `Exibindo ${visible} de ${items.length}`;
         }
 
-        // Função para desenhar as páginas (permite re-renderizar ao dar zoom)
+        // Função para fechar o modal (garante que limpa a memória)
+        function fecharModal() {
+            document.getElementById('documentModal').classList.add('hidden');
+            currentPdf = null; // Limpa referência
+            document.getElementById('pdf-viewer-container').innerHTML = ''; // Limpa DOM
+        }
+
+        // --- RENDERIZAÇÃO ---
         async function renderizarPaginas() {
             const container = document.getElementById('pdf-viewer-container');
             if (!container || !currentPdf) return;
 
-            // Limpa container e mostra loading rápido
             container.innerHTML = '<div class="py-10 flex justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>';
-
-            // Atualiza porcentagem de zoom na tela
+            
             const zoomLabel = document.getElementById('zoom-level');
             if(zoomLabel) zoomLabel.innerText = Math.round(currentScale * 100) + '%';
 
-            // Prepara um fragmento para inserir tudo de uma vez (melhora performance)
             const fragment = document.createDocumentFragment();
 
             for (let pageNum = 1; pageNum <= currentPdf.numPages; pageNum++) {
                 const page = await currentPdf.getPage(pageNum);
                 const viewport = page.getViewport({ scale: currentScale });
                 
-                // Wrapper da página
                 const pageWrapper = document.createElement('div');
-                pageWrapper.className = "mb-6 inline-block shadow-lg rounded bg-white relative";
+                pageWrapper.className = "mb-3 inline-block shadow-md rounded-sm bg-white relative";
                 
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
@@ -482,14 +484,10 @@
                 pageWrapper.appendChild(canvas);
                 fragment.appendChild(pageWrapper);
 
-                // Renderiza assincronamente
-                page.render({
-                    canvasContext: context,
-                    viewport: viewport
-                });
+                page.render({ canvasContext: context, viewport: viewport });
             }
 
-            container.innerHTML = ''; // Remove loading
+            container.innerHTML = '';
             container.appendChild(fragment);
         }
 
@@ -498,18 +496,19 @@
             const modal = document.getElementById('documentModal');
             const content = document.getElementById('documentContent');
 
-            if (typeof pdfjsLib === 'undefined') { alert("Erro ao carregar biblioteca PDF."); return; }
+            if (typeof pdfjsLib === 'undefined') { alert("Erro biblio PDF."); return; }
             await configurarPdfWorker();
 
             // Reset
             currentPdf = null;
-            currentScale = 1.2; // Zoom inicial padrão
+            currentScale = 1.2;
 
             modal.classList.remove('hidden');
+            // Altura reduzida no loading também
             content.innerHTML = `
-                <div class="flex flex-col items-center justify-center h-[500px]">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
-                    <p class="text-gray-600 font-medium">Carregando documento...</p>
+                <div class="flex flex-col items-center justify-center h-[400px]">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mb-3"></div>
+                    <p class="text-gray-500 font-medium text-sm">Carregando...</p>
                 </div>`;
 
             fetch('{{ route("eproc.visualizar") }}', {
@@ -522,37 +521,50 @@
                 if (data.success && data.conteudoBase64) {
                     const docTitle = escapeHtml(data.documento.descricao || 'Documento');
 
-                    // Setup da Interface (Toolbar + Container)
+                    // MUDANÇAS AQUI: 
+                    // 1. Altura ajustada para h-[80vh] (deixa espaço para clicar fora)
+                    // 2. Adicionado botão de FECHAR (X) na barra superior
                     content.innerHTML = `
-                        <div class="flex flex-col h-[90vh] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
-                            <div class="flex flex-wrap gap-2 justify-between items-center p-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm z-10 shrink-0">
-                                 <span class="font-bold text-gray-700 dark:text-gray-200 truncate max-w-[200px] text-sm" title="${docTitle}">${docTitle}</span>
+                        <div class="flex flex-col h-[80vh] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
+                            
+                            <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm shrink-0">
                                  
-                                 <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                                    <button onclick="mudarZoom(-0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
-                                    </button>
-                                    <span id="zoom-level" class="text-xs font-mono w-12 text-center font-bold text-gray-600 dark:text-gray-300">120%</span>
-                                    <button onclick="mudarZoom(0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                                    </button>
+                                 <div class="flex items-center gap-3 overflow-hidden">
+                                     <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                                        <button onclick="mudarZoom(-0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                                        </button>
+                                        <span id="zoom-level" class="text-xs font-mono w-10 text-center font-bold text-gray-600 dark:text-gray-300">120%</span>
+                                        <button onclick="mudarZoom(0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                        </button>
+                                     </div>
+                                     <span class="font-bold text-gray-700 dark:text-gray-200 truncate text-sm" title="${docTitle}">${docTitle}</span>
                                  </div>
 
-                                 <button id="btn-download-pdf" class="flex items-center gap-2 text-sm bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded transition shadow">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                    <span class="hidden sm:inline">Baixar</span>
-                                 </button>
+                                 <div class="flex items-center gap-2">
+                                     <button id="btn-download-pdf" class="flex items-center gap-1 text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded transition shadow" title="Baixar PDF">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                        <span class="hidden sm:inline">Baixar</span>
+                                     </button>
+
+                                     <button onclick="fecharModal()" class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition" title="Fechar Visualização">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                     </button>
+                                 </div>
                             </div>
                             
-                            <div id="pdf-viewer-container" class="flex-1 overflow-y-auto p-6 text-center bg-gray-200/50 dark:bg-gray-900/50 scroll-smooth">
-                                <div class="animate-pulse flex justify-center mt-10">
-                                    <div class="h-96 w-3/4 bg-gray-300 dark:bg-gray-700 rounded"></div>
+                            <div id="pdf-viewer-container" class="flex-1 overflow-y-auto p-2 text-center bg-gray-300 dark:bg-gray-900 scroll-smooth">
+                                <div class="animate-pulse flex justify-center mt-4">
+                                    <div class="h-64 w-full bg-gray-200 dark:bg-gray-700 rounded"></div>
                                 </div>
                             </div>
                         </div>
                     `;
 
-                    // Processamento Binário
+                    // Processamento
                     const base64Clean = data.conteudoBase64.replace(/^data:application\/pdf;base64,/, "").replace(/\s/g, '');
                     const binaryString = atob(base64Clean);
                     const bytes = new Uint8Array(binaryString.length);
@@ -568,35 +580,32 @@
                         link.click();
                     };
 
-                    // Renderização Inicial
                     try {
                         currentPdf = await pdfjsLib.getDocument({ data: bytes }).promise;
                         await renderizarPaginas();
                     } catch (renderError) {
                         console.error(renderError);
-                        document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-8 text-center text-red-500">Erro ao renderizar: ${renderError.message}</div>`;
+                        document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro: ${renderError.message}</div>`;
                     }
                 } else {
-                    content.innerHTML = '<div class="flex items-center justify-center h-[400px] text-gray-500">Documento sem conteúdo.</div>';
+                    content.innerHTML = '<div class="flex items-center justify-center h-[200px] text-gray-500">Sem conteúdo.</div>';
                 }
             })
             .catch(error => {
                 console.error(error);
-                content.innerHTML = '<div class="flex items-center justify-center h-[400px] text-red-500">Erro de conexão.</div>';
+                content.innerHTML = '<div class="flex items-center justify-center h-[200px] text-red-500">Erro de conexão.</div>';
             });
         }
 
         function mudarZoom(delta) {
             if (!currentPdf) return;
             const novoZoom = currentScale + delta;
-            // Limites de zoom (50% a 300%)
             if (novoZoom >= 0.5 && novoZoom <= 3.0) {
                 currentScale = novoZoom;
                 renderizarPaginas();
             }
         }
 
-        // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             toggleEmptyMovements(true);
         });
