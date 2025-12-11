@@ -33,3 +33,6 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::get('document_analysis/eproc', [EprocController::class, 'index'])->name('eproc');
+Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
+Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
+Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');

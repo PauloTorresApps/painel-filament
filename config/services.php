@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'eproc' => [
+        'wsdl_url' => env('URL_SOAP_WEBSERVICE'),
+        'url_base' => env('URL_BASE_WEBSERVICE'),
+        'user' => env('USER_WEBSERVICE'),
+        'password' => env('PASSWD_WEBSERVICE'),
+    ],
+
 ];
