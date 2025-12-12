@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Services\EprocService;
+use App\Services\CnjService;
 use Exception;
 
 class EprocController extends Controller
@@ -76,6 +77,57 @@ class EprocController extends Controller
             // Normaliza os polos para garantir que o atributo 'polo' seja uma string
             if (isset($dadosBasicos['polo'])) {
                 $dadosBasicos['polo'] = $this->normalizarPolos($dadosBasicos['polo']);
+            }
+
+            // Busca descrições de classe e assuntos do CNJ
+            $cnjService = new CnjService();
+
+            // Busca descrição da classe
+            if (isset($dadosBasicos['classeProcessual'])) {
+                $codigoClasse = (int) $dadosBasicos['classeProcessual'];
+                $dadosBasicos['classeProcessualNome'] = $cnjService->getClasseDescricao($codigoClasse);
+            }
+
+            // Busca descrições dos assuntos
+            if (isset($dadosBasicos['assunto'])) {
+                $assuntos = is_array($dadosBasicos['assunto']) ? $dadosBasicos['assunto'] : [$dadosBasicos['assunto']];
+
+                // Normaliza: se é um único assunto (tem codigoNacional ou codigoAssunto diretamente), encapsula em array
+                if (isset($assuntos['codigoNacional']) || isset($assuntos['codigoAssunto'])) {
+                    $assuntos = [$assuntos];
+                }
+
+                // Extrai códigos de assuntos (pode ser codigoAssunto ou codigoNacional)
+                $codigosAssuntos = [];
+                foreach ($assuntos as $assunto) {
+                    if (is_array($assunto)) {
+                        $codigo = $assunto['codigoAssunto'] ?? $assunto['codigoNacional'] ?? null;
+                        if ($codigo) {
+                            $codigosAssuntos[] = (int) $codigo;
+                        }
+                    }
+                }
+
+                // Busca descrições apenas se houver códigos
+                if (!empty($codigosAssuntos)) {
+                    $descricoesAssuntos = $cnjService->getMultiplosAssuntosDescricoes($codigosAssuntos);
+
+                    // Adiciona as descrições aos assuntos
+                    foreach ($assuntos as &$assunto) {
+                        if (is_array($assunto)) {
+                            $codigo = (int) ($assunto['codigoAssunto'] ?? $assunto['codigoNacional'] ?? 0);
+                            if ($codigo > 0 && isset($descricoesAssuntos[$codigo])) {
+                                $assunto['nomeAssunto'] = $descricoesAssuntos[$codigo];
+                                // Garante que codigoAssunto está definido para a view
+                                if (!isset($assunto['codigoAssunto'])) {
+                                    $assunto['codigoAssunto'] = $codigo;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $dadosBasicos['assunto'] = $assuntos;
             }
 
             // Associa documentos aos movimentos

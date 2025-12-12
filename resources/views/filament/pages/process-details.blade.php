@@ -60,7 +60,12 @@
                             @if(isset($dadosBasicos['classeProcessual']))
                                 <div class="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
                                     <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Classe</p>
-                                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ $dadosBasicos['classeProcessual'] }}</p>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                                        {{ $dadosBasicos['classeProcessualNome'] ?? $dadosBasicos['classeProcessual'] }}
+                                    </p>
+                                    @if(isset($dadosBasicos['classeProcessualNome']))
+                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Código: {{ $dadosBasicos['classeProcessual'] }}</p>
+                                    @endif
                                 </div>
                             @endif
 
@@ -102,9 +107,16 @@
                                     <svg class="w-4 h-4 mt-0.5 text-primary-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                     </svg>
-                                    <span class="text-sm text-gray-700 dark:text-gray-300">
-                                        {{ $assunto['descricao'] ?? $assunto['codigoAssunto'] ?? 'Assunto' }}
-                                    </span>
+                                    <div class="flex-1">
+                                        <span class="text-sm font-medium text-gray-900 dark:text-white">
+                                            {{ $assunto['nomeAssunto'] ?? $assunto['descricao'] ?? $assunto['codigoAssunto'] ?? $assunto['codigoNacional'] ?? 'Assunto' }}
+                                        </span>
+                                        @if(isset($assunto['nomeAssunto']) && (isset($assunto['codigoAssunto']) || isset($assunto['codigoNacional'])))
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                                Código: {{ $assunto['codigoAssunto'] ?? $assunto['codigoNacional'] }}
+                                            </p>
+                                        @endif
+                                    </div>
                                 </li>
                             @endforeach
                         </ul>

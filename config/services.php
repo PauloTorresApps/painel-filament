@@ -42,4 +42,8 @@ return [
         'password' => env('PASSWD_WEBSERVICE'),
     ],
 
+    'cnj' => [
+        'url' => env('URL_CNJ_WEBSERVICE', 'https://www.cnj.jus.br/sgt/sgt_ws.php'),
+    ],
+
 ];
