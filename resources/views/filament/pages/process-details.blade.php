@@ -541,7 +541,7 @@
                     numero_processo: numeroProcesso,
                     id_documento: idDocumento,
                     judicial_user_id: {{ $judicialUserId ?? 'null' }},
-                    senha: '{{ $senha ?? '' }}'
+                    senha: '{{ $senha ?? "" }}'
                 })
             })
             .then(r => r.json())

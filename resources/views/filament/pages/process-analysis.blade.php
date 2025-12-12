@@ -100,16 +100,19 @@
 
                     {{-- Seleção de Usuário Judicial --}}
                     <div>
-                        <x-filament::input.wrapper
-                            label="Usuário do Webservice"
-                            required
-                            :error="$errors->first('judicial_user_id')"
-                        >
+                        <label for="judicial_user_id" class="fi-fo-field-wrp-label inline-flex items-center gap-x-3">
+                            <span class="text-sm font-medium leading-6 text-gray-950 dark:text-white">
+                                Usuário do Webservice
+                                <sup class="text-danger-600 dark:text-danger-400 font-medium">*</sup>
+                            </span>
+                        </label>
+
+                        <div class="mt-2">
                             <select
                                 name="judicial_user_id"
                                 id="judicial_user_id"
                                 required
-                                class="fi-input block w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                                class="judicial-user-select"
                             >
                                 <option value="">Selecione um usuário...</option>
                                 @foreach(auth()->user()->judicialUsers as $judicialUser)
@@ -118,7 +121,8 @@
                                     </option>
                                 @endforeach
                             </select>
-                        </x-filament::input.wrapper>
+                        </div>
+
                         @if(auth()->user()->judicialUsers->isEmpty())
                             <p class="mt-2 text-xs text-warning-600 dark:text-warning-400">
                                 Você ainda não possui usuários cadastrados. <a href="{{ route('filament.admin.resources.judicial-users.index') }}" class="underline font-semibold">Cadastre um usuário judicial</a> antes de consultar processos.
@@ -297,8 +301,70 @@
     </div>
 
     @push('scripts')
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+    <style>
+        .ts-wrapper {
+            width: 100%;
+        }
+        .ts-control, .ts-dropdown {
+            font-size: 0.875rem;
+            border-radius: 0.5rem;
+        }
+        .ts-control {
+            border: 1px solid rgb(209 213 219);
+            background: white;
+            padding: 0.5rem 0.75rem;
+            min-height: 42px;
+        }
+        .dark .ts-control {
+            background: rgb(31 41 55);
+            border-color: rgb(55 65 81);
+            color: white;
+        }
+        .ts-control:focus {
+            border-color: rgb(var(--primary-500));
+            outline: none;
+            box-shadow: 0 0 0 1px rgb(var(--primary-500));
+        }
+        .ts-dropdown {
+            border: 1px solid rgb(209 213 219);
+            background: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .dark .ts-dropdown {
+            background: rgb(31 41 55);
+            border-color: rgb(55 65 81);
+        }
+        .ts-dropdown .option {
+            padding: 0.5rem 1rem;
+        }
+        .ts-dropdown .option:hover, .ts-dropdown .option.active {
+            background: rgb(243 244 246);
+        }
+        .dark .ts-dropdown .option:hover, .dark .ts-dropdown .option.active {
+            background: rgb(55 65 81);
+            color: white;
+        }
+    </style>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Inicializa Tom Select para o campo judicial_user_id
+            const judicialUserSelect = document.getElementById('judicial_user_id');
+            if (judicialUserSelect && typeof TomSelect !== 'undefined') {
+                new TomSelect(judicialUserSelect, {
+                    placeholder: 'Selecione um usuário...',
+                    allowEmptyOption: true,
+                    create: false,
+                    sortField: {
+                        field: "text",
+                        direction: "asc"
+                    }
+                });
+            }
+
             const form = document.getElementById('consultaForm');
             const numeroProcessoInput = document.getElementById('numero_processo');
 
