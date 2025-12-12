@@ -107,12 +107,14 @@
                         >
                             <x-filament::input
                                 type="text"
+                                id="numero_processo"
                                 name="numero_processo"
                                 placeholder="0000000-00.0000.0.00.0000"
                                 value="{{ old('numero_processo') }}"
                                 required
                                 autofocus
                                 class="font-mono"
+                                maxlength="25"
                             />
                         </x-filament::input.wrapper>
                         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -246,6 +248,49 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.getElementById('consultaForm');
+            const numeroProcessoInput = document.getElementById('numero_processo');
+
+            // Máscara para número de processo CNJ: 0000000-00.0000.0.00.0000
+            if (numeroProcessoInput) {
+                numeroProcessoInput.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\D/g, ''); // Remove tudo que não é número
+
+                    // Limita a 20 dígitos
+                    value = value.substring(0, 20);
+
+                    // Aplica a máscara
+                    let formatted = '';
+                    if (value.length > 0) {
+                        formatted = value.substring(0, 7); // 0000000
+                        if (value.length > 7) {
+                            formatted += '-' + value.substring(7, 9); // -00
+                        }
+                        if (value.length > 9) {
+                            formatted += '.' + value.substring(9, 13); // .0000
+                        }
+                        if (value.length > 13) {
+                            formatted += '.' + value.substring(13, 14); // .0
+                        }
+                        if (value.length > 14) {
+                            formatted += '.' + value.substring(14, 16); // .00
+                        }
+                        if (value.length > 16) {
+                            formatted += '.' + value.substring(16, 20); // .0000
+                        }
+                    }
+
+                    e.target.value = formatted;
+                });
+
+                // Permite colar números com ou sem formatação
+                numeroProcessoInput.addEventListener('paste', function(e) {
+                    e.preventDefault();
+                    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+                    const numbers = pastedText.replace(/\D/g, '');
+                    e.target.value = numbers;
+                    e.target.dispatchEvent(new Event('input'));
+                });
+            }
 
             if (form) {
                 form.addEventListener('submit', function(e) {
