@@ -236,19 +236,13 @@
                                 <div class="movimento-item {{ $hasDocuments ? 'has-documents' : 'no-documents' }}" data-has-docs="{{ $hasDocuments ? 'true' : 'false' }}">
                                     <div class="p-6 rounded-lg border-2 {{ $hasDocuments ? 'border-primary-200 dark:border-primary-800 bg-primary-50/30 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} shadow-sm hover:shadow-md transition-all">
                                         <div class="flex items-start gap-4">
-                                            {{-- Ícone --}}
+                                            {{-- ID do Evento --}}
                                             <div class="flex-shrink-0 mt-1">
-                                                @if($hasDocuments)
-                                                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center shadow-lg">
-                                                        <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M9 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L13 1.586A2 2 0 0011.586 1H9zm0 2h2v2a2 2 0 002 2h2v8H9V4z"/>
-                                                        </svg>
-                                                    </div>
-                                                @else
-                                                    <div class="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                                                        <div class="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full"></div>
-                                                    </div>
-                                                @endif
+                                                <div class="w-12 h-12 bg-gradient-to-br from-orange-200 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
+                                                    <span class="text-white font-bold text-xs leading-tight text-center">
+                                                        {{ $movimento['idMovimento'] ?? 'N/A' }}
+                                                    </span>
+                                                </div>
                                             </div>
 
                                             <div class="flex-1 min-w-0">
