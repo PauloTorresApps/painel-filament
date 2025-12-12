@@ -153,8 +153,16 @@
                             type="submit"
                             icon="heroicon-o-magnifying-glass"
                             size="lg"
+                            wire:loading.attr="disabled"
+                            wire:target="submit"
                         >
-                            Consultar Processo
+                            <span wire:loading.remove wire:target="submit">
+                                Consultar Processo
+                            </span>
+                            <span wire:loading wire:target="submit">
+                                <x-filament::loading-indicator class="h-5 w-5" />
+                                Consultando...
+                            </span>
                         </x-filament::button>
                     </div>
                 </form>
@@ -238,17 +246,14 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.getElementById('consultaForm');
-            const loadingOverlay = document.getElementById('global-loading');
 
-            if (form && loadingOverlay) {
+            if (form) {
                 form.addEventListener('submit', function(e) {
-                    // Mostra o loading
-                    loadingOverlay.classList.add('active');
-
                     // Desabilita o botão para evitar múltiplos cliques
                     const submitButton = form.querySelector('button[type="submit"]');
                     if (submitButton) {
                         submitButton.disabled = true;
+                        submitButton.innerHTML = '<svg class="animate-spin h-5 w-5 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Consultando...';
                     }
                 });
             }
