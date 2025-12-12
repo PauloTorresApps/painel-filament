@@ -4,6 +4,7 @@ use Livewire\Volt\Volt;
 use Laravel\Fortify\Features;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
+use App\Http\Controllers\JudicialUserController;
 
 Route::redirect('/', '/admin');
 
@@ -33,9 +34,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
         Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
         Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
-        
+
         Route::get('analyze_contract', function () {
             // return view('analyze_contract');
             echo "Análise de Contratos";
         })->name('analyze_contract');
+
+        Route::resource('judicial-users', JudicialUserController::class);
 });

@@ -8,18 +8,15 @@ use Exception;
 
 class EprocController extends Controller
 {
-    protected $eprocService;
-
-    public function __construct(EprocService $eprocService)
-    {
-        $this->eprocService = $eprocService;
-    }
+    // Removido a injeção de dependência do EprocService
+    // Agora será instanciado dentro de cada método com as credenciais do usuário
 
     public function debug()
     {
         try {
-            $funcoes = $this->eprocService->listarFuncoes();
-            $tipos = $this->eprocService->listarTipos();
+            $eprocService = new EprocService();
+            $funcoes = $eprocService->listarFuncoes();
+            $tipos = $eprocService->listarTipos();
 
             return response()->json([
                 'funcoes' => $funcoes,
@@ -36,14 +33,30 @@ class EprocController extends Controller
     {
         $request->validate([
             'numero_processo' => 'required|string',
+            'judicial_user_id' => 'required|exists:judicial_users,id',
+            'senha' => 'required|string',
         ]);
 
         try {
+            // Busca o usuário judicial
+            $judicialUser = \App\Models\JudicialUser::findOrFail($request->judicial_user_id);
+
+            // Verifica se o usuário judicial pertence ao usuário logado
+            if ($judicialUser->user_id !== auth()->id()) {
+                return back()
+                    ->withInput()
+                    ->with('error', 'Você não tem permissão para usar este usuário judicial.');
+            }
+
             $numeroProcesso = $request->input('numero_processo');
             $dataInicial = $request->input('data_inicial');
             $dataFinal = $request->input('data_final');
+            $senha = $request->input('senha');
 
-            $resultado = $this->eprocService->consultarProcesso(
+            // Instancia o serviço com as credenciais do usuário
+            $eprocService = new EprocService($judicialUser->user_login, $senha);
+
+            $resultado = $eprocService->consultarProcesso(
                 $numeroProcesso,
                 $dataInicial,
                 $dataFinal,
@@ -102,7 +115,9 @@ class EprocController extends Controller
                 'dadosBasicos' => $dadosBasicos,
                 'movimentos' => $movimentos,
                 'documentos' => $documentos,
-                'numeroProcesso' => $numeroProcesso
+                'numeroProcesso' => $numeroProcesso,
+                'judicial_user_id' => $request->judicial_user_id,
+                'senha' => $senha
             ], now()->addMinutes(10));
 
             return redirect()->route('filament.admin.pages.process-details', ['key' => $cacheKey]);
@@ -119,14 +134,31 @@ class EprocController extends Controller
         $request->validate([
             'numero_processo' => 'required|string',
             'id_documento' => 'required|string',
+            'judicial_user_id' => 'required|exists:judicial_users,id',
+            'senha' => 'required|string',
         ]);
 
         try {
+            // Busca o usuário judicial
+            $judicialUser = \App\Models\JudicialUser::findOrFail($request->judicial_user_id);
+
+            // Verifica se o usuário judicial pertence ao usuário logado
+            if ($judicialUser->user_id !== auth()->id()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Você não tem permissão para usar este usuário judicial.'
+                ], 403);
+            }
+
             $numeroProcesso = $request->input('numero_processo');
             $idDocumento = $request->input('id_documento');
+            $senha = $request->input('senha');
+
+            // Instancia o serviço com as credenciais do usuário
+            $eprocService = new EprocService($judicialUser->user_login, $senha);
 
             // Consulta o documento com conteúdo completo em base64
-            $resultado = $this->eprocService->consultarDocumentosProcesso(
+            $resultado = $eprocService->consultarDocumentosProcesso(
                 $numeroProcesso,
                 [$idDocumento]
             );

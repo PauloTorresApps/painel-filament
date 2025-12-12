@@ -14,11 +14,12 @@ class EprocService
     protected $senha;
     protected $urlBase;
 
-    public function __construct()
+    public function __construct(?string $usuario = null, ?string $senhaPlainText = null)
     {
-        $this->usuario = config('services.eproc.user');
+        $this->usuario = $usuario ?? config('services.eproc.user');
         // Gera o hash SHA256 da senha (equivalente ao Python: sha256("senha".encode('utf-8')).hexdigest())
-        $this->senha = hash('sha256', config('services.eproc.password'));
+        $senhaParaHash = $senhaPlainText ?? config('services.eproc.password');
+        $this->senha = hash('sha256', $senhaParaHash);
         $this->urlBase = config('services.eproc.url_base');
 
         try {

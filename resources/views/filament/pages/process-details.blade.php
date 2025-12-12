@@ -537,7 +537,12 @@
             fetch('{{ route("eproc.visualizar") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                body: JSON.stringify({ numero_processo: numeroProcesso, id_documento: idDocumento })
+                body: JSON.stringify({
+                    numero_processo: numeroProcesso,
+                    id_documento: idDocumento,
+                    judicial_user_id: {{ $judicialUserId ?? 'null' }},
+                    senha: '{{ $senha ?? '' }}'
+                })
             })
             .then(r => r.json())
             .then(async data => {

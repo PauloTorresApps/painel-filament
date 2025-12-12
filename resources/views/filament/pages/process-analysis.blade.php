@@ -98,6 +98,59 @@
                 <form action="{{ route('eproc.consultar') }}" method="POST" class="space-y-6" id="consultaForm">
                     @csrf
 
+                    {{-- Seleção de Usuário Judicial --}}
+                    <div>
+                        <x-filament::input.wrapper
+                            label="Usuário do Webservice"
+                            required
+                            :error="$errors->first('judicial_user_id')"
+                        >
+                            <select
+                                name="judicial_user_id"
+                                id="judicial_user_id"
+                                required
+                                class="fi-input block w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                            >
+                                <option value="">Selecione um usuário...</option>
+                                @foreach(auth()->user()->judicialUsers as $judicialUser)
+                                    <option value="{{ $judicialUser->id }}" {{ old('judicial_user_id') == $judicialUser->id ? 'selected' : '' }}>
+                                        {{ $judicialUser->system_name }} - {{ $judicialUser->user_login }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </x-filament::input.wrapper>
+                        @if(auth()->user()->judicialUsers->isEmpty())
+                            <p class="mt-2 text-xs text-warning-600 dark:text-warning-400">
+                                Você ainda não possui usuários cadastrados. <a href="{{ route('filament.admin.resources.judicial-users.index') }}" class="underline font-semibold">Cadastre um usuário judicial</a> antes de consultar processos.
+                            </p>
+                        @else
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Selecione o usuário do webservice que será utilizado para a consulta
+                            </p>
+                        @endif
+                    </div>
+
+                    {{-- Campo de Senha --}}
+                    <div>
+                        <x-filament::input.wrapper
+                            label="Senha do Webservice"
+                            required
+                            :error="$errors->first('senha')"
+                        >
+                            <x-filament::input
+                                type="password"
+                                name="senha"
+                                id="senha"
+                                placeholder="Digite sua senha"
+                                required
+                                autocomplete="off"
+                            />
+                        </x-filament::input.wrapper>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Digite a senha do usuário selecionado para autenticação no webservice
+                        </p>
+                    </div>
+
                     {{-- Campo Número do Processo --}}
                     <div>
                         <x-filament::input.wrapper
@@ -112,7 +165,6 @@
                                 placeholder="0000000-00.0000.0.00.0000"
                                 value="{{ old('numero_processo') }}"
                                 required
-                                autofocus
                                 class="font-mono"
                                 maxlength="25"
                             />

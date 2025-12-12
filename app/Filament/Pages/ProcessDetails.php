@@ -19,6 +19,8 @@ class ProcessDetails extends Page
     public array $movimentos = [];
     public array $documentos = [];
     public string $numeroProcesso = '';
+    public ?int $judicialUserId = null;
+    public ?string $senha = null;
 
     public function mount(): void
     {
@@ -31,6 +33,8 @@ class ProcessDetails extends Page
             $this->movimentos = $data['movimentos'] ?? [];
             $this->documentos = $data['documentos'] ?? [];
             $this->numeroProcesso = $data['numeroProcesso'] ?? '';
+            $this->judicialUserId = $data['judicial_user_id'] ?? null;
+            $this->senha = $data['senha'] ?? null;
         } else {
             // Fallback para sessão (compatibilidade)
             $this->dadosBasicos = session('dadosBasicos', []);

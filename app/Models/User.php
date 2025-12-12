@@ -10,6 +10,7 @@ use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Notifications\Notifiable;
 use Filament\Models\Contracts\FilamentUser;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
@@ -72,5 +73,10 @@ class User extends Authenticatable implements FilamentUser
             return true;
         }
         return $this->hasPermissionTo('access_admin');
+    }
+
+    public function judicialUsers(): HasMany
+    {
+        return $this->hasMany(JudicialUser::class);
     }
 }
