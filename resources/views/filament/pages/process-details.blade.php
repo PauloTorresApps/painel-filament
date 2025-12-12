@@ -264,12 +264,14 @@
                                                     @endif
                                                 </div>
 
-                                                <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mb-3">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                                    </svg>
-                                                    {{ \Carbon\Carbon::parse($movimento['dataHora'])->format('d/m/Y H:i') }}
-                                                </p>
+                                                @if(isset($movimento['dataHora']))
+                                                    <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mb-3">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                        </svg>
+                                                        {{ \Carbon\Carbon::parse($movimento['dataHora'])->format('d/m/Y H:i') }}
+                                                    </p>
+                                                @endif
 
                                                 {{-- Complemento --}}
                                                 @if(isset($movimento['complemento']) && !empty($movimento['complemento']))
@@ -315,13 +317,15 @@
                                                                             {{ $documento['descricao'] ?? 'Documento' }}
                                                                         </p>
                                                                         <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                                            <span class="flex items-center gap-1">
-                                                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                                                                </svg>
-                                                                                {{ \Carbon\Carbon::parse($documento['dataHora'])->format('d/m/Y H:i') }}
-                                                                            </span>
-                                                                            @if(isset($documento['tamanhoConteudo']))
+                                                                            @if(isset($documento['dataHora']))
+                                                                                <span class="flex items-center gap-1">
+                                                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                                                    </svg>
+                                                                                    {{ \Carbon\Carbon::parse($documento['dataHora'])->format('d/m/Y H:i') }}
+                                                                                </span>
+                                                                            @endif
+                                                                            @if(isset($documento['tamanhoConteudo']) && $documento['tamanhoConteudo'] > 0)
                                                                                 <span class="flex items-center gap-1">
                                                                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
@@ -373,10 +377,10 @@
 
         {{-- Modal para visualização de documento --}}
         <div id="documentModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="flex items-center justify-center min-h-screen px-4 sm:px-6 lg:px-8 py-8">
                 <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" onclick="fecharModal()"></div>
 
-                <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full">
+                <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl transform transition-all w-full max-w-7xl mx-auto">
                     <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                         <div class="flex items-center justify-between">
                             <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -396,7 +400,7 @@
                         </div>
                     </div>
 
-                    <div id="documentContent" class="p-6" style="min-height: 500px;">
+                    <div id="documentContent" class="p-6" style="min-height: 800px;">
                         <div class="flex items-center justify-center py-12">
                             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
                             <p class="ml-3 text-gray-600 dark:text-gray-400">Carregando documento...</p>
@@ -429,6 +433,7 @@
         // --- 2. VARIÁVEIS GLOBAIS ---
         let currentPdf = null;
         let currentScale = 1.2;
+        let currentBlobUrl = null; // Para revogar URLs criados
 
         // --- 3. AUXILIARES ---
         function escapeHtml(text) {
@@ -439,10 +444,12 @@
         function toggleEmptyMovements(hide) {
             const items = document.querySelectorAll('.movimento-item');
             const visibleCount = document.getElementById('visibleCount');
+            if (!items.length) return;
+
             let visible = 0;
             items.forEach(item => {
                 const hasDocs = item.dataset.hasDocs === 'true';
-                if (hide && !hasDocs) { item.style.display = 'none'; } 
+                if (hide && !hasDocs) { item.style.display = 'none'; }
                 else { item.style.display = 'block'; visible++; }
             });
             if(visibleCount) visibleCount.textContent = `Exibindo ${visible} de ${items.length}`;
@@ -452,7 +459,17 @@
         function fecharModal() {
             document.getElementById('documentModal').classList.add('hidden');
             currentPdf = null; // Limpa referência
-            document.getElementById('pdf-viewer-container').innerHTML = ''; // Limpa DOM
+
+            // Revoga URL do blob para liberar memória
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+                currentBlobUrl = null;
+            }
+
+            const container = document.getElementById('pdf-viewer-container');
+            if (container) {
+                container.innerHTML = ''; // Limpa DOM
+            }
         }
 
         // --- RENDERIZAÇÃO ---
@@ -461,7 +478,7 @@
             if (!container || !currentPdf) return;
 
             container.innerHTML = '<div class="py-10 flex justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>';
-            
+
             const zoomLabel = document.getElementById('zoom-level');
             if(zoomLabel) zoomLabel.innerText = Math.round(currentScale * 100) + '%';
 
@@ -470,10 +487,10 @@
             for (let pageNum = 1; pageNum <= currentPdf.numPages; pageNum++) {
                 const page = await currentPdf.getPage(pageNum);
                 const viewport = page.getViewport({ scale: currentScale });
-                
+
                 const pageWrapper = document.createElement('div');
                 pageWrapper.className = "mb-3 inline-block shadow-md rounded-sm bg-white relative";
-                
+
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
@@ -521,14 +538,14 @@
                 if (data.success && data.conteudoBase64) {
                     const docTitle = escapeHtml(data.documento.descricao || 'Documento');
 
-                    // MUDANÇAS AQUI: 
+                    // MUDANÇAS AQUI:
                     // 1. Altura ajustada para h-[80vh] (deixa espaço para clicar fora)
                     // 2. Adicionado botão de FECHAR (X) na barra superior
                     content.innerHTML = `
                         <div class="flex flex-col h-[80vh] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
-                            
+
                             <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm shrink-0">
-                                 
+
                                  <div class="flex items-center gap-3 overflow-hidden">
                                      <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                                         <button onclick="mudarZoom(-0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
@@ -555,7 +572,7 @@
                                      </button>
                                  </div>
                             </div>
-                            
+
                             <div id="pdf-viewer-container" class="flex-1 overflow-y-auto p-2 text-center bg-gray-300 dark:bg-gray-900 scroll-smooth">
                                 <div class="animate-pulse flex justify-center mt-4">
                                     <div class="h-64 w-full bg-gray-200 dark:bg-gray-700 rounded"></div>
@@ -572,10 +589,16 @@
 
                     // Setup Download
                     const blob = new Blob([bytes], { type: 'application/pdf' });
-                    const url = URL.createObjectURL(blob);
+
+                    // Revoga URL anterior se existir
+                    if (currentBlobUrl) {
+                        URL.revokeObjectURL(currentBlobUrl);
+                    }
+
+                    currentBlobUrl = URL.createObjectURL(blob);
                     document.getElementById('btn-download-pdf').onclick = () => {
                         const link = document.createElement('a');
-                        link.href = url;
+                        link.href = currentBlobUrl;
                         link.download = `${docTitle}.pdf`;
                         link.click();
                     };
