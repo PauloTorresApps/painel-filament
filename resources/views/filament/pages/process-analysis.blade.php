@@ -114,7 +114,7 @@
                                 <option value="">Selecione um usuário...</option>
                                 @foreach(auth()->user()->judicialUsers as $judicialUser)
                                     <option value="{{ $judicialUser->id }}" {{ old('judicial_user_id') == $judicialUser->id ? 'selected' : '' }}>
-                                        {{ $judicialUser->system_name }} - {{ $judicialUser->user_login }}
+                                        {{ $judicialUser->system->name }} - {{ $judicialUser->user_login }}
                                     </option>
                                 @endforeach
                             </select>

@@ -1,15 +1,16 @@
 <?php
 
-namespace App\Filament\Resources\JudicialUsers\Tables;
+namespace App\Filament\Resources\AiPrompts\Tables;
 
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
 use Illuminate\Support\Facades\Auth;
 
-class JudicialUsersTable
+class AiPromptsTable
 {
     public static function configure(Table $table): Table
     {
@@ -32,9 +33,27 @@ class JudicialUsersTable
             ->sortable()
             ->badge();
 
-        $columns[] = TextColumn::make('user_login')
-            ->label('Login do Webservice')
-            ->searchable();
+        $columns[] = TextColumn::make('title')
+            ->label('Título')
+            ->searchable()
+            ->sortable()
+            ->limit(50);
+
+        $columns[] = TextColumn::make('content')
+            ->label('Conteúdo')
+            ->searchable()
+            ->limit(100)
+            ->wrap();
+
+        $columns[] = IconColumn::make('is_active')
+            ->label('Ativo')
+            ->boolean()
+            ->sortable();
+
+        $columns[] = IconColumn::make('is_default')
+            ->label('Padrão')
+            ->boolean()
+            ->sortable();
 
         $columns[] = TextColumn::make('created_at')
             ->label('Criado em')

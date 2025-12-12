@@ -5,12 +5,20 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class JudicialUser extends Model
+class AiPrompt extends Model
 {
     protected $fillable = [
         'user_id',
         'system_id',
-        'user_login',
+        'title',
+        'content',
+        'is_active',
+        'is_default',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+        'is_default' => 'boolean',
     ];
 
     public function user(): BelongsTo

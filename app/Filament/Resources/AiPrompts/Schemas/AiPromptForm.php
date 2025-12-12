@@ -1,15 +1,17 @@
 <?php
 
-namespace App\Filament\Resources\JudicialUsers\Schemas;
+namespace App\Filament\Resources\AiPrompts\Schemas;
 
 use Filament\Schemas\Schema;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Toggle;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 
-class JudicialUserForm
+class AiPromptForm
 {
     public static function configure(Schema $schema): Schema
     {
@@ -44,12 +46,31 @@ class JudicialUserForm
                     )
                     ->required()
                     ->searchable()
-                    ->helperText('Selecione o sistema judicial'),
+                    ->helperText('Selecione o sistema judicial ao qual este prompt se aplica'),
 
-                TextInput::make('user_login')
-                    ->label('Login do Webservice')
+                TextInput::make('title')
+                    ->label('Título')
                     ->required()
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->helperText('Dê um nome descritivo para identificar este prompt'),
+
+                Textarea::make('content')
+                    ->label('Conteúdo do Prompt')
+                    ->required()
+                    ->rows(8)
+                    ->maxLength(10000)
+                    ->helperText('Digite o texto do prompt que será enviado para a IA. HTML e scripts serão automaticamente removidos por segurança.')
+                    ->columnSpanFull(),
+
+                Toggle::make('is_active')
+                    ->label('Ativo')
+                    ->default(true)
+                    ->helperText('Desative para manter o prompt salvo mas não utilizá-lo'),
+
+                Toggle::make('is_default')
+                    ->label('Prompt Padrão')
+                    ->default(false)
+                    ->helperText('Define este prompt como padrão para o sistema selecionado. Só pode haver um prompt padrão por sistema.'),
             ]);
     }
 }

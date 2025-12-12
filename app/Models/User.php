@@ -79,4 +79,9 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->hasMany(JudicialUser::class);
     }
+
+    public function aiPrompts(): HasMany
+    {
+        return $this->hasMany(AiPrompt::class);
+    }
 }
