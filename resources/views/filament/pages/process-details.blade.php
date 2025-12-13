@@ -323,6 +323,28 @@
                                                                 @php
                                                                     $nivelSigilo = $documento['nivelSigilo'] ?? 0;
                                                                     $isSigiloso = $nivelSigilo > 0;
+
+                                                                    // Verifica se é arquivo de mídia (vídeo ou imagem)
+                                                                    $descricao = strtolower($documento['descricao'] ?? '');
+                                                                    $mimeType = strtolower($documento['mimetype'] ?? '');
+
+                                                                    // Extensões de mídia comuns
+                                                                    $extensoesMedia = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico'];
+
+                                                                    $isArquivoMedia = false;
+
+                                                                    // Verifica pelo mimetype
+                                                                    if (str_starts_with($mimeType, 'image/') || str_starts_with($mimeType, 'video/')) {
+                                                                        $isArquivoMedia = true;
+                                                                    }
+
+                                                                    // Verifica pela descrição/nome do arquivo
+                                                                    foreach ($extensoesMedia as $ext) {
+                                                                        if (str_ends_with($descricao, '.' . $ext)) {
+                                                                            $isArquivoMedia = true;
+                                                                            break;
+                                                                        }
+                                                                    }
                                                                 @endphp
                                                                 <div class="documento-card flex items-center gap-3 p-3 rounded-lg border-2 {{ $isSigiloso ? 'border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md">
                                                                     <div class="flex-shrink-0">
@@ -383,8 +405,8 @@
                                                                             Visualizar
                                                                         </button>
 
-                                                                        @if($nivelSigilo == 0)
-                                                                            {{-- Documento público - pode enviar para análise --}}
+                                                                        @if($nivelSigilo == 0 && !$isArquivoMedia)
+                                                                            {{-- Documento público e não é mídia - pode enviar para análise --}}
                                                                             <button
                                                                                 type="button"
                                                                                 class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition shadow-sm hover:shadow"
@@ -395,13 +417,21 @@
                                                                                 </svg>
                                                                                 Enviar para Análise
                                                                             </button>
-                                                                        @else
+                                                                        @elseif($nivelSigilo > 0)
                                                                             {{-- Documento sigiloso - mostra badge de alerta --}}
                                                                             <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-yellow-800 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-lg border border-yellow-300 dark:border-yellow-700" title="Documento sigiloso não pode ser enviado para análise">
                                                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                                                                 </svg>
                                                                                 Sigiloso (Nível {{ $nivelSigilo }})
+                                                                            </span>
+                                                                        @elseif($isArquivoMedia)
+                                                                            {{-- Arquivo de mídia - não pode ser enviado para análise --}}
+                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600" title="Arquivos de mídia (imagens e vídeos) não podem ser enviados para análise">
+                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                                                </svg>
+                                                                                Arquivo de Mídia
                                                                             </span>
                                                                         @endif
                                                                     </div>
