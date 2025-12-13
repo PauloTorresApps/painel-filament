@@ -16,11 +16,6 @@ class PermissionSeeder extends Seeder
 
         $this->createPermission();
         $this->createRole();
-
-
-
-
-       
     }
 
     private function createPermission(): void
@@ -28,7 +23,7 @@ class PermissionSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        $arrPermissions = [ 
+        $arrPermissions = [
             'access_admin',
             'user_create',
             'user_update',
@@ -46,18 +41,20 @@ class PermissionSeeder extends Seeder
             'analyze_contract',
         ];
 
-        $permissions = collect($arrPermissions)->map(function ($permission) {
-            return ['name' => $permission, 'guard_name' => 'web'];
-        });
-        Permission::insert($permissions->toArray());
+        foreach ($arrPermissions as $permission) {
+            Permission::firstOrCreate(
+                ['name' => $permission, 'guard_name' => 'web']
+            );
+        }
+
         //update permission cache
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
     }
 
     private function createRole(): void
     {
-        $role = Role::create(['name' => 'Manager']);
-        $role->givePermissionTo([
+        $role = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'web']);
+        $role->syncPermissions([
             'access_admin',
             'user_read',
             'role_read',
@@ -65,24 +62,25 @@ class PermissionSeeder extends Seeder
             'user_create',
             'user_delete',
         ]);
-        
-        $role = Role::create(['name' => 'Default']);
-        $role->givePermissionTo([
+
+        $role = Role::firstOrCreate(['name' => 'Default', 'guard_name' => 'web']);
+        $role->syncPermissions([
             'access_admin',
         ]);
-        
-        $role = Role::create(['name' => 'Analista de Contrato']);
-        $role->givePermissionTo([
+
+        $role = Role::firstOrCreate(['name' => 'Analista de Contrato', 'guard_name' => 'web']);
+        $role->syncPermissions([
+            'access_admin',
             'analyze_contract',
         ]);
 
-        $role = Role::create(['name' => 'Analista de Processo']);
-        $role->givePermissionTo([
+        $role = Role::firstOrCreate(['name' => 'Analista de Processo', 'guard_name' => 'web']);
+        $role->syncPermissions([
+            'access_admin',
             'analyze_process',
         ]);
 
-        $role = Role::create(['name' => 'Admin']);
-        $role->givePermissionTo(Permission::all());
-
+        $role = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+        $role->syncPermissions(Permission::all());
     }
 }

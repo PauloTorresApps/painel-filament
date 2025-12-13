@@ -100,7 +100,7 @@
 
                     {{-- Seleção de Usuário Judicial --}}
                     <div>
-                        <label for="judicial_user_id" class="fi-fo-field-wrp-label inline-flex items-center gap-x-3">
+                        <label for="user_ws" class="fi-fo-field-wrp-label inline-flex items-center gap-x-3">
                             <span class="text-sm font-medium leading-6 text-gray-950 dark:text-white">
                                 Usuário do Webservice
                                 <sup class="text-danger-600 dark:text-danger-400 font-medium">*</sup>
@@ -109,14 +109,15 @@
 
                         <div class="mt-2">
                             <select
-                                name="judicial_user_id"
-                                id="judicial_user_id"
+                                name="user_ws"
+                                id="user_ws"
                                 required
                                 class="judicial-user-select"
+                                autocomplete="off"
                             >
                                 <option value="">Selecione um usuário...</option>
                                 @foreach(auth()->user()->judicialUsers as $judicialUser)
-                                    <option value="{{ $judicialUser->id }}" {{ old('judicial_user_id') == $judicialUser->id ? 'selected' : '' }}>
+                                    <option value="{{ $judicialUser->id }}" {{ old('user_ws') == $judicialUser->id ? 'selected' : '' }}>
                                         {{ $judicialUser->system->name }} - {{ $judicialUser->user_login }}
                                     </option>
                                 @endforeach
@@ -139,15 +140,15 @@
                         <x-filament::input.wrapper
                             label="Senha do Webservice"
                             required
-                            :error="$errors->first('senha')"
+                            :error="$errors->first('password_ws')"
                         >
                             <x-filament::input
                                 type="password"
-                                name="senha"
-                                id="senha"
-                                placeholder="Digite sua senha"
+                                name="password_ws"
+                                id="password_ws"
+                                placeholder="Digite a senha do webservice"
                                 required
-                                autocomplete="off"
+                                autocomplete="new-password"
                             />
                         </x-filament::input.wrapper>
                         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -351,10 +352,10 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Inicializa Tom Select para o campo judicial_user_id
-            const judicialUserSelect = document.getElementById('judicial_user_id');
-            if (judicialUserSelect && typeof TomSelect !== 'undefined') {
-                new TomSelect(judicialUserSelect, {
+            // Inicializa Tom Select para o campo user_ws
+            const userWsSelect = document.getElementById('user_ws');
+            if (userWsSelect && typeof TomSelect !== 'undefined') {
+                new TomSelect(userWsSelect, {
                     placeholder: 'Selecione um usuário...',
                     allowEmptyOption: true,
                     create: false,

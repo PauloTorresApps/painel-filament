@@ -553,7 +553,7 @@
                     numero_processo: numeroProcesso,
                     id_documento: idDocumento,
                     judicial_user_id: {{ $judicialUserId ?? 'null' }},
-                    senha: '{{ $senha ?? "" }}'
+                    password_ws: '{{ $senha ?? "" }}'
                 })
             })
             .then(r => r.json())

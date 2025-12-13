@@ -34,13 +34,13 @@ class EprocController extends Controller
     {
         $request->validate([
             'numero_processo' => 'required|string',
-            'judicial_user_id' => 'required|exists:judicial_users,id',
-            'senha' => 'required|string',
+            'user_ws' => 'required|exists:judicial_users,id',
+            'password_ws' => 'required|string',
         ]);
 
         try {
             // Busca o usuário judicial
-            $judicialUser = \App\Models\JudicialUser::findOrFail($request->judicial_user_id);
+            $judicialUser = \App\Models\JudicialUser::findOrFail($request->user_ws);
 
             // Verifica se o usuário judicial pertence ao usuário logado
             if ($judicialUser->user_id !== auth()->id()) {
@@ -52,7 +52,7 @@ class EprocController extends Controller
             $numeroProcesso = $request->input('numero_processo');
             $dataInicial = $request->input('data_inicial');
             $dataFinal = $request->input('data_final');
-            $senha = $request->input('senha');
+            $senha = $request->input('password_ws');
 
             // Instancia o serviço com as credenciais do usuário
             $eprocService = new EprocService($judicialUser->user_login, $senha);
@@ -168,7 +168,7 @@ class EprocController extends Controller
                 'movimentos' => $movimentos,
                 'documentos' => $documentos,
                 'numeroProcesso' => $numeroProcesso,
-                'judicial_user_id' => $request->judicial_user_id,
+                'judicial_user_id' => $request->user_ws,
                 'senha' => $senha
             ], now()->addMinutes(10));
 
@@ -187,7 +187,7 @@ class EprocController extends Controller
             'numero_processo' => 'required|string',
             'id_documento' => 'required|string',
             'judicial_user_id' => 'required|exists:judicial_users,id',
-            'senha' => 'required|string',
+            'password_ws' => 'required|string',
         ]);
 
         try {
@@ -204,7 +204,7 @@ class EprocController extends Controller
 
             $numeroProcesso = $request->input('numero_processo');
             $idDocumento = $request->input('id_documento');
-            $senha = $request->input('senha');
+            $senha = $request->input('password_ws');
 
             // Instancia o serviço com as credenciais do usuário
             $eprocService = new EprocService($judicialUser->user_login, $senha);
