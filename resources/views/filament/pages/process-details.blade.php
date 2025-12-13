@@ -310,18 +310,38 @@
                                                         </h5>
                                                         <div class="space-y-2">
                                                             @foreach($movimento['documentos'] as $documento)
-                                                                <div class="documento-card flex items-center gap-3 p-3 rounded-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md">
+                                                                @php
+                                                                    $nivelSigilo = $documento['nivelSigilo'] ?? 0;
+                                                                    $isSigiloso = $nivelSigilo > 0;
+                                                                @endphp
+                                                                <div class="documento-card flex items-center gap-3 p-3 rounded-lg border-2 {{ $isSigiloso ? 'border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md">
                                                                     <div class="flex-shrink-0">
-                                                                        <div class="w-10 h-10 bg-red-100 dark:bg-red-900/20 rounded-lg flex items-center justify-center">
-                                                                            <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                                                                                <path d="M9 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L13 1.586A2 2 0 0011.586 1H9z"/>
-                                                                            </svg>
+                                                                        <div class="w-10 h-10 {{ $isSigiloso ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-red-100 dark:bg-red-900/20' }} rounded-lg flex items-center justify-center">
+                                                                            @if($isSigiloso)
+                                                                                <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                                                                </svg>
+                                                                            @else
+                                                                                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                                                                                    <path d="M9 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L13 1.586A2 2 0 0011.586 1H9z"/>
+                                                                                </svg>
+                                                                            @endif
                                                                         </div>
                                                                     </div>
                                                                     <div class="flex-1 min-w-0">
-                                                                        <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                                                                            {{ $documento['descricao'] ?? 'Documento' }}
-                                                                        </p>
+                                                                        <div class="flex items-center gap-2">
+                                                                            <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                                                                {{ $documento['descricao'] ?? 'Documento' }}
+                                                                            </p>
+                                                                            @if($isSigiloso)
+                                                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-200 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 flex-shrink-0">
+                                                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                                                                    </svg>
+                                                                                    Sigiloso
+                                                                                </span>
+                                                                            @endif
+                                                                        </div>
                                                                         <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
                                                                             @if(isset($documento['dataHora']))
                                                                                 <span class="flex items-center gap-1">
@@ -352,16 +372,28 @@
                                                                             </svg>
                                                                             Visualizar
                                                                         </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition shadow-sm hover:shadow"
-                                                                            title="Enviar documento para análise"
-                                                                        >
-                                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                                                                            </svg>
-                                                                            Enviar para Análise
-                                                                        </button>
+
+                                                                        @if($nivelSigilo == 0)
+                                                                            {{-- Documento público - pode enviar para análise --}}
+                                                                            <button
+                                                                                type="button"
+                                                                                class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition shadow-sm hover:shadow"
+                                                                                title="Enviar documento para análise"
+                                                                            >
+                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                                                                                </svg>
+                                                                                Enviar para Análise
+                                                                            </button>
+                                                                        @else
+                                                                            {{-- Documento sigiloso - mostra badge de alerta --}}
+                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-yellow-800 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-lg border border-yellow-300 dark:border-yellow-700" title="Documento sigiloso não pode ser enviado para análise">
+                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                                                                </svg>
+                                                                                Sigiloso (Nível {{ $nivelSigilo }})
+                                                                            </span>
+                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endforeach
