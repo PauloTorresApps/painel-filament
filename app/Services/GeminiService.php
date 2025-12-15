@@ -163,9 +163,14 @@ class GeminiService
             ]);
 
         if (!$response->successful()) {
+            $statusCode = $response->status();
             $errorBody = $response->json();
             $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
-            throw new \Exception("Erro na API Gemini: {$errorMessage}");
+
+            // Traduz erros comuns da API para mensagens amigáveis
+            $friendlyMessage = $this->translateGeminiError($statusCode, $errorMessage);
+
+            throw new \Exception($friendlyMessage);
         }
 
         $data = $response->json();
@@ -174,10 +179,52 @@ class GeminiService
         $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
 
         if (empty($text)) {
-            throw new \Exception('Resposta vazia da API Gemini');
+            throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
         }
 
         return $text;
+    }
+
+    /**
+     * Traduz erros técnicos da API Gemini para mensagens amigáveis
+     */
+    private function translateGeminiError(int $statusCode, string $technicalMessage): string
+    {
+        // Erros de quota/rate limit
+        if ($statusCode === 429) {
+            if (str_contains(strtolower($technicalMessage), 'quota')) {
+                return 'Limite de uso da API de IA excedido. Por favor, verifique seu plano no Google AI Studio ou aguarde até amanhã para novas análises.';
+            }
+            return 'Muitas requisições simultâneas. Por favor, aguarde alguns segundos e tente novamente.';
+        }
+
+        // Erros de autenticação
+        if ($statusCode === 401 || $statusCode === 403) {
+            return 'Chave de API inválida ou sem permissões. Verifique a configuração GEMINI_API_KEY no arquivo .env';
+        }
+
+        // Erros de tamanho de conteúdo
+        if ($statusCode === 413 || str_contains(strtolower($technicalMessage), 'too large')) {
+            return 'O documento é muito grande para ser processado. Tente enviar menos documentos por vez.';
+        }
+
+        // Timeout
+        if ($statusCode === 504 || str_contains(strtolower($technicalMessage), 'timeout')) {
+            return 'A análise demorou muito tempo. Tente novamente com documentos menores.';
+        }
+
+        // Erro de conteúdo bloqueado por safety
+        if (str_contains(strtolower($technicalMessage), 'safety') || str_contains(strtolower($technicalMessage), 'blocked')) {
+            return 'O conteúdo foi bloqueado pelos filtros de segurança da API. Tente com outros documentos.';
+        }
+
+        // Erro genérico do servidor
+        if ($statusCode >= 500) {
+            return "Erro temporário no servidor da Google AI (código {$statusCode}). Tente novamente em alguns minutos.";
+        }
+
+        // Erro não mapeado - retorna mensagem técnica simplificada
+        return "Erro na API de IA: " . substr($technicalMessage, 0, 150);
     }
 
     /**
