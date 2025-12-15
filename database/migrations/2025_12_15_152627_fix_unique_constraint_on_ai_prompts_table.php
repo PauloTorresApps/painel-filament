@@ -12,13 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ai_prompts', function (Blueprint $table) {
-            // Adiciona foreign key para systems
-            $table->foreignId('system_id')->after('user_id')->constrained()->onDelete('cascade');
+            // Remove o índice antigo que não incluía user_id
+            $table->dropUnique('unique_default_prompt_per_system');
 
-            // Adiciona flag de prompt padrão
-            $table->boolean('is_default')->default(false)->after('is_active');
-
-            // Cria índice único para garantir apenas um prompt padrão por usuário e sistema
+            // Cria o novo índice correto incluindo user_id
             $table->unique(['user_id', 'system_id', 'is_default'], 'unique_default_prompt_per_user_system');
         });
     }
@@ -29,9 +26,11 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('ai_prompts', function (Blueprint $table) {
+            // Remove o novo índice
             $table->dropUnique('unique_default_prompt_per_user_system');
-            $table->dropForeign(['system_id']);
-            $table->dropColumn(['system_id', 'is_default']);
+
+            // Recria o índice antigo
+            $table->unique(['system_id', 'is_default'], 'unique_default_prompt_per_system');
         });
     }
 };

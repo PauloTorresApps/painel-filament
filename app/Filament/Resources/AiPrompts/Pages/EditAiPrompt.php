@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AiPrompts\Pages;
 
 use App\Filament\Resources\AiPrompts\AiPromptResource;
+use App\Models\AiPrompt;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -23,6 +24,15 @@ class EditAiPrompt extends EditRecord
         if (isset($data['content'])) {
             $data['content'] = strip_tags($data['content']);
             $data['content'] = htmlspecialchars($data['content'], ENT_QUOTES, 'UTF-8');
+        }
+
+        // Se este prompt está sendo marcado como padrão, remove o padrão dos outros prompts do mesmo usuário e sistema
+        if (isset($data['is_default']) && $data['is_default'] && isset($data['system_id'])) {
+            AiPrompt::where('user_id', $this->record->user_id)
+                ->where('system_id', $data['system_id'])
+                ->where('is_default', true)
+                ->where('id', '!=', $this->record->id) // Exclui o registro atual
+                ->update(['is_default' => false]);
         }
 
         return $data;
