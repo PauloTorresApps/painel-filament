@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     <div>
         <style>
+            /* Smooth transitions */
             .movimento-item {
                 transition: all 0.2s ease-in-out !important;
             }
@@ -11,10 +12,36 @@
                 transition: all 0.15s ease-in-out !important;
             }
             .documento-card:hover {
-                transform: translateX(4px) !important;
+                transform: translateX(2px) !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
             }
-            .stat-card {
-                background: linear-gradient(135deg, var(--c-50) 0%, var(--c-100) 100%) !important;
+
+            /* Cores suaves e profissionais */
+            .stat-card-neutral {
+                background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+            }
+            .dark .stat-card-neutral {
+                background: linear-gradient(135deg, rgba(17, 24, 39, 0.5) 0%, rgba(31, 41, 55, 0.5) 100%);
+            }
+
+            /* Badge suave */
+            .badge-soft {
+                background-color: rgba(99, 102, 241, 0.08);
+                color: rgb(79, 70, 229);
+            }
+            .dark .badge-soft {
+                background-color: rgba(129, 140, 248, 0.15);
+                color: rgb(165, 180, 252);
+            }
+
+            /* Movimento badge */
+            .movimento-badge {
+                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                border: 1px solid #cbd5e1;
+            }
+            .dark .movimento-badge {
+                background: linear-gradient(135deg, rgba(51, 65, 85, 0.4) 0%, rgba(71, 85, 105, 0.4) 100%);
+                border: 1px solid rgba(100, 116, 139, 0.3);
             }
         </style>
 
@@ -51,9 +78,9 @@
 
                         <div class="space-y-4">
                             @if(isset($dadosBasicos['valorCausa']))
-                                <div class="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-                                    <p class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">Valor da Causa</p>
-                                    <p class="text-xl font-bold text-blue-900 dark:text-blue-100">R$ {{ number_format($dadosBasicos['valorCausa'], 2, ',', '.') }}</p>
+                                <div class="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-700">
+                                    <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1">Valor da Causa</p>
+                                    <p class="text-xl font-bold text-slate-900 dark:text-slate-100">R$ {{ number_format($dadosBasicos['valorCausa'], 2, ',', '.') }}</p>
                                 </div>
                             @endif
 
@@ -74,11 +101,11 @@
                                     <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Nível de Sigilo</p>
                                     <div class="mt-2">
                                         @if($dadosBasicos['nivelSigilo'] == 0)
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
                                                 Público
                                             </span>
                                         @else
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                                                 Sigiloso
                                             </span>
                                         @endif
@@ -104,7 +131,7 @@
                         <ul class="space-y-2">
                             @foreach($dadosBasicos['assunto'] as $assunto)
                                 <li class="flex items-start gap-2 p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
-                                    <svg class="w-4 h-4 mt-0.5 text-primary-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-4 h-4 mt-0.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                     </svg>
                                     <div class="flex-1">
@@ -161,8 +188,8 @@
                                         $advogados = isset($parte['advogado']) ? (isset($parte['advogado']['nome']) ? [$parte['advogado']] : $parte['advogado']) : [];
                                     @endphp
 
-                                    <div class="border-l-4 border-primary-500 pl-4 py-2 bg-gray-50 dark:bg-gray-800/50 rounded-r">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-400 mb-2">
+                                    <div class="border-l-4 border-slate-300 dark:border-slate-600 pl-4 py-2 bg-gray-50 dark:bg-gray-800/50 rounded-r">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 mb-2">
                                             {{ $tipoPoloTexto }}
                                         </span>
                                         <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-1">
@@ -206,17 +233,17 @@
                         </x-slot>
 
                         <div class="space-y-3">
-                            <div class="flex items-center justify-between p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-                                <span class="text-sm font-medium text-blue-700 dark:text-blue-300">Total de Movimentos</span>
-                                <span class="text-2xl font-bold text-blue-900 dark:text-blue-100">{{ count($movimentos) }}</span>
+                            <div class="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-700">
+                                <span class="text-sm font-medium text-slate-600 dark:text-slate-300">Total de Movimentos</span>
+                                <span class="text-2xl font-bold text-slate-900 dark:text-slate-100">{{ count($movimentos) }}</span>
                             </div>
-                            <div class="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800">
-                                <span class="text-sm font-medium text-green-700 dark:text-green-300">Com Documentos</span>
-                                <span class="text-2xl font-bold text-green-900 dark:text-green-100" id="withDocsCount">{{ count(array_filter($movimentos, fn($m) => !empty($m['documentos']))) }}</span>
+                            <div class="flex items-center justify-between p-3 rounded-lg bg-sky-50 dark:bg-sky-900/15 border border-sky-200/50 dark:border-sky-800/30">
+                                <span class="text-sm font-medium text-sky-700 dark:text-sky-300">Com Documentos</span>
+                                <span class="text-2xl font-bold text-sky-900 dark:text-sky-100" id="withDocsCount">{{ count(array_filter($movimentos, fn($m) => !empty($m['documentos']))) }}</span>
                             </div>
-                            <div class="flex items-center justify-between p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800">
-                                <span class="text-sm font-medium text-purple-700 dark:text-purple-300">Total de Documentos</span>
-                                <span class="text-2xl font-bold text-purple-900 dark:text-purple-100">{{ count($documentos ?? []) }}</span>
+                            <div class="flex items-center justify-between p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/15 border border-indigo-200/50 dark:border-indigo-800/30">
+                                <span class="text-sm font-medium text-indigo-700 dark:text-indigo-300">Total de Documentos</span>
+                                <span class="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{{ count($documentos ?? []) }}</span>
                             </div>
                         </div>
                     </x-filament::section>
@@ -246,12 +273,12 @@
                                 @endphp
 
                                 <div class="movimento-item {{ $hasDocuments ? 'has-documents' : 'no-documents' }}" data-has-docs="{{ $hasDocuments ? 'true' : 'false' }}">
-                                    <div class="p-6 rounded-lg border-2 {{ $hasDocuments ? 'border-primary-200 dark:border-primary-800 bg-primary-50/30 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} shadow-sm hover:shadow-md transition-all">
+                                    <div class="p-6 rounded-lg border {{ $hasDocuments ? 'border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/40 dark:bg-indigo-900/5' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} shadow-sm hover:shadow-md transition-all">
                                         <div class="flex items-start gap-4">
                                             {{-- ID do Evento --}}
                                             <div class="flex-shrink-0 mt-1">
-                                                <div class="w-12 h-12 bg-gradient-to-br from-orange-200 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
-                                                    <span class="text-white font-bold text-xs leading-tight text-center">
+                                                <div class="w-12 h-12 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 rounded-full flex items-center justify-center shadow-sm border border-slate-300 dark:border-slate-500">
+                                                    <span class="text-slate-700 dark:text-slate-100 font-bold text-xs leading-tight text-center">
                                                         {{ $movimento['idMovimento'] ?? 'N/A' }}
                                                     </span>
                                                 </div>
@@ -264,7 +291,7 @@
                                                         {{ $movimento['movimentoLocal']['descricao'] ?? 'Movimento sem descrição' }}
                                                     </h4>
                                                     @if($hasDocuments)
-                                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-400 whitespace-nowrap">
+                                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 whitespace-nowrap">
                                                             {{ count($movimento['documentos']) }} {{ count($movimento['documentos']) === 1 ? 'documento' : 'documentos' }}
                                                         </span>
                                                     @endif
@@ -282,10 +309,10 @@
                                                 {{-- Complemento --}}
                                                 @if(isset($movimento['complemento']) && !empty($movimento['complemento']))
                                                     <details class="mt-3">
-                                                        <summary class="text-sm text-primary-600 dark:text-primary-400 cursor-pointer hover:text-primary-700 dark:hover:text-primary-300 font-medium">
+                                                        <summary class="text-sm text-indigo-600 dark:text-indigo-400 cursor-pointer hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
                                                             + Ver detalhes adicionais
                                                         </summary>
-                                                        <div class="mt-3 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border-l-4 border-primary-500">
+                                                        <div class="mt-3 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-lg border-l-3 border-slate-300 dark:border-slate-600">
                                                             <div class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                                                                 @if(is_array($movimento['complemento']))
                                                                     @foreach($movimento['complemento'] as $comp)
@@ -336,15 +363,15 @@
                                                                         }
                                                                     }
                                                                 @endphp
-                                                                <div class="documento-card flex items-center gap-3 p-3 rounded-lg border-2 {{ $isSigiloso ? 'border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md">
+                                                                <div class="documento-card flex items-center gap-3 p-3 rounded-lg border {{ $isSigiloso ? 'border-amber-200 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-900/5' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-indigo-300 dark:hover:border-indigo-700/40 hover:shadow-md">
                                                                     <div class="flex-shrink-0">
-                                                                        <div class="w-10 h-10 {{ $isSigiloso ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-red-100 dark:bg-red-900/20' }} rounded-lg flex items-center justify-center">
+                                                                        <div class="w-10 h-10 {{ $isSigiloso ? 'bg-amber-100 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-800' }} rounded-lg flex items-center justify-center">
                                                                             @if($isSigiloso)
-                                                                                <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                                                                 </svg>
                                                                             @else
-                                                                                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                                                                                <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="currentColor" viewBox="0 0 24 24">
                                                                                     <path d="M9 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L13 1.586A2 2 0 0011.586 1H9z"/>
                                                                                 </svg>
                                                                             @endif
@@ -356,7 +383,7 @@
                                                                                 {{ $documento['descricao'] ?? 'Documento' }}
                                                                             </p>
                                                                             @if($isSigiloso)
-                                                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-200 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 flex-shrink-0">
+                                                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 flex-shrink-0">
                                                                                     <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                                                                     </svg>
@@ -386,7 +413,7 @@
                                                                     <div class="flex items-center gap-2">
                                                                         <button
                                                                             onclick="visualizarDocumento('{{ $numeroProcesso }}', '{{ $documento['idDocumento'] }}')"
-                                                                            class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition shadow-sm hover:shadow"
+                                                                            class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 dark:text-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg transition shadow-sm hover:shadow"
                                                                         >
                                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -399,7 +426,7 @@
                                                                             {{-- Documento público e não é mídia - pode enviar para análise --}}
                                                                             <button
                                                                                 type="button"
-                                                                                class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition shadow-sm hover:shadow"
+                                                                                class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 rounded-lg transition shadow-sm hover:shadow border border-indigo-200 dark:border-indigo-800/40"
                                                                                 title="Enviar documento para análise"
                                                                             >
                                                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -409,7 +436,7 @@
                                                                             </button>
                                                                         @elseif($nivelSigilo > 0)
                                                                             {{-- Documento sigiloso - mostra badge de alerta --}}
-                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-yellow-800 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-lg border border-yellow-300 dark:border-yellow-700" title="Documento sigiloso não pode ser enviado para análise">
+                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800/40" title="Documento sigiloso não pode ser enviado para análise">
                                                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                                                                 </svg>
