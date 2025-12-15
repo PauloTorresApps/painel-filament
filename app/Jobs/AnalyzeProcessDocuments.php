@@ -200,9 +200,37 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 true // incluir conteúdo
             );
 
-            $documentos = $resultado['documento'] ?? [];
+            // Tenta diferentes caminhos dependendo da estrutura do retorno
+            $documentos = null;
+
+            // Caminho 1: Body->respostaConsultarDocumentosProcesso->documentos (quando tem conteúdo válido)
+            if (isset($resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'])) {
+                $documentos = $resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'];
+                Log::info('Documentos encontrados via Body->respostaConsultarDocumentosProcesso', [
+                    'id_documento' => $idDocumento
+                ]);
+            }
+            // Caminho 2: documento (estrutura antiga/alternativa)
+            elseif (isset($resultado['documento'])) {
+                $documentos = $resultado['documento'];
+                Log::info('Documentos encontrados via documento', [
+                    'id_documento' => $idDocumento
+                ]);
+            }
+            // Caminho 3: Resposta sem conteúdo (HTML)
+            else {
+                Log::warning('Estrutura de retorno não reconhecida', [
+                    'id_documento' => $idDocumento,
+                    'keys_resultado' => array_keys($resultado),
+                    'primeiro_nivel' => json_encode(array_keys($resultado))
+                ]);
+                return null;
+            }
 
             if (empty($documentos)) {
+                Log::warning('Array de documentos está vazio', [
+                    'id_documento' => $idDocumento
+                ]);
                 return null;
             }
 
@@ -211,14 +239,51 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 $documentos = [$documentos];
             }
 
+            Log::info('Documentos extraídos', [
+                'quantidade' => count($documentos),
+                'primeiro_doc_keys' => isset($documentos[0]) ? array_keys($documentos[0]) : []
+            ]);
+
             foreach ($documentos as $doc) {
                 if ($doc['idDocumento'] == $idDocumento) {
+                    // O conteúdo pode vir de duas formas após o EprocService processar:
+                    // 1. $doc['conteudo']['conteudo'] - quando o anexo MTOM foi vinculado
+                    // 2. $doc['conteudo'] - string base64 direta (casos antigos)
+                    $conteudoBase64 = null;
+
+                    if (is_array($doc['conteudo'] ?? null) && isset($doc['conteudo']['conteudo'])) {
+                        // Anexo MTOM vinculado - base64 está dentro do array
+                        $conteudoBase64 = $doc['conteudo']['conteudo'];
+                        Log::info('Conteúdo extraído de doc[conteudo][conteudo]', [
+                            'id' => $idDocumento,
+                            'tamanho' => strlen($conteudoBase64)
+                        ]);
+                    } elseif (is_string($doc['conteudo'] ?? null)) {
+                        // String base64 direta
+                        $conteudoBase64 = $doc['conteudo'];
+                        Log::info('Conteúdo extraído de doc[conteudo] diretamente', [
+                            'id' => $idDocumento,
+                            'tamanho' => strlen($conteudoBase64)
+                        ]);
+                    } else {
+                        Log::warning('Estrutura de conteúdo não reconhecida', [
+                            'id' => $idDocumento,
+                            'tipo_conteudo' => gettype($doc['conteudo'] ?? null),
+                            'keys_conteudo' => is_array($doc['conteudo'] ?? null) ? array_keys($doc['conteudo']) : 'n/a'
+                        ]);
+                    }
+
                     return [
-                        'conteudo' => $doc['conteudo'] ?? null,
+                        'conteudo' => $conteudoBase64,
                         'descricao' => $doc['descricao'] ?? null,
                     ];
                 }
             }
+
+            Log::warning('Documento não encontrado no loop', [
+                'id_documento_procurado' => $idDocumento,
+                'ids_encontrados' => array_map(fn($d) => $d['idDocumento'] ?? 'sem_id', $documentos)
+            ]);
 
             return null;
 
