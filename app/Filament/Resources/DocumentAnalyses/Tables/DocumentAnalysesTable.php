@@ -85,7 +85,8 @@ class DocumentAnalysesTable
                         'processing' => 'Processando',
                         'failed' => 'Falhou',
                         'pending' => 'Pendente',
-                    ]),
+                    ])
+                    ->default('completed'), // Mostra apenas concluídos por padrão
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -96,7 +97,16 @@ class DocumentAnalysesTable
                 ]),
             ])
             ->defaultSort('created_at', 'desc')
-            ->poll('10s') // Atualiza a cada 10 segundos para ver progresso
-            ->modifyQueryUsing(fn ($query) => $query->where('user_id', auth()->user()->id)); // Só mostra análises do usuário logado
+            ->modifyQueryUsing(function ($query) {
+                // Só mostra análises do usuário logado
+                $query->where('user_id', auth()->user()->id);
+
+                // Por padrão, oculta falhas (usuário pode exibir via filtro)
+                if (!request()->has('tableFilters')) {
+                    $query->where('status', '!=', 'failed');
+                }
+
+                return $query;
+            });
     }
 }

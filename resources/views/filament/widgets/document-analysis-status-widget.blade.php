@@ -21,7 +21,7 @@
         </x-slot>
 
         {{-- Resumo de Status --}}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" wire:poll.5s>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" @if($this->getProcessingCount() > 0 || $this->getPendingCount() > 0) wire:poll.10s @endif>
             <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-700">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-medium text-slate-600 dark:text-slate-400">Pendentes</span>

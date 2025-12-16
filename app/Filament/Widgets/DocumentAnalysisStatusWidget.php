@@ -12,6 +12,9 @@ class DocumentAnalysisStatusWidget extends Widget
 
     protected int | string | array $columnSpan = 'full';
 
+    // Desabilita auto-refresh padrão do Livewire
+    protected static bool $isLazy = false;
+
     public ?string $numeroProcesso = null;
 
     public function mount(?string $numeroProcesso = null): void
@@ -59,13 +62,14 @@ class DocumentAnalysisStatusWidget extends Widget
             ->count();
     }
 
-    // Polling a cada 5 segundos se houver análises em andamento
+    // Polling a cada 10 segundos se houver análises em andamento
+    // Aumentado de 5s para 10s para reduzir carga
     public function getPollingInterval(): ?string
     {
-        if ($this->getProcessingCount() > 0 || $this->getPendingCount() > 0) {
-            return '5s';
-        }
+        $hasActiveAnalyses = DocumentAnalysis::where('user_id', Auth::id())
+            ->whereIn('status', ['processing', 'pending'])
+            ->exists();
 
-        return null;
+        return $hasActiveAnalyses ? '10s' : null;
     }
 }

@@ -16,14 +16,7 @@ class ProcessDetails extends Page
 
     protected string $view = 'filament.pages.process-details';
 
-    protected function getHeaderWidgets(): array
-    {
-        return [
-            \App\Filament\Widgets\DocumentAnalysisStatusWidget::make([
-                'numeroProcesso' => $this->numeroProcesso,
-            ]),
-        ];
-    }
+    // Widget removido - agora exibe apenas no Dashboard
 
     public array $dadosBasicos = [];
     public array $movimentos = [];
@@ -77,6 +70,29 @@ class ProcessDetails extends Page
     protected function getHeaderActions(): array
     {
         return [
+            // Botão para ver última análise
+            \Filament\Actions\Action::make('ver_ultima_analise')
+                ->label('Ver Última Análise')
+                ->icon('heroicon-o-document-text')
+                ->color('info')
+                ->url(function () {
+                    $ultimaAnalise = \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                        ->where('numero_processo', $this->numeroProcesso)
+                        ->where('status', 'completed')
+                        ->latest()
+                        ->first();
+
+                    return $ultimaAnalise
+                        ? route('filament.admin.resources.document-analyses.view', $ultimaAnalise)
+                        : null;
+                })
+                ->visible(function () {
+                    return \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                        ->where('numero_processo', $this->numeroProcesso)
+                        ->where('status', 'completed')
+                        ->exists();
+                }),
+
             \Filament\Actions\Action::make('analisar_documentos')
                 ->label('Enviar todos os documentos para análise')
                 ->icon('heroicon-m-document-magnifying-glass')
