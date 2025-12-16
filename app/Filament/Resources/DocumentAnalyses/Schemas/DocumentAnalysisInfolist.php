@@ -3,9 +3,8 @@
 namespace App\Filament\Resources\DocumentAnalyses\Schemas;
 
 use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\Section;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Filament\Support\Markdown;
 
 class DocumentAnalysisInfolist
 {
@@ -19,76 +18,38 @@ class DocumentAnalysisInfolist
                             ->label('Número do Processo')
                             ->copyable(),
 
-                        TextEntry::make('descricao_documento')
-                            ->label('Documento')
-                            ->placeholder('-'),
+                        TextEntry::make('classe_processual')
+                            ->label('Classe')
+                            ->placeholder('Não informado'),
 
-                        TextEntry::make('status')
-                            ->label('Status')
-                            ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'completed' => 'success',
-                                'processing' => 'warning',
-                                'failed' => 'danger',
-                                'pending' => 'gray',
-                                default => 'gray',
-                            })
-                            ->formatStateUsing(fn (string $state): string => match ($state) {
-                                'completed' => 'Concluído',
-                                'processing' => 'Processando',
-                                'failed' => 'Falhou',
-                                'pending' => 'Pendente',
-                                default => $state,
-                            }),
-
-                        TextEntry::make('total_characters')
-                            ->label('Total de Caracteres')
-                            ->numeric()
-                            ->placeholder('-'),
-
-                        TextEntry::make('processing_time_ms')
-                            ->label('Tempo de Processamento')
-                            ->formatStateUsing(fn (?int $state): string => $state ? round($state / 1000, 2) . ' segundos' : '-')
-                            ->placeholder('-'),
-
-                        TextEntry::make('created_at')
-                            ->label('Criado em')
-                            ->dateTime('d/m/Y H:i:s'),
-
-                        TextEntry::make('updated_at')
-                            ->label('Atualizado em')
-                            ->dateTime('d/m/Y H:i:s'),
+                        TextEntry::make('assuntos')
+                            ->label('Assuntos')
+                            ->placeholder('Não informado')
+                            ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull()
+                    ->compact(),
 
                 Section::make('Análise da IA')
                     ->schema([
                         TextEntry::make('ai_analysis')
                             ->label('Resultado da Análise')
                             ->markdown()
-                            ->placeholder('Análise ainda não concluída')
-                            ->columnSpanFull(),
+                            ->placeholder('Análise ainda não concluída'),
                     ])
-                    ->visible(fn ($record) => $record->status === 'completed'),
-
-                Section::make('Texto Extraído')
-                    ->schema([
-                        TextEntry::make('extracted_text')
-                            ->label('Texto do Documento')
-                            ->placeholder('Texto não disponível')
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
+                    ->visible(fn ($record) => $record->status === 'completed')
+                    ->columnSpanFull(),
 
                 Section::make('Erro')
                     ->schema([
                         TextEntry::make('error_message')
                             ->label('Mensagem de Erro')
-                            ->color('danger')
-                            ->columnSpanFull(),
+                            ->color('danger'),
                     ])
-                    ->visible(fn ($record) => $record->status === 'failed'),
-            ]);
+                    ->visible(fn ($record) => $record->status === 'failed')
+                    ->columnSpanFull(),
+            ])
+            ->columns(1);
     }
 }

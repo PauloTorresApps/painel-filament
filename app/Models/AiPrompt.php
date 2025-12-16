@@ -12,6 +12,7 @@ class AiPrompt extends Model
         'system_id',
         'title',
         'content',
+        'ai_provider',
         'is_active',
         'is_default',
     ];
@@ -29,5 +30,16 @@ class AiPrompt extends Model
     public function system(): BelongsTo
     {
         return $this->belongsTo(System::class);
+    }
+
+    /**
+     * Retorna os providers de IA disponíveis
+     */
+    public static function getAvailableProviders(): array
+    {
+        return [
+            'gemini' => 'Google Gemini',
+            'deepseek' => 'DeepSeek',
+        ];
     }
 }

@@ -10,6 +10,8 @@ class DocumentAnalysis extends Model
     protected $fillable = [
         'user_id',
         'numero_processo',
+        'classe_processual',
+        'assuntos',
         'id_documento',
         'descricao_documento',
         'extracted_text',

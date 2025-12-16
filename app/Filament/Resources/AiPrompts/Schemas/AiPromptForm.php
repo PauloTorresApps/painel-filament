@@ -54,6 +54,14 @@ class AiPromptForm
                     ->maxLength(255)
                     ->helperText('Dê um nome descritivo para identificar este prompt'),
 
+                Select::make('ai_provider')
+                    ->label('Provedor de IA')
+                    ->options(\App\Models\AiPrompt::getAvailableProviders())
+                    ->default('gemini')
+                    ->required()
+                    ->native(false)
+                    ->helperText('Selecione qual inteligência artificial será utilizada para processar este prompt'),
+
                 Textarea::make('content')
                     ->label('Conteúdo do Prompt')
                     ->required()

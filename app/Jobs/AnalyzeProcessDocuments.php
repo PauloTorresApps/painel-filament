@@ -7,10 +7,11 @@ use App\Models\User;
 use App\Services\EprocService;
 use App\Services\PdfToTextService;
 use App\Services\GeminiService;
+use App\Services\DeepSeekService;
+use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 use Filament\Notifications\Notification as FilamentNotification;
 
 class AnalyzeProcessDocuments implements ShouldQueue
@@ -29,6 +30,7 @@ class AnalyzeProcessDocuments implements ShouldQueue
         public array $documentos,
         public array $contextoDados,
         public string $promptTemplate,
+        public string $aiProvider,
         public string $userLogin,
         public string $senha,
         public int $judicialUserId
@@ -49,8 +51,21 @@ class AnalyzeProcessDocuments implements ShouldQueue
 
             $startTime = microtime(true);
             $pdfService = new PdfToTextService();
-            $geminiService = new GeminiService();
             $eprocService = new EprocService($this->userLogin, $this->senha);
+
+            // DEBUG: Log contextoDados para verificar o que está chegando
+            Log::info('📋 AnalyzeProcessDocuments - contextoDados recebidos', [
+                'keys' => array_keys($this->contextoDados),
+                'numeroProcesso' => $this->numeroProcesso,
+                'classe_original' => $this->contextoDados['classeProcessual'] ?? 'NULL',
+                'classe_nome' => $this->contextoDados['classeProcessualNome'] ?? 'NULL',
+                'tem_assunto' => isset($this->contextoDados['assunto']),
+                'assunto_type' => isset($this->contextoDados['assunto']) ? gettype($this->contextoDados['assunto']) : 'NULL',
+                'assunto_count' => isset($this->contextoDados['assunto']) && is_array($this->contextoDados['assunto']) ? count($this->contextoDados['assunto']) : 0
+            ]);
+
+            // Instancia o serviço de IA baseado no provider selecionado
+            $aiService = $this->getAIService($this->aiProvider);
 
             // Array para armazenar documentos processados
             $documentosProcessados = [];
@@ -94,10 +109,19 @@ class AnalyzeProcessDocuments implements ShouldQueue
                         'dataHora' => $documento['dataHora'] ?? null,
                     ];
 
+                    // Formata classe e assuntos
+                    $classeProcessual = $this->contextoDados['classeProcessualNome']
+                        ?? $this->contextoDados['classeProcessual']
+                        ?? null;
+
+                    $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
+
                     // Cria registro no banco para rastreamento
                     DocumentAnalysis::create([
                         'user_id' => $this->userId,
                         'numero_processo' => $this->numeroProcesso,
+                        'classe_processual' => $classeProcessual,
+                        'assuntos' => $assuntos,
                         'id_documento' => $documento['idDocumento'],
                         'descricao_documento' => $documento['descricao'] ?? null,
                         'extracted_text' => $texto,
@@ -135,7 +159,12 @@ class AnalyzeProcessDocuments implements ShouldQueue
             }
 
             // Envia tudo para análise da IA em um único request (mais eficiente)
-            $analiseCompleta = $geminiService->analyzeDocuments(
+            Log::info('Enviando para análise via ' . $aiService->getName(), [
+                'provider' => $this->aiProvider,
+                'total_documentos' => count($documentosProcessados)
+            ]);
+
+            $analiseCompleta = $aiService->analyzeDocuments(
                 $this->promptTemplate,
                 $documentosProcessados,
                 $this->contextoDados
@@ -310,5 +339,39 @@ class AnalyzeProcessDocuments implements ShouldQueue
             ->body($body)
             ->status($status)
             ->sendToDatabase($user);
+    }
+
+    /**
+     * Retorna o serviço de IA baseado no provider selecionado
+     */
+    private function getAIService(string $provider): AIProviderInterface
+    {
+        return match($provider) {
+            'deepseek' => new DeepSeekService(),
+            'gemini' => new GeminiService(),
+            default => throw new \Exception("Provider de IA '{$provider}' não suportado. Use 'gemini' ou 'deepseek'.")
+        };
+    }
+
+    /**
+     * Formata array de assuntos para string
+     */
+    private function formatAssuntosString(array $assuntos): ?string
+    {
+        if (empty($assuntos)) {
+            return null;
+        }
+
+        $nomes = array_map(function($assunto) {
+            return $assunto['nomeAssunto']
+                ?? $assunto['descricao']
+                ?? $assunto['codigoAssunto']
+                ?? $assunto['codigoNacional']
+                ?? null;
+        }, $assuntos);
+
+        $nomes = array_filter($nomes); // Remove nulls
+
+        return !empty($nomes) ? implode(', ', $nomes) : null;
     }
 }

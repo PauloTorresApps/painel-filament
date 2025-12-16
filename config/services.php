@@ -52,4 +52,10 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-1.5-flash'),
     ],
 
+    'deepseek' => [
+        'api_key' => env('DEEPSEEK_API_KEY'),
+        'api_url' => env('DEEPSEEK_API_URL', 'https://api.deepseek.com/v1'),
+        'model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+    ],
+
 ];

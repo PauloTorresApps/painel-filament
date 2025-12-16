@@ -274,13 +274,14 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Dispara o Job
+            // Dispara o Job com o provider de IA selecionado
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
                 auth()->user()->id,
                 $this->numeroProcesso,
                 $documentosParaAnalise,
                 $this->dadosBasicos,
                 $promptPadrao->content,
+                $promptPadrao->ai_provider ?? 'gemini', // Provider de IA (gemini ou deepseek)
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
                 $this->judicialUserId

@@ -5,9 +5,8 @@ namespace App\Services;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
-class GeminiService implements AIProviderInterface
+class DeepSeekService implements AIProviderInterface
 {
     private string $apiKey;
     private string $apiUrl;
@@ -15,12 +14,12 @@ class GeminiService implements AIProviderInterface
 
     public function __construct()
     {
-        $this->apiKey = config('services.gemini.api_key');
-        $this->apiUrl = config('services.gemini.api_url');
-        $this->model = config('services.gemini.model', 'gemini-1.5-flash');
+        $this->apiKey = config('services.deepseek.api_key');
+        $this->apiUrl = config('services.deepseek.api_url', 'https://api.deepseek.com/v1');
+        $this->model = config('services.deepseek.model', 'deepseek-chat');
 
         if (empty($this->apiKey)) {
-            throw new \Exception('GEMINI_API_KEY não configurado no .env');
+            throw new \Exception('DEEPSEEK_API_KEY não configurado no .env');
         }
     }
 
@@ -39,12 +38,12 @@ class GeminiService implements AIProviderInterface
             $prompt = $this->buildPrompt($promptTemplate, $documentos, $contextoDados);
 
             // Faz a chamada para a API
-            $response = $this->callGeminiAPI($prompt);
+            $response = $this->callDeepSeekAPI($prompt);
 
             return $response;
 
         } catch (\Exception $e) {
-            Log::error('Erro ao chamar Gemini API', [
+            Log::error('Erro ao chamar DeepSeek API', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -121,63 +120,51 @@ class GeminiService implements AIProviderInterface
     }
 
     /**
-     * Faz a chamada HTTP para a API do Gemini
+     * Faz a chamada HTTP para a API do DeepSeek
+     * DeepSeek usa a mesma interface da OpenAI (chat completions)
      */
-    private function callGeminiAPI(string $prompt): string
+    private function callDeepSeekAPI(string $prompt): string
     {
-        $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
+        $url = "{$this->apiUrl}/chat/completions";
 
         $response = Http::timeout(120) // 2 minutos de timeout
             ->retry(3, 1000) // Retry 3 vezes com 1s de intervalo
+            ->withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+            ])
             ->post($url, [
-                'contents' => [
+                'model' => $this->model,
+                'messages' => [
                     [
-                        'parts' => [
-                            ['text' => $prompt]
-                        ]
+                        'role' => 'system',
+                        'content' => 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt
                     ]
                 ],
-                'generationConfig' => [
-                    'temperature' => 0.4, // Mais determinístico para análises jurídicas
-                    'topK' => 32,
-                    'topP' => 0.95,
-                    'maxOutputTokens' => 8192, // Permite respostas longas
-                ],
-                'safetySettings' => [
-                    [
-                        'category' => 'HARM_CATEGORY_HARASSMENT',
-                        'threshold' => 'BLOCK_NONE'
-                    ],
-                    [
-                        'category' => 'HARM_CATEGORY_HATE_SPEECH',
-                        'threshold' => 'BLOCK_NONE'
-                    ],
-                    [
-                        'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                        'threshold' => 'BLOCK_NONE'
-                    ],
-                    [
-                        'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                        'threshold' => 'BLOCK_NONE'
-                    ]
-                ]
+                'temperature' => 0.4, // Mais determinístico para análises jurídicas
+                'max_tokens' => 4096, // Permite respostas longas
+                'stream' => false,
             ]);
 
         if (!$response->successful()) {
             $statusCode = $response->status();
             $errorBody = $response->json();
-            $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
+            $errorMessage = $errorBody['error']['message'] ?? $errorBody['message'] ?? 'Erro desconhecido';
 
             // Traduz erros comuns da API para mensagens amigáveis
-            $friendlyMessage = $this->translateGeminiError($statusCode, $errorMessage);
+            $friendlyMessage = $this->translateDeepSeekError($statusCode, $errorMessage);
 
             throw new \Exception($friendlyMessage);
         }
 
         $data = $response->json();
 
-        // Extrai o texto da resposta
-        $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+        // Extrai o texto da resposta (formato OpenAI-compatible)
+        $text = $data['choices'][0]['message']['content'] ?? null;
 
         if (empty($text)) {
             throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
@@ -187,61 +174,50 @@ class GeminiService implements AIProviderInterface
     }
 
     /**
-     * Traduz erros técnicos da API Gemini para mensagens amigáveis
+     * Traduz erros técnicos da API DeepSeek para mensagens amigáveis
      */
-    private function translateGeminiError(int $statusCode, string $technicalMessage): string
+    private function translateDeepSeekError(int $statusCode, string $technicalMessage): string
     {
+        // Erro de saldo insuficiente
+        if ($statusCode === 402 || str_contains(strtolower($technicalMessage), 'insufficient balance')) {
+            return '💰 Saldo insuficiente na conta DeepSeek. Adicione créditos em https://platform.deepseek.com/top_up ou utilize o Google Gemini temporariamente.';
+        }
+
         // Erros de quota/rate limit
         if ($statusCode === 429) {
             if (str_contains(strtolower($technicalMessage), 'quota')) {
-                return 'Limite de uso da API de IA excedido. Por favor, verifique seu plano no Google AI Studio ou aguarde até amanhã para novas análises.';
+                return 'Limite de uso da API DeepSeek excedido. Por favor, verifique seu plano ou aguarde para novas análises.';
             }
-            return 'Muitas requisições simultâneas. Por favor, aguarde alguns segundos e tente novamente.';
+            return 'Muitas requisições simultâneas no DeepSeek. Por favor, aguarde alguns segundos e tente novamente.';
         }
 
         // Erros de autenticação
         if ($statusCode === 401 || $statusCode === 403) {
-            return 'Chave de API inválida ou sem permissões. Verifique a configuração GEMINI_API_KEY no arquivo .env';
+            return 'Chave de API DeepSeek inválida ou sem permissões. Verifique a configuração DEEPSEEK_API_KEY no arquivo .env';
         }
 
         // Erros de tamanho de conteúdo
-        if ($statusCode === 413 || str_contains(strtolower($technicalMessage), 'too large')) {
-            return 'O documento é muito grande para ser processado. Tente enviar menos documentos por vez.';
+        if ($statusCode === 413 || str_contains(strtolower($technicalMessage), 'too large') || str_contains(strtolower($technicalMessage), 'too long')) {
+            return 'O documento é muito grande para o DeepSeek processar. Tente enviar menos documentos por vez.';
         }
 
         // Timeout
         if ($statusCode === 504 || str_contains(strtolower($technicalMessage), 'timeout')) {
-            return 'A análise demorou muito tempo. Tente novamente com documentos menores.';
+            return 'A análise no DeepSeek demorou muito tempo. Tente novamente com documentos menores.';
         }
 
-        // Erro de conteúdo bloqueado por safety
-        if (str_contains(strtolower($technicalMessage), 'safety') || str_contains(strtolower($technicalMessage), 'blocked')) {
-            return 'O conteúdo foi bloqueado pelos filtros de segurança da API. Tente com outros documentos.';
+        // Erro de modelo não encontrado
+        if ($statusCode === 404 || str_contains(strtolower($technicalMessage), 'model not found')) {
+            return 'Modelo DeepSeek não encontrado. Verifique a configuração DEEPSEEK_MODEL no .env';
         }
 
         // Erro genérico do servidor
         if ($statusCode >= 500) {
-            return "Erro temporário no servidor da Google AI (código {$statusCode}). Tente novamente em alguns minutos.";
+            return "Erro temporário no servidor DeepSeek (código {$statusCode}). Tente novamente em alguns minutos.";
         }
 
         // Erro não mapeado - retorna mensagem técnica simplificada
-        return "Erro na API de IA: " . substr($technicalMessage, 0, 150);
-    }
-
-    /**
-     * Calcula custo estimado de uma requisição
-     * Baseado no pricing do Gemini (valores aproximados)
-     */
-    public function estimateCost(int $inputTokens, int $outputTokens = 2000): float
-    {
-        // Preços aproximados (USD por 1M tokens) - atualizar conforme pricing oficial
-        $pricePerMillionInput = $this->model === 'gemini-1.5-pro' ? 3.50 : 0.075; // Flash é bem mais barato
-        $pricePerMillionOutput = $this->model === 'gemini-1.5-pro' ? 10.50 : 0.30;
-
-        $inputCost = ($inputTokens / 1000000) * $pricePerMillionInput;
-        $outputCost = ($outputTokens / 1000000) * $pricePerMillionOutput;
-
-        return $inputCost + $outputCost;
+        return "Erro na API DeepSeek: " . substr($technicalMessage, 0, 150);
     }
 
     /**
@@ -250,8 +226,22 @@ class GeminiService implements AIProviderInterface
     public function healthCheck(): bool
     {
         try {
-            $response = $this->callGeminiAPI('Hello');
-            return !empty($response);
+            $url = "{$this->apiUrl}/chat/completions";
+
+            $response = Http::timeout(10)
+                ->withHeaders([
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, [
+                    'model' => $this->model,
+                    'messages' => [
+                        ['role' => 'user', 'content' => 'Hello']
+                    ],
+                    'max_tokens' => 10,
+                ]);
+
+            return $response->successful();
         } catch (\Exception) {
             return false;
         }
@@ -262,6 +252,6 @@ class GeminiService implements AIProviderInterface
      */
     public function getName(): string
     {
-        return 'Google Gemini';
+        return 'DeepSeek';
     }
 }
