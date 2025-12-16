@@ -161,19 +161,47 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 return;
             }
 
-            // Envia tudo para análise da IA em um único request (mais eficiente)
+            // Processa documentos em lotes para evitar erro 413 (payload muito grande)
+            // Limite configurável via env (padrão: 10 documentos por lote)
+            $batchSize = (int) config('ai.batch_size', 10);
+            $batches = array_chunk($documentosProcessados, $batchSize, true);
+            $analises = [];
+
             Log::info('Enviando para análise via ' . $aiService->getName(), [
                 'provider' => $this->aiProvider,
                 'deep_thinking_enabled' => $this->deepThinkingEnabled,
-                'total_documentos' => count($documentosProcessados)
+                'total_documentos' => count($documentosProcessados),
+                'total_lotes' => count($batches),
+                'tamanho_lote' => $batchSize
             ]);
 
-            $analiseCompleta = $aiService->analyzeDocuments(
-                $this->promptTemplate,
-                $documentosProcessados,
-                $this->contextoDados,
-                $this->deepThinkingEnabled
-            );
+            foreach ($batches as $batchIndex => $batch) {
+                Log::info("Processando lote " . ($batchIndex + 1) . "/" . count($batches), [
+                    'documentos_no_lote' => count($batch)
+                ]);
+
+                $analise = $aiService->analyzeDocuments(
+                    $this->promptTemplate,
+                    $batch,
+                    $this->contextoDados,
+                    $this->deepThinkingEnabled
+                );
+
+                $analises[] = $analise;
+
+                // Notifica progresso entre lotes
+                $this->sendNotification(
+                    $user,
+                    'Analisando',
+                    "Lote " . ($batchIndex + 1) . "/" . count($batches) . " processado",
+                    'info'
+                );
+            }
+
+            // Combina todas as análises
+            $analiseCompleta = count($analises) === 1
+                ? $analises[0]
+                : "=== ANÁLISE COMPLETA EM " . count($analises) . " LOTES ===\n\n" . implode("\n\n--- PRÓXIMO LOTE ---\n\n", $analises);
 
             $endTime = microtime(true);
             $processingTime = (int) (($endTime - $startTime) * 1000);
