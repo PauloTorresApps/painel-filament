@@ -6,6 +6,7 @@ use Filament\Schemas\Schema;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Toggle;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -50,6 +51,12 @@ class JudicialUserForm
                     ->label('Login do Webservice')
                     ->required()
                     ->maxLength(255),
+
+                Toggle::make('is_default')
+                    ->label('Usuário Padrão')
+                    ->helperText('Marque esta opção para usar este usuário automaticamente nas consultas de processos')
+                    ->default(false)
+                    ->inline(false),
             ]);
     }
 }

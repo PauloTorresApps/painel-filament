@@ -116,9 +116,17 @@
                                 autocomplete="off"
                             >
                                 <option value="">Selecione um usuário...</option>
+                                @php
+                                    $defaultUser = auth()->user()->judicialUsers()->where('is_default', true)->first();
+                                    $defaultUserId = old('user_ws', $defaultUser?->id);
+                                @endphp
                                 @foreach(auth()->user()->judicialUsers as $judicialUser)
-                                    <option value="{{ $judicialUser->id }}" {{ old('user_ws') == $judicialUser->id ? 'selected' : '' }}>
+                                    <option
+                                        value="{{ $judicialUser->id }}"
+                                        {{ $defaultUserId == $judicialUser->id ? 'selected' : '' }}
+                                    >
                                         {{ $judicialUser->system->name }} - {{ $judicialUser->user_login }}
+                                        @if($judicialUser->is_default) ⭐ @endif
                                     </option>
                                 @endforeach
                             </select>

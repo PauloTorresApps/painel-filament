@@ -7,6 +7,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
 use Illuminate\Support\Facades\Auth;
 
 class JudicialUsersTable
@@ -35,6 +36,16 @@ class JudicialUsersTable
         $columns[] = TextColumn::make('user_login')
             ->label('Login do Webservice')
             ->searchable();
+
+        $columns[] = IconColumn::make('is_default')
+            ->label('Padrão')
+            ->boolean()
+            ->trueIcon('heroicon-o-star')
+            ->falseIcon('heroicon-o-star')
+            ->trueColor('warning')
+            ->falseColor('gray')
+            ->tooltip(fn ($state) => $state ? 'Usuário padrão para consultas' : 'Não é padrão')
+            ->alignCenter();
 
         $columns[] = TextColumn::make('created_at')
             ->label('Criado em')
