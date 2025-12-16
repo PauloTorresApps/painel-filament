@@ -19,8 +19,16 @@ class EprocService
         $this->usuario = $usuario ?? config('services.eproc.user');
         // Gera o hash SHA256 da senha (equivalente ao Python: sha256("senha".encode('utf-8')).hexdigest())
         $senhaParaHash = $senhaPlainText ?? config('services.eproc.password');
+        // Hash deve ser em minúsculas
         $this->senha = hash('sha256', $senhaParaHash);
         $this->urlBase = config('services.eproc.url_base');
+
+        Log::info('EprocService inicializado', [
+            'usuario' => $this->usuario,
+            'senha_hash' => $this->senha,
+            'tamanho_hash' => strlen($this->senha),
+            'url_base' => $this->urlBase
+        ]);
 
         try {
             $wsdlUrl = config('services.eproc.wsdl_url');
@@ -50,14 +58,16 @@ class EprocService
                 'connection_timeout' => 60,
                 'user_agent' => 'PHP SOAP Client',
                 'keep_alive' => false,
-                // Define a URL do endpoint do serviço
+                // Endpoint correto para o controlador do webservice
                 'location' => $this->urlBase . '/ws/controlador_ws.php?srv=intercomunicacao3.0'
             ];
 
             $this->client = new SoapClient($wsdlUrl, $soapOptions);
 
             // Log das funções disponíveis para debug
-            Log::info('Cliente SOAP criado com sucesso');
+            Log::info('Cliente SOAP criado com sucesso', [
+                'wsdl_url' => $wsdlUrl
+            ]);
             Log::info('Funções SOAP disponíveis: ' . json_encode($this->client->__getFunctions()));
         } catch (SoapFault $e) {
             Log::error('Erro ao criar cliente SOAP: ' . $e->getMessage());
@@ -156,6 +166,14 @@ class EprocService
             if ($dataFinal) {
                 $params['dataFinal'] = $dataFinal;
             }
+
+            // Log dos parâmetros sendo enviados (sem a senha completa por segurança)
+            Log::info('Enviando requisição consultarProcesso', [
+                'usuario' => $this->usuario,
+                'numeroProcesso' => $numeroProcessoLimpo,
+                'hash_length' => strlen($this->senha),
+                'hash_first_chars' => substr($this->senha, 0, 8) . '...'
+            ]);
 
             $response = $this->client->consultarProcesso($params);
 
@@ -725,6 +743,12 @@ XML;
     protected function formatarMensagemErro(array $mensagem): string
     {
         $descritivo = $mensagem['descritivo'] ?? 'Erro desconhecido';
+
+        // Log da mensagem original para debug
+        Log::warning('Erro do webservice eProc', [
+            'mensagem_original' => $mensagem,
+            'descritivo' => $descritivo
+        ]);
 
         // Remove o prefixo "->" que aparece nas mensagens
         $descritivo = ltrim($descritivo, '->');

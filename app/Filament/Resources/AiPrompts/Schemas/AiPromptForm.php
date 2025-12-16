@@ -60,7 +60,24 @@ class AiPromptForm
                     ->default('gemini')
                     ->required()
                     ->native(false)
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        // Se mudar para um provider diferente de deepseek, desativa o deep thinking
+                        if ($state !== 'deepseek') {
+                            $set('deep_thinking_enabled', false);
+                        } else {
+                            // Se mudar para deepseek, ativa por padrão
+                            $set('deep_thinking_enabled', true);
+                        }
+                    })
                     ->helperText('Selecione qual inteligência artificial será utilizada para processar este prompt'),
+
+                Toggle::make('deep_thinking_enabled')
+                    ->label('Modo de Pensamento Profundo (DeepSeek)')
+                    ->default(true)
+                    ->helperText('Ativa o modo de reasoning da DeepSeek para análises mais detalhadas. Recomendado para tarefas complexas.')
+                    ->visible(fn ($get) => $get('ai_provider') === 'deepseek')
+                    ->dehydrated(fn ($get) => $get('ai_provider') === 'deepseek'),
 
                 Textarea::make('content')
                     ->label('Conteúdo do Prompt')

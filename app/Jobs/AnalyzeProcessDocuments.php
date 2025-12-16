@@ -31,6 +31,7 @@ class AnalyzeProcessDocuments implements ShouldQueue
         public array $contextoDados,
         public string $promptTemplate,
         public string $aiProvider,
+        public bool $deepThinkingEnabled,
         public string $userLogin,
         public string $senha,
         public int $judicialUserId
@@ -61,7 +62,9 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 'classe_nome' => $this->contextoDados['classeProcessualNome'] ?? 'NULL',
                 'tem_assunto' => isset($this->contextoDados['assunto']),
                 'assunto_type' => isset($this->contextoDados['assunto']) ? gettype($this->contextoDados['assunto']) : 'NULL',
-                'assunto_count' => isset($this->contextoDados['assunto']) && is_array($this->contextoDados['assunto']) ? count($this->contextoDados['assunto']) : 0
+                'assunto_count' => isset($this->contextoDados['assunto']) && is_array($this->contextoDados['assunto']) ? count($this->contextoDados['assunto']) : 0,
+                'tem_partes' => isset($this->contextoDados['parte']),
+                'partes_sample' => isset($this->contextoDados['parte']) ? json_encode(array_slice($this->contextoDados['parte'], 0, 2)) : 'NULL'
             ]);
 
             // Instancia o serviço de IA baseado no provider selecionado
@@ -161,13 +164,15 @@ class AnalyzeProcessDocuments implements ShouldQueue
             // Envia tudo para análise da IA em um único request (mais eficiente)
             Log::info('Enviando para análise via ' . $aiService->getName(), [
                 'provider' => $this->aiProvider,
+                'deep_thinking_enabled' => $this->deepThinkingEnabled,
                 'total_documentos' => count($documentosProcessados)
             ]);
 
             $analiseCompleta = $aiService->analyzeDocuments(
                 $this->promptTemplate,
                 $documentosProcessados,
-                $this->contextoDados
+                $this->contextoDados,
+                $this->deepThinkingEnabled
             );
 
             $endTime = microtime(true);

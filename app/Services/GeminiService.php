@@ -30,15 +30,17 @@ class GeminiService implements AIProviderInterface
      * @param string $promptTemplate Prompt do usuário
      * @param array $documentos Array de documentos com texto extraído
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
+     * @param bool $deepThinkingEnabled Ignorado no Gemini (compatibilidade com interface)
      * @return string Análise gerada pela IA
      */
-    public function analyzeDocuments(string $promptTemplate, array $documentos, array $contextoDados): string
+    public function analyzeDocuments(string $promptTemplate, array $documentos, array $contextoDados, bool $deepThinkingEnabled = true): string
     {
         try {
             // Monta o prompt completo com contexto
             $prompt = $this->buildPrompt($promptTemplate, $documentos, $contextoDados);
 
             // Faz a chamada para a API
+            // Nota: deepThinkingEnabled é ignorado no Gemini (recurso específico do DeepSeek)
             $response = $this->callGeminiAPI($prompt);
 
             return $response;
@@ -61,19 +63,37 @@ class GeminiService implements AIProviderInterface
         $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
         $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
         $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $tipoParte = $this->identificarTipoParte($contextoDados);
 
         // Substitui variáveis no template
         $prompt = str_replace(
-            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]'],
-            [$nomeClasse, $assuntos, $numeroProcesso],
+            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]'],
+            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte],
             $template
         );
 
-        // Adiciona contexto do processo
-        $prompt .= "\n\n## INFORMAÇÕES DO PROCESSO\n";
+        // CONTEXTO INICIAL - Informações essenciais para orientar a análise
+        $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
+        $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
+        $contextoInicial .= "**Assuntos:** {$assuntos}\n";
+        $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
+        $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
+
+        if (!empty($contextoDados['valorCausa'])) {
+            $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+        }
+
+        $contextoInicial .= "\n---\n\n";
+
+        // Adiciona o contexto inicial ANTES do prompt do usuário
+        $prompt = $contextoInicial . $prompt;
+
+        // Adiciona informações complementares do processo
+        $prompt .= "\n\n## INFORMAÇÕES COMPLEMENTARES DO PROCESSO\n";
         $prompt .= "Número: {$numeroProcesso}\n";
         $prompt .= "Classe: {$nomeClasse}\n";
         $prompt .= "Assuntos: {$assuntos}\n";
+        $prompt .= "Perspectiva de análise: {$tipoParte}\n";
 
         if (!empty($contextoDados['valorCausa'])) {
             $prompt .= "Valor da Causa: R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
@@ -118,6 +138,48 @@ class GeminiService implements AIProviderInterface
         }, $assuntos);
 
         return implode(', ', $nomes);
+    }
+
+    /**
+     * Identifica o tipo de parte do usuário que está consultando o processo
+     * Retorna uma descrição amigável do polo/tipo de parte
+     */
+    private function identificarTipoParte(array $contextoDados): string
+    {
+        // Verifica se há informações de partes disponíveis
+        if (empty($contextoDados['parte']) || !is_array($contextoDados['parte'])) {
+            return 'Órgão do Ministério Público';
+        }
+
+        $partes = $contextoDados['parte'];
+
+        // Procura por partes do MP (Ministério Público)
+        foreach ($partes as $parte) {
+            $polo = strtoupper($parte['polo'] ?? '');
+            $tipoPessoa = strtoupper($parte['tipoPessoa'] ?? '');
+            $nome = strtoupper($parte['nomeCompleto'] ?? $parte['nome'] ?? '');
+
+            // Identifica se é Ministério Público
+            if (str_contains($nome, 'MINISTÉRIO PÚBLICO') ||
+                str_contains($nome, 'MINISTERIO PUBLICO') ||
+                str_contains($nome, 'MP') ||
+                $tipoPessoa === 'MP') {
+
+                // Determina o polo
+                if ($polo === 'AT' || $polo === 'ATIVO') {
+                    return 'Ministério Público (Polo Ativo - Autor)';
+                } elseif ($polo === 'PA' || $polo === 'PASSIVO') {
+                    return 'Ministério Público (Polo Passivo - Réu)';
+                } elseif ($polo === 'TR' || $polo === 'TERCEIRO') {
+                    return 'Ministério Público (Terceiro Interessado)';
+                } else {
+                    return 'Ministério Público';
+                }
+            }
+        }
+
+        // Se não encontrou MP especificamente, retorna genérico
+        return 'Órgão do Ministério Público';
     }
 
     /**

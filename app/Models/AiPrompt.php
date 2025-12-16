@@ -13,6 +13,7 @@ class AiPrompt extends Model
         'title',
         'content',
         'ai_provider',
+        'deep_thinking_enabled',
         'is_active',
         'is_default',
     ];
@@ -20,6 +21,7 @@ class AiPrompt extends Model
     protected $casts = [
         'is_active' => 'boolean',
         'is_default' => 'boolean',
+        'deep_thinking_enabled' => 'boolean',
     ];
 
     public function user(): BelongsTo

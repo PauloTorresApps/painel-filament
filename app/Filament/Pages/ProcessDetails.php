@@ -298,6 +298,7 @@ class ProcessDetails extends Page
                 $this->dadosBasicos,
                 $promptPadrao->content,
                 $promptPadrao->ai_provider ?? 'gemini', // Provider de IA (gemini ou deepseek)
+                $promptPadrao->deep_thinking_enabled ?? true, // Modo de pensamento profundo (DeepSeek)
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
                 $this->judicialUserId

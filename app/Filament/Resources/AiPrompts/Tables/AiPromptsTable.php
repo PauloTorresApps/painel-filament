@@ -50,6 +50,13 @@ class AiPromptsTable
             })
             ->sortable();
 
+        $columns[] = IconColumn::make('deep_thinking_enabled')
+            ->label('Deep Think')
+            ->boolean()
+            ->sortable()
+            ->tooltip('Modo de Pensamento Profundo ativado')
+            ->toggleable(isToggledHiddenByDefault: false);
+
         $columns[] = TextColumn::make('content')
             ->label('Conteúdo')
             ->searchable()
