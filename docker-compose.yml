@@ -66,7 +66,7 @@ services:
     networks:
       - painel_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-painel_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-painel_user} -d ${DB_DATABASE:-painel}"]
       interval: 10s
       timeout: 5s
       retries: 5

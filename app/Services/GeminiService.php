@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
 class GeminiService implements AIProviderInterface
 {
@@ -107,8 +106,11 @@ class GeminiService implements AIProviderInterface
             $descricao = $doc['descricao'] ?? "Documento {$docNum}";
             $texto = $doc['texto'] ?? '';
 
+            // Trunca documentos muito grandes para evitar exceder limite de tokens
+            $textoTruncado = $this->truncateDocument($texto);
+
             $prompt .= "### DOCUMENTO {$docNum}: {$descricao}\n\n";
-            $prompt .= $texto . "\n\n";
+            $prompt .= $textoTruncado . "\n\n";
             $prompt .= "---\n\n";
         }
 
@@ -138,6 +140,33 @@ class GeminiService implements AIProviderInterface
         }, $assuntos);
 
         return implode(', ', $nomes);
+    }
+
+    /**
+     * Trunca documentos muito grandes para evitar exceder limite de tokens da API
+     * Limita cada documento a aproximadamente 15.000 caracteres (~3.750 tokens)
+     * mantendo início e fim do documento para contexto
+     */
+    private function truncateDocument(string $texto): string
+    {
+        $maxChars = 15000; // ~3.750 tokens (assumindo ~4 chars por token)
+
+        if (mb_strlen($texto) <= $maxChars) {
+            return $texto;
+        }
+
+        // Para documentos muito grandes, pega 70% do início e 30% do fim
+        $inicioChars = (int) ($maxChars * 0.7);
+        $fimChars = (int) ($maxChars * 0.3);
+
+        $inicio = mb_substr($texto, 0, $inicioChars);
+        $fim = mb_substr($texto, -$fimChars);
+
+        $caracteresOmitidos = mb_strlen($texto) - $maxChars;
+
+        return $inicio .
+               "\n\n[... DOCUMENTO TRUNCADO - {$caracteresOmitidos} caracteres omitidos da parte central ...]\n\n" .
+               $fim;
     }
 
     /**

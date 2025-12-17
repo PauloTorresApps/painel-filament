@@ -5,7 +5,7 @@ echo "🚀 Iniciando Painel de Análise de Processos..."
 
 # Aguarda banco de dados estar pronto
 echo "⏳ Aguardando PostgreSQL..."
-until pg_isready -h postgres -U ${DB_USERNAME:-painel_user} > /dev/null 2>&1; do
+until pg_isready -h postgres -U ${DB_USERNAME:-painel_user} -d ${DB_DATABASE:-painel} > /dev/null 2>&1; do
     echo "  Aguardando PostgreSQL ficar disponível..."
     sleep 2
 done
