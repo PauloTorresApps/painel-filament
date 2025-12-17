@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y \
     ghostscript \
     && rm -rf /var/lib/apt/lists/*
 
+# Verificar instalação do pdftotext (necessário para spatie/pdf-to-text)
+RUN which pdftotext && pdftotext -v
+
 # Configurar extensão GD com suporte a JPEG e FreeType
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg
 
@@ -64,6 +67,7 @@ RUN chmod 644 /usr/local/etc/php-fpm.d/www.conf
 COPY composer.json composer.lock /var/www/html/
 
 # Instalar dependências do Composer (como root para criar vendor)
+# Isso inclui spatie/pdf-to-text que depende do poppler-utils (pdftotext) instalado acima
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 # Copiar resto dos arquivos do projeto
