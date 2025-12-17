@@ -79,8 +79,13 @@ RUN composer dump-autoload --optimize && \
     chown -R appuser:appuser /var/www/html && \
     chmod -R 775 storage bootstrap/cache database
 
+# Copiar e tornar executável o entrypoint
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Expor porta do PHP-FPM
 EXPOSE 9000
 
-# Comando padrão (PHP-FPM precisa rodar como root e faz downgrade automático)
+# Definir entrypoint e comando padrão
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["php-fpm"]

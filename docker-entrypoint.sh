@@ -19,10 +19,21 @@ until redis-cli -h redis ping > /dev/null 2>&1; do
 done
 echo "✅ Redis está pronto!"
 
-# Gera APP_KEY se não existir
-if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:CHANGE_THIS_KEY" ]; then
-    echo "🔑 Gerando APP_KEY..."
-    php artisan key:generate --force
+# Gera APP_KEY se não existir ou estiver vazia
+if [ -f .env ]; then
+    # Lê o valor de APP_KEY do arquivo .env
+    ENV_APP_KEY=$(grep "^APP_KEY=" .env | cut -d '=' -f2)
+
+    # Verifica se está vazia, não definida ou com valor padrão
+    if [ -z "$ENV_APP_KEY" ] || [ "$ENV_APP_KEY" = "base64:CHANGE_THIS_KEY" ] || [ "$ENV_APP_KEY" = "base64:temp" ]; then
+        echo "🔑 APP_KEY não encontrada ou inválida. Gerando nova chave..."
+        php artisan key:generate --force --ansi
+        echo "✅ APP_KEY gerada com sucesso!"
+    else
+        echo "✅ APP_KEY já está configurada"
+    fi
+else
+    echo "⚠️  Arquivo .env não encontrado. Pulando geração de APP_KEY."
 fi
 
 # Cria link simbólico do storage
