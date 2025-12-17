@@ -15,8 +15,15 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::firstOrCreate(
-            ['email' => 'admin@example.com'],
+        // First, create permissions and roles
+        $this->call([
+            PermissionSeeder::class,
+            SystemSeeder::class,
+        ]);
+
+        // Then create user and assign Admin role
+        $user = User::firstOrCreate(
+            ['email' => 'admin@admin.com'],
             [
                 'name' => 'Admin',
                 'password' => '123456789',
@@ -24,8 +31,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $this->call([
-            PermissionSeeder::class,
-        ]);
+        // Assign Admin role to the user
+        $user->assignRole('Admin');
     }
 }
