@@ -17,6 +17,10 @@ class DocumentAnalysisStatusWidget extends Widget
 
     public ?string $numeroProcesso = null;
 
+    public int $page = 1;
+
+    public int $perPage = 10;
+
     public function mount(?string $numeroProcesso = null): void
     {
         $this->numeroProcesso = $numeroProcesso;
@@ -31,7 +35,25 @@ class DocumentAnalysisStatusWidget extends Widget
             $query->where('numero_processo', $this->numeroProcesso);
         }
 
-        return $query->limit(10)->get();
+        return $query->paginate($this->perPage, ['*'], 'page', $this->page);
+    }
+
+    public function nextPage(): void
+    {
+        $this->page++;
+    }
+
+    public function previousPage(): void
+    {
+        if ($this->page > 1) {
+            $this->page--;
+        }
+    }
+
+    public function getTotalPages(): int
+    {
+        $total = DocumentAnalysis::where('user_id', Auth::id())->count();
+        return (int) ceil($total / $this->perPage);
     }
 
     public function getProcessingCount(): int

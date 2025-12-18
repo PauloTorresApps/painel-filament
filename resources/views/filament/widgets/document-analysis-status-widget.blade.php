@@ -53,10 +53,11 @@
 
         {{-- Lista de Análises Recentes --}}
         @php
-            $analyses = $this->getAnalyses();
+            $analysesPaginated = $this->getAnalyses();
+            $analyses = $analysesPaginated->items();
         @endphp
 
-        @if($analyses->count() > 0)
+        @if(count($analyses) > 0)
             <div class="space-y-2">
                 <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Análises Recentes</h4>
 
@@ -116,7 +117,49 @@
                     </div>
                 @endforeach
 
-                @if($analyses->count() >= 10)
+                {{-- Controles de Paginação --}}
+                @if($analysesPaginated->hasPages())
+                    <div class="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-2">
+                            <button
+                                wire:click="previousPage"
+                                @disabled($analysesPaginated->onFirstPage())
+                                class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition
+                                    {{ $analysesPaginated->onFirstPage()
+                                        ? 'text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-800 cursor-not-allowed'
+                                        : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600' }}">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                </svg>
+                                Anterior
+                            </button>
+
+                            <span class="text-xs text-gray-600 dark:text-gray-400">
+                                Página {{ $analysesPaginated->currentPage() }} de {{ $analysesPaginated->lastPage() }}
+                                <span class="text-gray-400 dark:text-gray-500">•</span>
+                                {{ $analysesPaginated->total() }} {{ $analysesPaginated->total() === 1 ? 'análise' : 'análises' }}
+                            </span>
+
+                            <button
+                                wire:click="nextPage"
+                                @disabled(!$analysesPaginated->hasMorePages())
+                                class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition
+                                    {{ !$analysesPaginated->hasMorePages()
+                                        ? 'text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-800 cursor-not-allowed'
+                                        : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600' }}">
+                                Próxima
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <a href="{{ route('filament.admin.resources.document-analyses.index') }}"
+                           class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
+                            Ver todas →
+                        </a>
+                    </div>
+                @else
                     <div class="text-center pt-2">
                         <a href="{{ route('filament.admin.resources.document-analyses.index') }}"
                            class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
