@@ -105,32 +105,23 @@ class AnalyzeProcessDocuments implements ShouldQueue
                     );
 
                     // Armazena informações do documento processado
-                    $documentosProcessados[] = [
+                    $docData = [
                         'descricao' => $documento['descricao'] ?? "Documento {$processados}",
                         'texto' => $texto,
                         'id_documento' => $documento['idDocumento'],
                         'dataHora' => $documento['dataHora'] ?? null,
                     ];
 
-                    // Formata classe e assuntos
-                    $classeProcessual = $this->contextoDados['classeProcessualNome']
-                        ?? $this->contextoDados['classeProcessual']
-                        ?? null;
+                    // Se for Gemini, inclui PDF base64 para usar File API
+                    if ($this->aiProvider === 'gemini') {
+                        $docData['pdf_base64'] = $documentoCompleto['conteudo'];
+                        Log::info('Incluindo PDF base64 para Gemini File API', [
+                            'id_documento' => $documento['idDocumento'],
+                            'pdf_size' => strlen($documentoCompleto['conteudo'])
+                        ]);
+                    }
 
-                    $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
-
-                    // Cria registro no banco para rastreamento
-                    DocumentAnalysis::create([
-                        'user_id' => $this->userId,
-                        'numero_processo' => $this->numeroProcesso,
-                        'classe_processual' => $classeProcessual,
-                        'assuntos' => $assuntos,
-                        'id_documento' => $documento['idDocumento'],
-                        'descricao_documento' => $documento['descricao'] ?? null,
-                        'extracted_text' => $texto,
-                        'status' => 'processing',
-                        'total_characters' => mb_strlen($texto),
-                    ]);
+                    $documentosProcessados[] = $docData;
 
                     // Notifica progresso
                     if ($processados % 5 == 0 || $processados == $totalDocumentos) {
@@ -160,6 +151,36 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 );
                 return;
             }
+
+            // Formata classe e assuntos
+            $classeProcessual = $this->contextoDados['classeProcessualNome']
+                ?? $this->contextoDados['classeProcessual']
+                ?? null;
+
+            $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
+
+            // Calcula total de caracteres de todos os documentos
+            $totalCharacters = array_reduce($documentosProcessados, function($carry, $doc) {
+                return $carry + mb_strlen($doc['texto'] ?? '');
+            }, 0);
+
+            // Cria UM ÚNICO registro para o processo inteiro
+            $documentAnalysis = DocumentAnalysis::create([
+                'user_id' => $this->userId,
+                'numero_processo' => $this->numeroProcesso,
+                'classe_processual' => $classeProcessual,
+                'assuntos' => $assuntos,
+                'descricao_documento' => count($documentosProcessados) . ' documento(s) do processo',
+                'extracted_text' => '', // Será preenchido depois com a análise
+                'status' => 'processing',
+                'total_characters' => $totalCharacters,
+            ]);
+
+            Log::info('Registro de análise criado', [
+                'analysis_id' => $documentAnalysis->id,
+                'numero_processo' => $this->numeroProcesso,
+                'total_documentos' => count($documentosProcessados)
+            ]);
 
             // Processa documentos em lotes para evitar erro 413 (payload muito grande)
             // Limite configurável via env (padrão: 10 documentos por lote)
@@ -206,15 +227,17 @@ class AnalyzeProcessDocuments implements ShouldQueue
             $endTime = microtime(true);
             $processingTime = (int) (($endTime - $startTime) * 1000);
 
-            // Atualiza todos os registros com a análise completa
-            DocumentAnalysis::where('user_id', $this->userId)
-                ->where('numero_processo', $this->numeroProcesso)
-                ->where('status', 'processing')
-                ->update([
-                    'ai_analysis' => $analiseCompleta,
-                    'status' => 'completed',
-                    'processing_time_ms' => $processingTime,
-                ]);
+            // Atualiza o registro com a análise completa
+            $documentAnalysis->update([
+                'ai_analysis' => $analiseCompleta,
+                'status' => 'completed',
+                'processing_time_ms' => $processingTime,
+            ]);
+
+            Log::info('Análise concluída e registro atualizado', [
+                'analysis_id' => $documentAnalysis->id,
+                'processing_time_ms' => $processingTime
+            ]);
 
             // Notifica sucesso
             $this->sendNotification(
@@ -230,14 +253,13 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Marca como falho
-            DocumentAnalysis::where('user_id', $this->userId)
-                ->where('numero_processo', $this->numeroProcesso)
-                ->where('status', 'processing')
-                ->update([
+            // Marca como falho (se o registro foi criado)
+            if (isset($documentAnalysis)) {
+                $documentAnalysis->update([
                     'status' => 'failed',
                     'error_message' => $e->getMessage(),
                 ]);
+            }
 
             $this->sendNotification(
                 User::find($this->userId),

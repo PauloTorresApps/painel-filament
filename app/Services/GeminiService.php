@@ -11,11 +11,13 @@ class GeminiService implements AIProviderInterface
     private string $apiKey;
     private string $apiUrl;
     private string $model;
+    private string $fileApiUrl;
 
     public function __construct()
     {
         $this->apiKey = config('services.gemini.api_key');
         $this->apiUrl = config('services.gemini.api_url');
+        $this->fileApiUrl = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
         $this->model = config('services.gemini.model', 'gemini-1.5-flash');
 
         if (empty($this->apiKey)) {
@@ -27,7 +29,7 @@ class GeminiService implements AIProviderInterface
      * Analisa documentos do processo com contexto
      *
      * @param string $promptTemplate Prompt do usuário
-     * @param array $documentos Array de documentos com texto extraído
+     * @param array $documentos Array de documentos com texto extraído ou PDFs base64
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
      * @param bool $deepThinkingEnabled Ignorado no Gemini (compatibilidade com interface)
      * @return string Análise gerada pela IA
@@ -35,14 +37,19 @@ class GeminiService implements AIProviderInterface
     public function analyzeDocuments(string $promptTemplate, array $documentos, array $contextoDados, bool $deepThinkingEnabled = true): string
     {
         try {
-            // Monta o prompt completo com contexto
-            $prompt = $this->buildPrompt($promptTemplate, $documentos, $contextoDados);
+            // Detecta se documentos têm PDFs (conteúdo base64)
+            $usarFileAPI = $this->shouldUseFileAPI($documentos);
 
-            // Faz a chamada para a API
-            // Nota: deepThinkingEnabled é ignorado no Gemini (recurso específico do DeepSeek)
-            $response = $this->callGeminiAPI($prompt);
-
-            return $response;
+            if ($usarFileAPI) {
+                // Usa File API para documentos com PDF
+                Log::info('Usando Gemini File API para análise de documentos');
+                return $this->analyzeWithFileAPI($promptTemplate, $documentos, $contextoDados);
+            } else {
+                // Usa método tradicional (texto extraído)
+                Log::info('Usando método tradicional (texto) para análise');
+                $prompt = $this->buildPrompt($promptTemplate, $documentos, $contextoDados);
+                return $this->callGeminiAPI($prompt);
+            }
 
         } catch (\Exception $e) {
             Log::error('Erro ao chamar Gemini API', [
@@ -51,6 +58,252 @@ class GeminiService implements AIProviderInterface
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Verifica se deve usar File API (se documentos têm PDF base64)
+     */
+    private function shouldUseFileAPI(array $documentos): bool
+    {
+        foreach ($documentos as $doc) {
+            if (isset($doc['pdf_base64']) && !empty($doc['pdf_base64'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Analisa documentos usando Gemini File API
+     */
+    private function analyzeWithFileAPI(string $promptTemplate, array $documentos, array $contextoDados): string
+    {
+        $uploadedFiles = [];
+        $tempFiles = [];
+
+        try {
+            // 1. Upload dos PDFs para Gemini
+            foreach ($documentos as $index => $doc) {
+                if (isset($doc['pdf_base64'])) {
+                    // Salva PDF temporariamente
+                    $tempPath = sys_get_temp_dir() . '/gemini_doc_' . uniqid() . '.pdf';
+                    file_put_contents($tempPath, base64_decode($doc['pdf_base64']));
+                    $tempFiles[] = $tempPath;
+
+                    // Upload para Gemini File API
+                    $fileUri = $this->uploadFile($tempPath, $doc['descricao'] ?? "Documento " . ($index + 1));
+                    $uploadedFiles[] = [
+                        'uri' => $fileUri,
+                        'descricao' => $doc['descricao'] ?? "Documento " . ($index + 1)
+                    ];
+
+                    Log::info("PDF uploaded to Gemini", [
+                        'descricao' => $doc['descricao'],
+                        'file_uri' => $fileUri
+                    ]);
+                }
+            }
+
+            // 2. Monta o prompt com contexto (sem texto dos documentos)
+            $prompt = $this->buildPromptForFileAPI($promptTemplate, $uploadedFiles, $contextoDados);
+
+            // 3. Chama API com referências aos arquivos
+            $response = $this->callGeminiAPIWithFiles($prompt, $uploadedFiles);
+
+            return $response;
+
+        } finally {
+            // Limpa arquivos temporários
+            foreach ($tempFiles as $tempFile) {
+                if (file_exists($tempFile)) {
+                    unlink($tempFile);
+                }
+            }
+        }
+    }
+
+    /**
+     * Faz upload de arquivo para Gemini File API
+     * @return string URI do arquivo no Gemini
+     */
+    private function uploadFile(string $filePath, string $displayName): string
+    {
+        // Primeira requisição: inicia upload e obtém upload URL
+        $response = Http::timeout(60)
+            ->withHeaders([
+                'X-Goog-Upload-Protocol' => 'resumable',
+                'X-Goog-Upload-Command' => 'start',
+                'X-Goog-Upload-Header-Content-Length' => filesize($filePath),
+                'X-Goog-Upload-Header-Content-Type' => 'application/pdf',
+                'Content-Type' => 'application/json',
+            ])
+            ->post($this->fileApiUrl . '?key=' . $this->apiKey, [
+                'file' => [
+                    'display_name' => $displayName
+                ]
+            ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Falha ao iniciar upload: ' . $response->body());
+        }
+
+        $uploadUrl = $response->header('X-Goog-Upload-URL');
+
+        if (!$uploadUrl) {
+            throw new \Exception('Upload URL não retornada pela API');
+        }
+
+        // Segunda requisição: upload do conteúdo
+        $fileContent = file_get_contents($filePath);
+        $uploadResponse = Http::timeout(120)
+            ->withHeaders([
+                'Content-Length' => strlen($fileContent),
+                'X-Goog-Upload-Offset' => '0',
+                'X-Goog-Upload-Command' => 'upload, finalize',
+            ])
+            ->withBody($fileContent, 'application/pdf')
+            ->post($uploadUrl);
+
+        if (!$uploadResponse->successful()) {
+            throw new \Exception('Falha no upload do arquivo: ' . $uploadResponse->body());
+        }
+
+        $data = $uploadResponse->json();
+
+        if (!isset($data['file']['uri'])) {
+            throw new \Exception('URI do arquivo não retornada');
+        }
+
+        return $data['file']['uri'];
+    }
+
+    /**
+     * Monta o prompt para File API (sem conteúdo dos documentos, apenas referências)
+     */
+    private function buildPromptForFileAPI(string $template, array $uploadedFiles, array $contextoDados): string
+    {
+        // Extrai informações do contexto
+        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $tipoParte = $this->identificarTipoParte($contextoDados);
+
+        // Substitui variáveis no template
+        $prompt = str_replace(
+            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]'],
+            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte],
+            $template
+        );
+
+        // CONTEXTO INICIAL
+        $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
+        $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
+        $contextoInicial .= "**Assuntos:** {$assuntos}\n";
+        $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
+        $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
+
+        if (!empty($contextoDados['valorCausa'])) {
+            $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+        }
+
+        $contextoInicial .= "\n---\n\n";
+
+        // Adiciona o contexto inicial ANTES do prompt do usuário
+        $prompt = $contextoInicial . $prompt;
+
+        // Lista os documentos anexados
+        $prompt .= "\n\n## DOCUMENTOS ANEXADOS PARA ANÁLISE\n\n";
+        $prompt .= "Os seguintes documentos em PDF foram anexados para sua análise:\n\n";
+
+        foreach ($uploadedFiles as $index => $file) {
+            $docNum = $index + 1;
+            $prompt .= "{$docNum}. **{$file['descricao']}**\n";
+        }
+
+        $prompt .= "\n---\n\n";
+
+        // Instruções finais
+        $prompt .= "\n## INSTRUÇÕES\n";
+        $prompt .= "Por favor, analise TODOS os documentos PDF anexados acima considerando o contexto processual fornecido. ";
+        $prompt .= "Retorne uma análise estruturada e objetiva, destacando pontos relevantes de cada documento. ";
+        $prompt .= "Leia completamente cada PDF para fornecer uma análise precisa e detalhada.";
+
+        return $prompt;
+    }
+
+    /**
+     * Chama Gemini API com arquivos anexados via File API
+     */
+    private function callGeminiAPIWithFiles(string $prompt, array $uploadedFiles): string
+    {
+        $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
+
+        // Monta array de parts: primeiro o prompt, depois os arquivos
+        $parts = [
+            ['text' => $prompt]
+        ];
+
+        // Adiciona referências aos arquivos
+        foreach ($uploadedFiles as $file) {
+            $parts[] = [
+                'fileData' => [
+                    'fileUri' => $file['uri'],
+                    'mimeType' => 'application/pdf'
+                ]
+            ];
+        }
+
+        $response = Http::timeout(180) // 3 minutos - File API pode demorar mais
+            ->retry(3, 2000)
+            ->post($url, [
+                'contents' => [
+                    [
+                        'parts' => $parts
+                    ]
+                ],
+                'generationConfig' => [
+                    'temperature' => 0.4,
+                    'topK' => 32,
+                    'topP' => 0.95,
+                    'maxOutputTokens' => 8192,
+                ],
+                'safetySettings' => [
+                    [
+                        'category' => 'HARM_CATEGORY_HARASSMENT',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                        'threshold' => 'BLOCK_NONE'
+                    ]
+                ]
+            ]);
+
+        if (!$response->successful()) {
+            $statusCode = $response->status();
+            $errorBody = $response->json();
+            $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
+
+            $friendlyMessage = $this->translateGeminiError($statusCode, $errorMessage);
+            throw new \Exception($friendlyMessage);
+        }
+
+        $data = $response->json();
+        $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+        if (empty($text)) {
+            throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
+        }
+
+        return $text;
     }
 
     /**
