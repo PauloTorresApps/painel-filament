@@ -149,7 +149,7 @@ class DocumentAnalysis extends Model
     public function canBeResumed(): bool
     {
         return $this->is_resumable
-            && $this->status === 'processing'
+            && in_array($this->status, ['processing', 'failed'])
             && $this->processed_documents_count < $this->total_documents;
     }
 

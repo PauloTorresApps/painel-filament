@@ -103,7 +103,14 @@ class ProcessDetails extends Page
                 ->action(function () {
                     $this->enviarParaAnalise();
                 })
-                ->visible(fn () => !empty($this->documentos)),
+                ->visible(fn () => !empty($this->documentos))
+                ->disabled(function () {
+                    // Desabilita se já existe análise em andamento
+                    return \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                        ->where('numero_processo', $this->numeroProcesso)
+                        ->where('status', 'processing')
+                        ->exists();
+                }),
 
             \Filament\Actions\Action::make('voltar')
                 ->label('Voltar')
@@ -119,6 +126,28 @@ class ProcessDetails extends Page
     public function enviarParaAnalise(): void
     {
         try {
+            // Verifica se já existe uma análise em andamento para este processo
+            $analiseEmAndamento = \App\Models\DocumentAnalysis::where('user_id', auth()->user()->id)
+                ->where('numero_processo', $this->numeroProcesso)
+                ->where('status', 'processing')
+                ->exists();
+
+            if ($analiseEmAndamento) {
+                \Filament\Notifications\Notification::make()
+                    ->title('⚠️ Análise Já em Andamento')
+                    ->body('Já existe uma análise em processamento para este processo. Aguarde a conclusão ou cancele a análise anterior antes de iniciar uma nova.')
+                    ->warning()
+                    ->persistent()
+                    ->send();
+
+                Log::info('Tentativa de análise duplicada bloqueada', [
+                    'user_id' => auth()->user()->id,
+                    'numero_processo' => $this->numeroProcesso
+                ]);
+
+                return;
+            }
+
             // Busca o prompt padrão do usuário para o sistema atual
             $promptPadrao = \App\Models\AiPrompt::where('user_id', auth()->user()->id)
                 ->where('system_id', 1) // Assumindo system_id 1 para análise de processos

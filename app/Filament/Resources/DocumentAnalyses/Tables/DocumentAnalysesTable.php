@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\DocumentAnalyses\Tables;
 
+use App\Jobs\ResumeAnalysisJob;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 
 class DocumentAnalysesTable
 {
@@ -53,6 +56,31 @@ class DocumentAnalysesTable
                     })
                     ->sortable(),
 
+                TextColumn::make('progress')
+                    ->label('Progresso')
+                    ->state(function ($record): string {
+                        if ($record->total_documents > 0) {
+                            $percentage = $record->getProgressPercentage();
+                            return "{$record->processed_documents_count}/{$record->total_documents} ({$percentage}%)";
+                        }
+                        return '-';
+                    })
+                    ->badge()
+                    ->color(function ($record): string {
+                        if ($record->total_documents === 0) {
+                            return 'gray';
+                        }
+                        $percentage = $record->getProgressPercentage();
+                        if ($percentage >= 100) {
+                            return 'success';
+                        } elseif ($percentage >= 50) {
+                            return 'warning';
+                        } else {
+                            return 'info';
+                        }
+                    })
+                    ->toggleable(),
+
                 TextColumn::make('total_characters')
                     ->label('Caracteres')
                     ->numeric()
@@ -89,6 +117,32 @@ class DocumentAnalysesTable
             ])
             ->recordActions([
                 ViewAction::make(),
+                Action::make('resume')
+                    ->label('Retomar')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Retomar Análise')
+                    ->modalDescription(fn ($record) => "Deseja retomar a análise do processo {$record->numero_processo} de onde parou? Progresso atual: {$record->getProgressPercentage()}%")
+                    ->action(function ($record) {
+                        if (!$record->canBeResumed()) {
+                            Notification::make()
+                                ->title('Não é Possível Retomar')
+                                ->body('Esta análise não pode ser retomada. Status: ' . $record->status)
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
+                        ResumeAnalysisJob::dispatch($record->id);
+
+                        Notification::make()
+                            ->title('Retomada Iniciada')
+                            ->body("A análise será retomada de onde parou ({$record->getProgressPercentage()}%)")
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn ($record) => $record->status === 'failed' && $record->is_resumable && $record->processed_documents_count < $record->total_documents),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
