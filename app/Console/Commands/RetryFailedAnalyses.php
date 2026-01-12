@@ -56,6 +56,14 @@ class RetryFailedAnalyses extends Command
         $this->line("Processo: {$analysis->numero_processo}");
         $this->line("Erro anterior: {$analysis->error_message}");
 
+        // Verifica se os parâmetros do job estão armazenados
+        if (empty($analysis->job_parameters)) {
+            $this->error("✗ Esta análise não possui os parâmetros originais armazenados.");
+            $this->line("Isso acontece com análises criadas antes da atualização do sistema.");
+            $this->line("Não é possível reprocessar automaticamente. Por favor, envie novamente pela interface.");
+            return 1;
+        }
+
         // Reseta status
         $analysis->update([
             'status' => 'pending',
@@ -63,8 +71,22 @@ class RetryFailedAnalyses extends Command
             'ai_analysis' => null,
         ]);
 
-        // Despacha o job
-        AnalyzeProcessDocuments::dispatch($analysisId, $analysis->user_id);
+        // Extrai parâmetros salvos
+        $params = $analysis->job_parameters;
+
+        // Despacha o job com todos os parâmetros originais
+        AnalyzeProcessDocuments::dispatch(
+            $analysis->user_id,
+            $analysis->numero_processo,
+            $params['documentos'] ?? [],
+            $params['contextoDados'] ?? [],
+            $params['promptTemplate'] ?? '',
+            $params['aiProvider'] ?? 'gemini',
+            $params['deepThinkingEnabled'] ?? false,
+            $params['userLogin'] ?? '',
+            $params['senha'] ?? '',
+            $params['judicialUserId'] ?? null
+        );
 
         $this->info("✓ Job despachado para a fila");
         $this->line("Use 'php artisan queue:work' para processar");
@@ -92,20 +114,53 @@ class RetryFailedAnalyses extends Command
         $bar = $this->output->createProgressBar($failed->count());
         $bar->start();
 
+        $skipped = 0;
+        $dispatched = 0;
+
         foreach ($failed as $analysis) {
+            // Pula análises sem parâmetros salvos
+            if (empty($analysis->job_parameters)) {
+                $skipped++;
+                $bar->advance();
+                continue;
+            }
+
             $analysis->update([
                 'status' => 'pending',
                 'error_message' => null,
                 'ai_analysis' => null,
             ]);
 
-            AnalyzeProcessDocuments::dispatch($analysis->id, $analysis->user_id);
+            // Extrai parâmetros salvos
+            $params = $analysis->job_parameters;
+
+            // Despacha o job com todos os parâmetros originais
+            AnalyzeProcessDocuments::dispatch(
+                $analysis->user_id,
+                $analysis->numero_processo,
+                $params['documentos'] ?? [],
+                $params['contextoDados'] ?? [],
+                $params['promptTemplate'] ?? '',
+                $params['aiProvider'] ?? 'gemini',
+                $params['deepThinkingEnabled'] ?? false,
+                $params['userLogin'] ?? '',
+                $params['senha'] ?? '',
+                $params['judicialUserId'] ?? null
+            );
+
+            $dispatched++;
             $bar->advance();
         }
 
         $bar->finish();
         $this->newLine();
-        $this->info("✓ {$failed->count()} job(s) despachados para a fila");
+        $this->info("✓ {$dispatched} job(s) despachados para a fila");
+
+        if ($skipped > 0) {
+            $this->warn("⚠ {$skipped} análise(s) puladas (sem parâmetros armazenados)");
+            $this->line("Análises antigas precisam ser reenviadas pela interface.");
+        }
+
         $this->line("Use 'php artisan queue:work' para processar");
 
         return 0;

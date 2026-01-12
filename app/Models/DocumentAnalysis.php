@@ -20,11 +20,13 @@ class DocumentAnalysis extends Model
         'error_message',
         'total_characters',
         'processing_time_ms',
+        'job_parameters',
     ];
 
     protected $casts = [
         'total_characters' => 'integer',
         'processing_time_ms' => 'integer',
+        'job_parameters' => 'array',
     ];
 
     public function user(): BelongsTo

@@ -174,6 +174,16 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 'extracted_text' => '', // Será preenchido depois com a análise
                 'status' => 'processing',
                 'total_characters' => $totalCharacters,
+                'job_parameters' => [
+                    'documentos' => $this->documentos,
+                    'contextoDados' => $this->contextoDados,
+                    'promptTemplate' => $this->promptTemplate,
+                    'aiProvider' => $this->aiProvider,
+                    'deepThinkingEnabled' => $this->deepThinkingEnabled,
+                    'userLogin' => $this->userLogin,
+                    'senha' => $this->senha,
+                    'judicialUserId' => $this->judicialUserId,
+                ],
             ]);
 
             Log::info('Registro de análise criado', [

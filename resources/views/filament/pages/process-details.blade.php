@@ -422,8 +422,8 @@
                                                                             Visualizar
                                                                         </button>
 
-                                                                        @if($nivelSigilo == 0 && !$isArquivoMedia)
-                                                                            {{-- Documento público e não é mídia - pode enviar para análise --}}
+                                                                        @if(!$isArquivoMedia)
+                                                                            {{-- Documento não é mídia - pode enviar para análise --}}
                                                                             <button
                                                                                 type="button"
                                                                                 class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 rounded-lg transition shadow-sm hover:shadow border border-indigo-200 dark:border-indigo-800/40"
@@ -434,15 +434,7 @@
                                                                                 </svg>
                                                                                 Enviar para Análise
                                                                             </button>
-                                                                        @elseif($nivelSigilo > 0)
-                                                                            {{-- Documento sigiloso - mostra badge de alerta --}}
-                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800/40" title="Documento sigiloso não pode ser enviado para análise">
-                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                                                                                </svg>
-                                                                                Sigiloso (Nível {{ $nivelSigilo }})
-                                                                            </span>
-                                                                        @elseif($isArquivoMedia)
+                                                                        @else
                                                                             {{-- Arquivo de mídia - não pode ser enviado para análise --}}
                                                                             <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600" title="Arquivos de mídia (imagens e vídeos) não podem ser enviados para análise">
                                                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

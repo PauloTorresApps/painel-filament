@@ -99,7 +99,7 @@ class ProcessDetails extends Page
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Confirmar Análise de Documentos')
-                ->modalDescription('Todos os documentos não sigilosos e não-mídia serão enviados para análise pela IA. Esta operação pode levar alguns minutos.')
+                ->modalDescription('Todos os documentos não-mídia serão enviados para análise pela IA. Esta operação pode levar alguns minutos.')
                 ->action(function () {
                     $this->enviarParaAnalise();
                 })
@@ -155,23 +155,12 @@ class ProcessDetails extends Page
                 })->toArray()
             ]);
 
-            // Filtra apenas documentos não sigilosos, não-mídia e com conteúdo disponível
+            // Filtra apenas documentos não-mídia e com conteúdo disponível
             $documentosParaAnalise = collect($this->documentos)->filter(function ($doc) {
-                $nivelSigilo = $doc['nivelSigilo'] ?? 0;
                 $descricao = strtolower($doc['descricao'] ?? '');
                 $mimeType = strtolower($doc['mimetype'] ?? '');
 
-                // 1. Rejeita sigilosos
-                if ($nivelSigilo > 0) {
-                    Log::debug('Documento rejeitado: sigiloso', [
-                        'id' => $doc['idDocumento'] ?? 'sem_id',
-                        'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                        'nivelSigilo' => $nivelSigilo
-                    ]);
-                    return false;
-                }
-
-                // 2. Rejeita documentos HTML (atos ordinatórios sem conteúdo real)
+                // 1. Rejeita documentos HTML (atos ordinatórios sem conteúdo real)
                 if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) {
                     Log::debug('Documento rejeitado: HTML/sem conteúdo', [
                         'id' => $doc['idDocumento'] ?? 'sem_id',
@@ -181,7 +170,7 @@ class ProcessDetails extends Page
                     return false;
                 }
 
-                // 3. Rejeita mídias (imagens, vídeos)
+                // 2. Rejeita mídias (imagens, vídeos)
                 $extensoesMedia = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico'];
 
                 if (str_starts_with($mimeType, 'image/') || str_starts_with($mimeType, 'video/')) {
@@ -204,7 +193,7 @@ class ProcessDetails extends Page
                     }
                 }
 
-                // 4. Aceita apenas documentos com mimetype vazio ou application/pdf
+                // 3. Aceita apenas documentos com mimetype vazio ou application/pdf
                 $isPdfValido = empty($mimeType) ||
                                $mimeType === 'application/pdf' ||
                                str_starts_with($mimeType, 'application/pdf');
@@ -232,16 +221,12 @@ class ProcessDetails extends Page
                 $totalDocumentos = count($this->documentos);
 
                 // Conta motivos de exclusão
-                $sigilosos = collect($this->documentos)->filter(fn($d) => ($d['nivelSigilo'] ?? 0) > 0)->count();
-
                 $htmlSemConteudo = collect($this->documentos)->filter(function($doc) {
-                    if (($doc['nivelSigilo'] ?? 0) > 0) return false;
                     $mimeType = strtolower($doc['mimetype'] ?? '');
                     return $mimeType === 'text/html' || str_contains($mimeType, 'html');
                 })->count();
 
                 $midias = collect($this->documentos)->filter(function($doc) {
-                    if (($doc['nivelSigilo'] ?? 0) > 0) return false;
                     $mimeType = strtolower($doc['mimetype'] ?? '');
                     if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) return false;
 
@@ -262,7 +247,6 @@ class ProcessDetails extends Page
                 })->count();
 
                 $detalhes = [];
-                if ($sigilosos > 0) $detalhes[] = "{$sigilosos} sigiloso(s)";
                 if ($htmlSemConteudo > 0) $detalhes[] = "{$htmlSemConteudo} sem conteúdo disponível (HTML)";
                 if ($midias > 0) $detalhes[] = "{$midias} arquivo(s) de mídia";
 
@@ -272,7 +256,7 @@ class ProcessDetails extends Page
 
                 \Filament\Notifications\Notification::make()
                     ->title('📋 Nenhum Documento Elegível para Análise')
-                    ->body("Total: {$totalDocumentos} documento(s). {$mensagemDetalhes} Apenas documentos PDF com conteúdo disponível e não-sigilosos podem ser analisados.")
+                    ->body("Total: {$totalDocumentos} documento(s). {$mensagemDetalhes} Apenas documentos PDF com conteúdo disponível podem ser analisados.")
                     ->warning()
                     ->persistent()
                     ->send();
@@ -281,7 +265,6 @@ class ProcessDetails extends Page
                     'user_id' => auth()->user()->id,
                     'numero_processo' => $this->numeroProcesso,
                     'total_documentos' => $totalDocumentos,
-                    'sigilosos' => $sigilosos,
                     'html_sem_conteudo' => $htmlSemConteudo,
                     'midias' => $midias,
                     'detalhe_mensagem' => $mensagemDetalhes
