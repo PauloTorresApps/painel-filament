@@ -43,9 +43,16 @@ class DeepSeekService implements AIProviderInterface
      * @param array $documentos Array de documentos com texto extraído
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
      * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo (DeepSeek)
+     * @param \App\Models\DocumentAnalysis|null $documentAnalysis Model para persistir estado (não usado no DeepSeek)
      * @return string Análise gerada pela IA
      */
-    public function analyzeDocuments(string $promptTemplate, array $documentos, array $contextoDados, bool $deepThinkingEnabled = true): string
+    public function analyzeDocuments(
+        string $promptTemplate,
+        array $documentos,
+        array $contextoDados,
+        bool $deepThinkingEnabled = true,
+        ?\App\Models\DocumentAnalysis $documentAnalysis = null
+    ): string
     {
         try {
             // Pipeline de sumarização hierárquica para documentos muito grandes

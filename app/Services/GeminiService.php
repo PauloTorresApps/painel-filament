@@ -43,34 +43,27 @@ class GeminiService implements AIProviderInterface
      * @param array $documentos Array de documentos com texto extraído
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
      * @param bool $deepThinkingEnabled Ignorado no Gemini (compatibilidade com interface)
+     * @param \App\Models\DocumentAnalysis|null $documentAnalysis Model para persistir estado (opcional)
      * @return string Análise gerada pela IA
      */
-    public function analyzeDocuments(string $promptTemplate, array $documentos, array $contextoDados, bool $deepThinkingEnabled = true): string
-    {
+    public function analyzeDocuments(
+        string $promptTemplate,
+        array $documentos,
+        array $contextoDados,
+        bool $deepThinkingEnabled = true,
+        ?\App\Models\DocumentAnalysis $documentAnalysis = null
+    ): string {
         try {
-            // Pipeline de sumarização hierárquica para documentos muito grandes
-            $documentos = $this->applyHierarchicalSummarization($documentos);
+            // SEMPRE usa estratégia de Resumo Evolutivo para manter contexto completo
+            // independente do tamanho total dos documentos
+            Log::info('Iniciando análise com estratégia de Resumo Evolutivo', [
+                'total_documentos' => count($documentos),
+                'total_chars_estimate' => array_sum(array_map(fn($d) => mb_strlen($d['texto'] ?? ''), $documentos)),
+                'has_persistence' => $documentAnalysis !== null,
+                'analysis_id' => $documentAnalysis?->id
+            ]);
 
-            // Monta o prompt completo com contexto
-            $prompt = $this->buildPrompt($promptTemplate, $documentos, $contextoDados);
-
-            // Verifica se o prompt total excede o limite mesmo após sumarização
-            if (mb_strlen($prompt) > self::TOTAL_PROMPT_CHAR_LIMIT) {
-                Log::warning('Prompt total excede limite mesmo após sumarização. Aplicando estratégia de lotes.', [
-                    'total_chars' => mb_strlen($prompt),
-                    'limit' => self::TOTAL_PROMPT_CHAR_LIMIT,
-                    'num_documentos' => count($documentos)
-                ]);
-
-                // Estratégia de fallback: divide em lotes e sintetiza
-                return $this->analyzeBatches($promptTemplate, $documentos, $contextoDados);
-            }
-
-            // Faz a chamada para a API
-            // Nota: deepThinkingEnabled é ignorado no Gemini (recurso específico do DeepSeek)
-            $response = $this->callGeminiAPI($prompt);
-
-            return $response;
+            return $this->applyEvolutiveSummarization($promptTemplate, $documentos, $contextoDados, $documentAnalysis);
 
         } catch (\Exception $e) {
             Log::error('Erro ao chamar Gemini API', [
@@ -79,6 +72,191 @@ class GeminiService implements AIProviderInterface
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Aplica estratégia de Resumo Evolutivo para manter contexto completo do processo
+     *
+     * Cada documento é analisado junto com o resumo acumulado dos anteriores,
+     * criando uma narrativa evolutiva que preserva toda a história processual.
+     *
+     * @param string $promptTemplate Template do prompt do usuário
+     * @param array $documentos Array de documentos originais
+     * @param array $contextoDados Contexto do processo
+     * @param \App\Models\DocumentAnalysis|null $documentAnalysis Model para persistir estado (opcional)
+     * @return string Análise final completa
+     */
+    private function applyEvolutiveSummarization(
+        string $promptTemplate,
+        array $documentos,
+        array $contextoDados,
+        ?\App\Models\DocumentAnalysis $documentAnalysis = null
+    ): string {
+        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $tipoParte = $this->identificarTipoParte($contextoDados);
+
+        // Contexto inicial que será mantido em todas as iterações
+        $contextoBase = "# CONTEXTO DO PROCESSO\n\n";
+        $contextoBase .= "**Classe Processual:** {$nomeClasse}\n";
+        $contextoBase .= "**Assuntos:** {$assuntos}\n";
+        $contextoBase .= "**Você está analisando como:** {$tipoParte}\n";
+        $contextoBase .= "**Número do Processo:** {$numeroProcesso}\n";
+
+        if (!empty($contextoDados['valorCausa'])) {
+            $contextoBase .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+        }
+
+        $contextoBase .= "\n---\n\n";
+
+        $totalDocumentos = \count($documentos);
+
+        // Verifica se pode retomar de onde parou
+        $startIndex = 0;
+        $resumoEvolutivo = '';
+
+        if ($documentAnalysis && $documentAnalysis->canBeResumed()) {
+            $startIndex = $documentAnalysis->getNextDocumentIndex();
+            $resumoEvolutivo = $documentAnalysis->getEvolutionarySummary();
+
+            Log::info('Retomando Resumo Evolutivo de onde parou', [
+                'analysis_id' => $documentAnalysis->id,
+                'start_index' => $startIndex,
+                'total_documentos' => $totalDocumentos,
+                'progresso' => $documentAnalysis->getProgressPercentage() . '%'
+            ]);
+        } else {
+            // Inicializa novo processamento
+            if ($documentAnalysis) {
+                $documentAnalysis->initializeEvolutionaryAnalysis($totalDocumentos);
+            }
+
+            Log::info('Iniciando Resumo Evolutivo', [
+                'total_documentos' => $totalDocumentos,
+                'processo' => $numeroProcesso,
+                'analysis_id' => $documentAnalysis?->id
+            ]);
+        }
+
+        $documentosProcessados = $startIndex;
+
+        foreach ($documentos as $index => $doc) {
+            // Pula documentos já processados (retomada)
+            if ($index < $startIndex) {
+                continue;
+            }
+            $documentosProcessados++;
+            $docNum = $index + 1;
+            $descricao = $doc['descricao'] ?? "Documento {$docNum}";
+            $texto = $doc['texto'] ?? '';
+            $charCount = mb_strlen($texto);
+
+            Log::info("Processando documento {$docNum}/{$totalDocumentos}: {$descricao}", [
+                'chars' => $charCount,
+                'has_previous_summary' => !empty($resumoEvolutivo)
+            ]);
+
+            // Sumariza documento individualmente se muito grande
+            if ($charCount > self::SINGLE_DOC_CHAR_LIMIT) {
+                Log::info("Documento {$docNum} excede limite individual. Sumarizando antes de incorporar.");
+
+                // Rate limiting
+                if ($documentosProcessados > 1) {
+                    usleep(self::RATE_LIMIT_DELAY_MS * 1000);
+                }
+
+                $texto = $this->summarizeDocument($texto, $descricao);
+            }
+
+            // Monta prompt evolutivo
+            $promptEvolutivo = $contextoBase;
+
+            // Se há resumo anterior, inclui como contexto
+            if (!empty($resumoEvolutivo)) {
+                $promptEvolutivo .= "## RESUMO DOS DOCUMENTOS ANTERIORES\n\n";
+                $promptEvolutivo .= $resumoEvolutivo . "\n\n";
+                $promptEvolutivo .= "---\n\n";
+            }
+
+            // Adiciona documento atual
+            $promptEvolutivo .= "## NOVO DOCUMENTO PARA INCORPORAR\n\n";
+            $promptEvolutivo .= "### DOCUMENTO {$docNum}: {$descricao}\n\n";
+            $promptEvolutivo .= $texto . "\n\n";
+            $promptEvolutivo .= "---\n\n";
+
+            // Instruções para resumo evolutivo
+            if ($docNum < $totalDocumentos) {
+                // Ainda há mais documentos: gera resumo evolutivo
+                $promptEvolutivo .= "## TAREFA\n\n";
+                $promptEvolutivo .= "Atualize o resumo do processo incorporando o novo documento acima.\n\n";
+                $promptEvolutivo .= "**IMPORTANTE:**\n";
+                $promptEvolutivo .= "1. Mantenha a ordem cronológica dos eventos\n";
+                $promptEvolutivo .= "2. Destaque conexões causais (ex: 'decisão X baseada na petição Y')\n";
+                $promptEvolutivo .= "3. Preserve informações relevantes dos documentos anteriores\n";
+                $promptEvolutivo .= "4. Adicione informações importantes do novo documento\n";
+                $promptEvolutivo .= "5. Mantenha o resumo conciso mas completo (máximo 4-5 parágrafos)\n";
+                $promptEvolutivo .= "6. Use markdown para estruturar\n\n";
+                $promptEvolutivo .= "**FORMATO:** Retorne apenas o resumo atualizado, sem comentários adicionais.";
+            } else {
+                // Último documento: gera análise final conforme solicitado pelo usuário
+                $promptEvolutivo .= "## TAREFA FINAL\n\n";
+                $promptEvolutivo .= $promptTemplate . "\n\n";
+                $promptEvolutivo .= "**INSTRUÇÕES:**\n";
+                $promptEvolutivo .= "1. Considere TODOS os documentos analisados até agora\n";
+                $promptEvolutivo .= "2. Incorpore o último documento apresentado acima\n";
+                $promptEvolutivo .= "3. Forneça a análise completa conforme solicitado\n";
+                $promptEvolutivo .= "4. Mantenha a perspectiva cronológica e causal dos eventos\n";
+            }
+
+            // Rate limiting entre chamadas
+            if ($documentosProcessados > 1) {
+                usleep(self::RATE_LIMIT_DELAY_MS * 1000);
+            }
+
+            // Faz chamada à API
+            try {
+                $response = $this->callGeminiAPI($promptEvolutivo);
+
+                if ($docNum < $totalDocumentos) {
+                    // Atualiza resumo evolutivo para próxima iteração
+                    $resumoEvolutivo = $response;
+
+                    // PERSISTE o estado no banco de dados
+                    if ($documentAnalysis) {
+                        $documentAnalysis->updateEvolutionaryState($index, $resumoEvolutivo);
+
+                        Log::info("Estado evolutivo persistido após documento {$docNum}", [
+                            'analysis_id' => $documentAnalysis->id,
+                            'resumo_chars' => mb_strlen($resumoEvolutivo),
+                            'progresso' => $documentAnalysis->getProgressPercentage() . '%'
+                        ]);
+                    } else {
+                        Log::info("Resumo evolutivo atualizado após documento {$docNum}", [
+                            'resumo_chars' => mb_strlen($resumoEvolutivo)
+                        ]);
+                    }
+                } else {
+                    // Último documento: retorna análise final
+                    Log::info('Análise final gerada com sucesso via Resumo Evolutivo', [
+                        'total_documentos_processados' => $documentosProcessados,
+                        'analysis_id' => $documentAnalysis?->id
+                    ]);
+
+                    return $response;
+                }
+
+            } catch (\Exception $e) {
+                Log::error("Erro ao processar documento {$docNum} no Resumo Evolutivo", [
+                    'descricao' => $descricao,
+                    'error' => $e->getMessage()
+                ]);
+                throw new \Exception("Falha no Resumo Evolutivo no documento {$docNum} ({$descricao}): " . $e->getMessage());
+            }
+        }
+
+        // Fallback: se chegou aqui sem retornar, algo deu errado
+        throw new \Exception('Erro inesperado no Resumo Evolutivo: nenhuma análise final foi gerada');
     }
 
     /**

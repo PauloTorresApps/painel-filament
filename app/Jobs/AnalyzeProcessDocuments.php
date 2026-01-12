@@ -192,30 +192,28 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 'total_documentos' => count($documentosProcessados)
             ]);
 
-            // Envia TODOS os documentos juntos em uma única chamada
-            // Mantém contexto entre todos os documentos
+            // Envia TODOS os documentos juntos com Resumo Evolutivo
+            // O estado será persistido após cada documento processado
             Log::info('Enviando para análise via ' . $aiService->getName(), [
                 'provider' => $this->aiProvider,
                 'deep_thinking_enabled' => $this->deepThinkingEnabled,
-                'total_documentos' => count($documentosProcessados)
+                'total_documentos' => count($documentosProcessados),
+                'analysis_id' => $documentAnalysis->id
             ]);
 
             $analiseCompleta = $aiService->analyzeDocuments(
                 $this->promptTemplate,
                 $documentosProcessados,
                 $this->contextoDados,
-                $this->deepThinkingEnabled
+                $this->deepThinkingEnabled,
+                $documentAnalysis // Passa o DocumentAnalysis para persistência
             );
 
             $endTime = microtime(true);
             $processingTime = (int) (($endTime - $startTime) * 1000);
 
-            // Atualiza o registro com a análise completa
-            $documentAnalysis->update([
-                'ai_analysis' => $analiseCompleta,
-                'status' => 'completed',
-                'processing_time_ms' => $processingTime,
-            ]);
+            // Finaliza análise evolutiva com sucesso
+            $documentAnalysis->finalizeEvolutionaryAnalysis($analiseCompleta, $processingTime);
 
             Log::info('Análise concluída e registro atualizado', [
                 'analysis_id' => $documentAnalysis->id,
