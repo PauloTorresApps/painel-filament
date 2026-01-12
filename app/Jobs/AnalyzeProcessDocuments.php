@@ -385,7 +385,8 @@ class AnalyzeProcessDocuments implements ShouldQueue
         return match($provider) {
             'deepseek' => new DeepSeekService(),
             'gemini' => new GeminiService(),
-            default => throw new \Exception("Provider de IA '{$provider}' não suportado. Use 'gemini' ou 'deepseek'.")
+            'openai' => new \App\Services\OpenAIService(),
+            default => throw new \Exception("Provider de IA '{$provider}' não suportado. Use 'gemini', 'deepseek' ou 'openai'.")
         };
     }
 

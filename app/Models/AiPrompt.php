@@ -41,6 +41,7 @@ class AiPrompt extends Model
     {
         return [
             'gemini' => 'Google Gemini',
+            'openai' => 'OpenAI (ChatGPT)',
             'deepseek' => 'DeepSeek',
         ];
     }
