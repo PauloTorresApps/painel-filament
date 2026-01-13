@@ -38,6 +38,20 @@ class ProcessDetails extends Page
             $this->numeroProcesso = $data['numeroProcesso'] ?? '';
             $this->judicialUserId = $data['judicial_user_id'] ?? null;
             $this->senha = $data['senha'] ?? null;
+
+            // Recalcula sequência se não existir (fallback para processos consultados antes desta feature)
+            $this->garantirSequenciaAnalise();
+
+            // Debug: Verifica se documentos têm sequencia_analise
+            Log::info('📄 Documentos carregados na página', [
+                'total_documentos' => count($this->documentos),
+                'sample_doc' => !empty($this->documentos) ? [
+                    'id' => $this->documentos[0]['idDocumento'] ?? 'N/A',
+                    'descricao' => $this->documentos[0]['descricao'] ?? 'N/A',
+                    'sequencia_analise' => $this->documentos[0]['sequencia_analise'] ?? 'CAMPO NÃO EXISTE',
+                    'keys' => array_keys($this->documentos[0])
+                ] : 'Sem documentos'
+            ]);
         } else {
             // Fallback para sessão (compatibilidade)
             $this->dadosBasicos = session('dadosBasicos', []);
@@ -47,6 +61,86 @@ class ProcessDetails extends Page
 
             session()->forget(['dadosBasicos', 'movimentos', 'documentos', 'numeroProcesso']);
         }
+    }
+
+    /**
+     * Garante que todos os documentos têm o campo sequencia_analise
+     * Útil para processos consultados antes desta feature ser implementada
+     */
+    private function garantirSequenciaAnalise(): void
+    {
+        // Verifica se precisa recalcular checando ambos os arrays
+        $precisaRecalcular = false;
+
+        // Verifica documentos em movimentos
+        foreach ($this->movimentos as $movimento) {
+            foreach ($movimento['documentos'] ?? [] as $doc) {
+                if (!isset($doc['sequencia_analise'])) {
+                    $precisaRecalcular = true;
+                    break 2;
+                }
+            }
+        }
+
+        // Verifica documentos no array principal
+        if (!$precisaRecalcular) {
+            foreach ($this->documentos as $doc) {
+                if (!isset($doc['sequencia_analise'])) {
+                    $precisaRecalcular = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$precisaRecalcular) {
+            Log::info('✅ Todos os documentos já têm sequencia_analise');
+            return; // Todos os documentos já têm sequência
+        }
+
+        Log::info('⚠️ Recalculando sequência de análise (fallback)');
+
+        // Ordena movimentos por ID
+        usort($this->movimentos, function($a, $b) {
+            return ((int) ($a['idMovimento'] ?? 999999)) <=> ((int) ($b['idMovimento'] ?? 999999));
+        });
+
+        // Cria mapa de sequência
+        $sequenciaGlobal = [];
+        $sequenciaAtual = 1;
+
+        foreach ($this->movimentos as $movimento) {
+            $idsVinculados = $movimento['idDocumentoVinculado'] ?? [];
+
+            if (!is_array($idsVinculados)) {
+                $idsVinculados = [$idsVinculados];
+            }
+
+            foreach ($idsVinculados as $idDoc) {
+                $sequenciaGlobal[$idDoc] = $sequenciaAtual;
+                $sequenciaAtual++;
+            }
+        }
+
+        // Aplica sequência aos documentos em movimentos
+        foreach ($this->movimentos as &$movimento) {
+            foreach ($movimento['documentos'] ?? [] as &$doc) {
+                $idDoc = $doc['idDocumento'] ?? null;
+                $doc['sequencia_analise'] = $sequenciaGlobal[$idDoc] ?? 999999;
+            }
+        }
+        unset($movimento, $doc);
+
+        // Aplica sequência aos documentos no array principal
+        foreach ($this->documentos as &$doc) {
+            $idDoc = $doc['idDocumento'] ?? null;
+            $doc['sequencia_analise'] = $sequenciaGlobal[$idDoc] ?? 999999;
+        }
+        unset($doc);
+
+        Log::info('✅ Sequência recalculada com sucesso (fallback)', [
+            'total_documentos_sequenciados' => count($sequenciaGlobal),
+            'sequencia_maxima' => $sequenciaAtual - 1
+        ]);
     }
 
     public function getTitle(): string
@@ -184,7 +278,7 @@ class ProcessDetails extends Page
                 })->toArray()
             ]);
 
-            // Filtra apenas documentos não-mídia e com conteúdo disponível
+            // Filtra apenas documentos que não sejam vídeos
             $documentosParaAnalise = collect($this->documentos)->filter(function ($doc) {
                 $descricao = strtolower($doc['descricao'] ?? '');
                 $mimeType = strtolower($doc['mimetype'] ?? '');
@@ -199,11 +293,12 @@ class ProcessDetails extends Page
                     return false;
                 }
 
-                // 2. Rejeita mídias (imagens, vídeos)
-                $extensoesMedia = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico'];
+                // 2. Rejeita APENAS vídeos (mantém imagens e outros formatos)
+                $extensoesVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'm4v'];
 
-                if (str_starts_with($mimeType, 'image/') || str_starts_with($mimeType, 'video/')) {
-                    Log::debug('Documento rejeitado: mídia (mimetype)', [
+                // Rejeita por mimetype de vídeo
+                if (str_starts_with($mimeType, 'video/')) {
+                    Log::debug('Documento rejeitado: vídeo (mimetype)', [
                         'id' => $doc['idDocumento'] ?? 'sem_id',
                         'descricao' => $doc['descricao'] ?? 'sem_descricao',
                         'mimeType' => $mimeType
@@ -211,9 +306,10 @@ class ProcessDetails extends Page
                     return false;
                 }
 
-                foreach ($extensoesMedia as $ext) {
+                // Rejeita por extensão de vídeo
+                foreach ($extensoesVideo as $ext) {
                     if (str_ends_with($descricao, '.' . $ext)) {
-                        Log::debug('Documento rejeitado: mídia (extensão)', [
+                        Log::debug('Documento rejeitado: vídeo (extensão)', [
                             'id' => $doc['idDocumento'] ?? 'sem_id',
                             'descricao' => $doc['descricao'] ?? 'sem_descricao',
                             'extensao' => $ext
@@ -222,21 +318,7 @@ class ProcessDetails extends Page
                     }
                 }
 
-                // 3. Aceita apenas documentos com mimetype vazio ou application/pdf
-                $isPdfValido = empty($mimeType) ||
-                               $mimeType === 'application/pdf' ||
-                               str_starts_with($mimeType, 'application/pdf');
-
-                if (!$isPdfValido) {
-                    Log::debug('Documento rejeitado: mimetype inválido', [
-                        'id' => $doc['idDocumento'] ?? 'sem_id',
-                        'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                        'mimeType' => $mimeType
-                    ]);
-                    return false;
-                }
-
-                // Documento aprovado!
+                // Documento aprovado! (aceita PDFs, imagens, documentos Office, etc.)
                 Log::info('Documento APROVADO para análise', [
                     'id' => $doc['idDocumento'] ?? 'sem_id',
                     'descricao' => $doc['descricao'] ?? 'sem_descricao',
@@ -244,7 +326,32 @@ class ProcessDetails extends Page
                 ]);
 
                 return true;
-            })->values()->toArray();
+            })
+            // ORDENA DOCUMENTOS POR SEQUÊNCIA GLOBAL DE ANÁLISE
+            // A sequência é calculada no EprocController baseada em:
+            // 1. Ordem cronológica dos eventos (idMovimento)
+            // 2. Ordem dos documentos vinculados (idDocumentoVinculado) dentro de cada evento
+            // Resultado: 1, 2, 3... N (sequência contínua do primeiro ao último documento)
+            ->sortBy(function ($doc) {
+                return (int) ($doc['sequencia_analise'] ?? 999999);
+            })
+            ->values()
+            ->toArray();
+
+            // Log da ordem final de análise
+            if (!empty($documentosParaAnalise)) {
+                Log::info('📋 ORDEM FINAL DE ANÁLISE DOS DOCUMENTOS', [
+                    'total_documentos' => count($documentosParaAnalise),
+                    'ordem_analise' => collect($documentosParaAnalise)->map(function ($doc) {
+                        return [
+                            'sequencia_global' => $doc['sequencia_analise'] ?? 'N/A',
+                            'evento_id' => $doc['idMovimento'] ?? 'N/A',
+                            'documento_id' => $doc['idDocumento'] ?? 'N/A',
+                            'descricao' => $doc['descricao'] ?? 'Sem descrição',
+                        ];
+                    })->toArray()
+                ]);
+            }
 
             if (empty($documentosParaAnalise)) {
                 $totalDocumentos = count($this->documentos);
@@ -255,18 +362,18 @@ class ProcessDetails extends Page
                     return $mimeType === 'text/html' || str_contains($mimeType, 'html');
                 })->count();
 
-                $midias = collect($this->documentos)->filter(function($doc) {
+                $videos = collect($this->documentos)->filter(function($doc) {
                     $mimeType = strtolower($doc['mimetype'] ?? '');
                     if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) return false;
 
                     $descricao = strtolower($doc['descricao'] ?? '');
-                    $extensoesMedia = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico'];
+                    $extensoesVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'm4v'];
 
-                    if (str_starts_with($mimeType, 'image/') || str_starts_with($mimeType, 'video/')) {
+                    if (str_starts_with($mimeType, 'video/')) {
                         return true;
                     }
 
-                    foreach ($extensoesMedia as $ext) {
+                    foreach ($extensoesVideo as $ext) {
                         if (str_ends_with($descricao, '.' . $ext)) {
                             return true;
                         }
@@ -277,7 +384,7 @@ class ProcessDetails extends Page
 
                 $detalhes = [];
                 if ($htmlSemConteudo > 0) $detalhes[] = "{$htmlSemConteudo} sem conteúdo disponível (HTML)";
-                if ($midias > 0) $detalhes[] = "{$midias} arquivo(s) de mídia";
+                if ($videos > 0) $detalhes[] = "{$videos} arquivo(s) de vídeo";
 
                 $mensagemDetalhes = !empty($detalhes)
                     ? "Motivos de exclusão: " . implode(", ", $detalhes) . "."
@@ -285,7 +392,7 @@ class ProcessDetails extends Page
 
                 \Filament\Notifications\Notification::make()
                     ->title('📋 Nenhum Documento Elegível para Análise')
-                    ->body("Total: {$totalDocumentos} documento(s). {$mensagemDetalhes} Apenas documentos PDF com conteúdo disponível podem ser analisados.")
+                    ->body("Total: {$totalDocumentos} documento(s). {$mensagemDetalhes} Documentos em vídeo não podem ser analisados. Outros formatos (PDF, imagens, documentos Office, etc.) são aceitos.")
                     ->warning()
                     ->persistent()
                     ->send();
@@ -295,7 +402,7 @@ class ProcessDetails extends Page
                     'numero_processo' => $this->numeroProcesso,
                     'total_documentos' => $totalDocumentos,
                     'html_sem_conteudo' => $htmlSemConteudo,
-                    'midias' => $midias,
+                    'videos' => $videos,
                     'detalhe_mensagem' => $mensagemDetalhes
                 ]);
 

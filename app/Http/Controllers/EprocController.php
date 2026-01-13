@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Services\EprocService;
 use App\Services\CnjService;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class EprocController extends Controller
@@ -143,6 +144,72 @@ class EprocController extends Controller
                 $documentos = [$documentos];
             }
 
+            // === CALCULA SEQUÊNCIA GLOBAL DE ANÁLISE ===
+            // Baseado na ordem dos eventos (idMovimento) e dos documentos vinculados (idDocumentoVinculado)
+
+            // 1. Ordena movimentos por ID (ordem cronológica dos eventos)
+            usort($movimentos, function($a, $b) {
+                $idA = (int) ($a['idMovimento'] ?? 999999);
+                $idB = (int) ($b['idMovimento'] ?? 999999);
+                return $idA <=> $idB;
+            });
+
+            // 2. Cria mapa de sequência global para cada documento
+            $sequenciaGlobal = []; // idDocumento => sequencia_analise
+            $sequenciaAtual = 1;
+
+            Log::info('🔢 Calculando sequência global de análise', [
+                'total_movimentos' => count($movimentos),
+                'total_documentos' => count($documentos)
+            ]);
+
+            foreach ($movimentos as $movimento) {
+                $idMov = $movimento['idMovimento'] ?? null;
+
+                // Pega a lista de IDs de documentos vinculados a este movimento (na ordem correta)
+                $idsDocumentosVinculados = $movimento['idDocumentoVinculado'] ?? [];
+
+                // Normaliza para array se for um único documento
+                if (!is_array($idsDocumentosVinculados)) {
+                    $idsDocumentosVinculados = [$idsDocumentosVinculados];
+                }
+
+                $descricaoMovimento = $movimento['movimentoLocal']['descricao'] ?? 'Sem descrição';
+
+                Log::info("Movimento {$idMov}: {$descricaoMovimento}", [
+                    'id_movimento' => $idMov,
+                    'documentos_vinculados' => $idsDocumentosVinculados,
+                    'total_docs_vinculados' => count($idsDocumentosVinculados),
+                    'sequencia_inicial' => $sequenciaAtual,
+                    'sequencia_final' => $sequenciaAtual + count($idsDocumentosVinculados) - 1
+                ]);
+
+                // Para cada documento vinculado ao movimento, atribui sequência global
+                foreach ($idsDocumentosVinculados as $idDoc) {
+                    $sequenciaGlobal[$idDoc] = $sequenciaAtual;
+                    $sequenciaAtual++;
+                }
+            }
+
+            Log::info('✅ Sequência global calculada', [
+                'total_documentos_sequenciados' => count($sequenciaGlobal),
+                'sequencia_maxima' => $sequenciaAtual - 1,
+                'mapa_sequencial' => $sequenciaGlobal
+            ]);
+
+            // 3. Adiciona o campo sequencia_analise em cada documento
+            foreach ($documentos as &$doc) {
+                $idDoc = $doc['idDocumento'] ?? null;
+                $doc['sequencia_analise'] = $sequenciaGlobal[$idDoc] ?? 999999;
+
+                Log::debug("Documento {$idDoc} recebeu sequencia_analise = " . $doc['sequencia_analise'], [
+                    'id_documento' => $idDoc,
+                    'sequencia_atribuida' => $doc['sequencia_analise'],
+                    'existe_no_mapa' => isset($sequenciaGlobal[$idDoc])
+                ]);
+            }
+            unset($doc); // Libera referência
+
             // Agrupa documentos por idMovimento
             $documentosPorMovimento = [];
             foreach ($documentos as $doc) {
@@ -155,7 +222,7 @@ class EprocController extends Controller
                 }
             }
 
-            // Adiciona documentos aos movimentos
+            // Adiciona documentos aos movimentos (já com sequencia_analise calculada)
             foreach ($movimentos as &$movimento) {
                 $idMov = $movimento['idMovimento'] ?? null;
                 $movimento['documentos'] = $documentosPorMovimento[$idMov] ?? [];

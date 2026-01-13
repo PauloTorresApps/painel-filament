@@ -392,6 +392,30 @@
                                                                             @endif
                                                                         </div>
                                                                         <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                                            {{-- DEBUG: Mostra campos disponíveis --}}
+                                                                            @php
+                                                                                // Log para debug
+                                                                                \Log::info('DEBUG Documento na View', [
+                                                                                    'keys' => array_keys($documento),
+                                                                                    'idDocumento' => $documento['idDocumento'] ?? 'N/A',
+                                                                                    'sequencia_analise' => $documento['sequencia_analise'] ?? 'NÃO EXISTE',
+                                                                                    'sequencia_analise_type' => isset($documento['sequencia_analise']) ? gettype($documento['sequencia_analise']) : 'N/A'
+                                                                                ]);
+                                                                            @endphp
+
+                                                                            {{-- Exibe sequência global de análise (1, 2, 3... N) --}}
+                                                                            @if(isset($documento['sequencia_analise']))
+                                                                                <span class="flex items-center gap-1 font-mono font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded" title="Sequência: {{ $documento['sequencia_analise'] }}">
+                                                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
+                                                                                    </svg>
+                                                                                    #{{ $documento['sequencia_analise'] }}
+                                                                                </span>
+                                                                            @else
+                                                                                <span class="flex items-center gap-1 font-mono text-xs text-red-600 dark:text-red-400" title="Campo sequencia_analise não existe">
+                                                                                    ⚠️ SEM SEQUÊNCIA
+                                                                                </span>
+                                                                            @endif
                                                                             @if(isset($documento['dataHora']))
                                                                                 <span class="flex items-center gap-1">
                                                                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
