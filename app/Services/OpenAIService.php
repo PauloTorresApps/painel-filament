@@ -265,6 +265,9 @@ PROMPT;
      */
     private function callOpenAIAPI(string $prompt, array $options = []): string
     {
+        // Aplica rate limiting antes da chamada
+        RateLimiterService::apply('openai');
+
         $url = "{$this->apiUrl}/chat/completions";
         $attempt = 0;
         $lastException = null;

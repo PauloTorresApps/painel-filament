@@ -41,12 +41,12 @@ class AiPromptsTable
 
         $columns[] = TextColumn::make('ai_provider')
             ->label('IA')
-            ->formatStateUsing(fn (string $state): string => \App\Models\AiPrompt::getAvailableProviders()[$state] ?? $state)
             ->badge()
-            ->color(fn (string $state): string => match ($state) {
-                'gemini' => 'success',
-                'deepseek' => 'info',
-                default => 'gray',
+            ->formatStateUsing(fn (string $state): string => \App\Models\AiPrompt::getAvailableProviders()[$state] ?? $state)
+            ->color(function ($record) {
+                $color = $record->provider_badge_color;
+                \Log::info('Badge color loaded', ['id' => $record->id, 'color' => $color, 'is_active' => $record->is_active]);
+                return $color;
             })
             ->sortable();
 

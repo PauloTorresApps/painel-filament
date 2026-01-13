@@ -29,6 +29,18 @@ class AiPrompt extends Model
         'analysis_strategy' => 'evolutionary',
     ];
 
+    protected $appends = [
+        'provider_badge_color',
+    ];
+
+    /**
+     * Get the badge color for the AI provider
+     */
+    public function getProviderBadgeColorAttribute(): string
+    {
+        return $this->is_default ? 'success' : 'gray';
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

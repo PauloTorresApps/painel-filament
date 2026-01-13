@@ -761,6 +761,9 @@ PROMPT;
      */
     private function callDeepSeekAPI(string $prompt, bool $deepThinkingEnabled = true): string
     {
+        // Aplica rate limiting antes da chamada
+        RateLimiterService::apply('deepseek');
+
         $url = "{$this->apiUrl}/chat/completions";
         $attempt = 0;
         $lastException = null;

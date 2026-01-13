@@ -90,11 +90,19 @@ class AiPromptForm
                 Toggle::make('is_active')
                     ->label('Ativo')
                     ->default(true)
+                    ->reactive()
                     ->helperText('Desative para manter o prompt salvo mas não utilizá-lo'),
 
                 Toggle::make('is_default')
                     ->label('Prompt Padrão')
                     ->default(false)
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        // Quando o prompt for definido como padrão, deve estar ativo
+                        if ($state === true) {
+                            $set('is_active', true);
+                        }
+                    })
                     ->helperText('Define este prompt como padrão para o sistema selecionado. Só pode haver um prompt padrão por sistema.'),
             ]);
     }

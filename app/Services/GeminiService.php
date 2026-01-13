@@ -645,6 +645,9 @@ PROMPT;
      */
     private function callGeminiAPI(string $prompt): string
     {
+        // Aplica rate limiting antes da chamada
+        RateLimiterService::apply('gemini');
+
         $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
         $attempt = 0;
         $lastException = null;
