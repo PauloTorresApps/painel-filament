@@ -34,7 +34,8 @@ class AnalyzeProcessDocuments implements ShouldQueue
         public bool $deepThinkingEnabled,
         public string $userLogin,
         public string $senha,
-        public int $judicialUserId
+        public int $judicialUserId,
+        public string $analysisStrategy = 'evolutionary' // 'hierarchical' ou 'evolutionary'
     ) {}
 
     /**
@@ -183,6 +184,7 @@ class AnalyzeProcessDocuments implements ShouldQueue
                     'userLogin' => $this->userLogin,
                     'senha' => $this->senha,
                     'judicialUserId' => $this->judicialUserId,
+                    'analysisStrategy' => $this->analysisStrategy,
                 ],
             ]);
 
@@ -206,7 +208,8 @@ class AnalyzeProcessDocuments implements ShouldQueue
                 $documentosProcessados,
                 $this->contextoDados,
                 $this->deepThinkingEnabled,
-                $documentAnalysis // Passa o DocumentAnalysis para persistência
+                $documentAnalysis, // Passa o DocumentAnalysis para persistência
+                $this->analysisStrategy // Estratégia de análise (hierarchical ou evolutionary)
             );
 
             $endTime = microtime(true);

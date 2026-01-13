@@ -14,6 +14,7 @@ class AiPrompt extends Model
         'content',
         'ai_provider',
         'deep_thinking_enabled',
+        'analysis_strategy',
         'is_active',
         'is_default',
     ];
@@ -22,6 +23,10 @@ class AiPrompt extends Model
         'is_active' => 'boolean',
         'is_default' => 'boolean',
         'deep_thinking_enabled' => 'boolean',
+    ];
+
+    protected $attributes = [
+        'analysis_strategy' => 'evolutionary',
     ];
 
     public function user(): BelongsTo
@@ -43,6 +48,17 @@ class AiPrompt extends Model
             'gemini' => 'Google Gemini',
             'openai' => 'OpenAI (ChatGPT)',
             'deepseek' => 'DeepSeek',
+        ];
+    }
+
+    /**
+     * Retorna as estratégias de análise disponíveis
+     */
+    public static function getAvailableStrategies(): array
+    {
+        return [
+            'hierarchical' => 'Pipeline Hierárquico (padrão)',
+            'evolutionary' => 'Resumo Evolutivo (recomendado para muitos documentos)',
         ];
     }
 }

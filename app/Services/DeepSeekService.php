@@ -44,6 +44,7 @@ class DeepSeekService implements AIProviderInterface
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
      * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo (DeepSeek)
      * @param \App\Models\DocumentAnalysis|null $documentAnalysis Model para persistir estado (não usado no DeepSeek)
+     * @param string $strategy Estratégia de análise: 'hierarchical' (padrão) ou 'evolutionary'
      * @return string Análise gerada pela IA
      */
     public function analyzeDocuments(
@@ -51,11 +52,21 @@ class DeepSeekService implements AIProviderInterface
         array $documentos,
         array $contextoDados,
         bool $deepThinkingEnabled = true,
-        ?\App\Models\DocumentAnalysis $documentAnalysis = null
+        ?\App\Models\DocumentAnalysis $documentAnalysis = null,
+        string $strategy = 'evolutionary'
     ): string
     {
         try {
-            // Pipeline de sumarização hierárquica para documentos muito grandes
+            // Escolhe a estratégia de análise
+            if ($strategy === 'evolutionary') {
+                Log::info('🔄 Usando estratégia de Resumo Evolutivo', [
+                    'total_documentos' => count($documentos),
+                    'deep_thinking' => $deepThinkingEnabled
+                ]);
+                return $this->analyzeWithEvolutionarySummary($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled);
+            }
+
+            // Pipeline de sumarização hierárquica para documentos muito grandes (estratégia padrão)
             $documentos = $this->applyHierarchicalSummarization($documentos, $deepThinkingEnabled);
 
             // Monta o prompt completo com contexto
@@ -85,6 +96,278 @@ class DeepSeekService implements AIProviderInterface
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Analisa documentos usando a estratégia de Resumo Evolutivo
+     *
+     * Processo:
+     * 1. Analisa doc 1 → resumo 1
+     * 2. Analisa doc 2 COM resumo 1 → resumo 2 (contém informações de 1+2)
+     * 3. Analisa doc 3 COM resumo 2 → resumo 3 (contém informações de 1+2+3)
+     * E assim sucessivamente...
+     *
+     * Vantagens:
+     * - Mantém contexto completo e evolutivo de TODOS os documentos anteriores
+     * - Permite processar volumes ilimitados de documentos
+     * - Cada resumo contém a "história completa" até aquele ponto
+     *
+     * @param string $promptTemplate Prompt do usuário
+     * @param array $documentos Array de documentos (já ordenados sequencialmente)
+     * @param array $contextoDados Contexto do processo
+     * @param bool $deepThinkingEnabled Se deve usar deep thinking
+     * @return string Resumo evolutivo final contendo análise completa
+     */
+    private function analyzeWithEvolutionarySummary(
+        string $promptTemplate,
+        array $documentos,
+        array $contextoDados,
+        bool $deepThinkingEnabled
+    ): string
+    {
+        $resumoEvolutivo = '';
+        $totalDocumentos = count($documentos);
+
+        Log::info('🚀 Iniciando Resumo Evolutivo', [
+            'total_documentos' => $totalDocumentos,
+            'estrategia' => 'evolutionary_summary'
+        ]);
+
+        // Extrai informações do contexto para uso nos prompts
+        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $tipoParte = $this->identificarTipoParte($contextoDados);
+
+        foreach ($documentos as $index => $doc) {
+            $docNum = $index + 1;
+            $sequencia = $doc['sequencia_analise'] ?? $docNum;
+            $descricao = $doc['descricao'] ?? "Documento {$docNum}";
+            $texto = $doc['texto'] ?? '';
+
+            Log::info("📄 Processando documento {$docNum}/{$totalDocumentos}", [
+                'sequencia_global' => $sequencia,
+                'descricao' => $descricao,
+                'tamanho_texto' => mb_strlen($texto),
+                'tem_resumo_anterior' => !empty($resumoEvolutivo)
+            ]);
+
+            // Trunca documento se muito grande (para não estourar limite individual)
+            if (mb_strlen($texto) > self::SINGLE_DOC_CHAR_LIMIT) {
+                Log::info("⚠️ Documento {$docNum} muito grande. Aplicando truncamento.", [
+                    'tamanho_original' => mb_strlen($texto),
+                    'limite' => self::SINGLE_DOC_CHAR_LIMIT
+                ]);
+                $texto = $this->truncateDocument($texto);
+            }
+
+            // Monta o prompt evolutivo
+            $promptEvolutivo = $this->buildEvolutionaryPrompt(
+                $promptTemplate,
+                $resumoEvolutivo,
+                $texto,
+                $descricao,
+                $sequencia,
+                $docNum,
+                $totalDocumentos,
+                $nomeClasse,
+                $assuntos,
+                $numeroProcesso,
+                $tipoParte,
+                $contextoDados
+            );
+
+            // Verifica tamanho do prompt antes de enviar
+            $promptSize = mb_strlen($promptEvolutivo);
+            if ($promptSize > self::TOTAL_PROMPT_CHAR_LIMIT) {
+                Log::warning("⚠️ Prompt evolutivo muito grande no documento {$docNum}. Comprimindo resumo anterior.", [
+                    'tamanho_prompt' => $promptSize,
+                    'limite' => self::TOTAL_PROMPT_CHAR_LIMIT,
+                    'tamanho_resumo_anterior' => mb_strlen($resumoEvolutivo)
+                ]);
+
+                // Comprime o resumo anterior se estiver muito grande
+                if (mb_strlen($resumoEvolutivo) > 50000) {
+                    $resumoEvolutivo = $this->compressEvolutionarySummary($resumoEvolutivo, $deepThinkingEnabled);
+
+                    // Reconstroi o prompt com resumo comprimido
+                    $promptEvolutivo = $this->buildEvolutionaryPrompt(
+                        $promptTemplate,
+                        $resumoEvolutivo,
+                        $texto,
+                        $descricao,
+                        $sequencia,
+                        $docNum,
+                        $totalDocumentos,
+                        $nomeClasse,
+                        $assuntos,
+                        $numeroProcesso,
+                        $tipoParte,
+                        $contextoDados
+                    );
+                }
+            }
+
+            // Rate limiting: aguarda entre chamadas (exceto na primeira)
+            if ($docNum > 1) {
+                $delayMs = self::RATE_LIMIT_DELAY_MS;
+                Log::debug("⏳ Aguardando {$delayMs}ms antes da próxima análise (rate limiting)");
+                usleep($delayMs * 1000);
+            }
+
+            // Chama a API para gerar o novo resumo evolutivo
+            try {
+                $resumoEvolutivo = $this->callDeepSeekAPI($promptEvolutivo, $deepThinkingEnabled);
+
+                Log::info("✅ Documento {$docNum} processado com sucesso", [
+                    'tamanho_resumo_evolutivo' => mb_strlen($resumoEvolutivo),
+                    'progresso' => round(($docNum / $totalDocumentos) * 100, 1) . '%'
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error("❌ Erro ao processar documento {$docNum}", [
+                    'erro' => $e->getMessage(),
+                    'descricao' => $descricao
+                ]);
+                throw new \Exception("Erro ao processar documento {$docNum} ({$descricao}): " . $e->getMessage());
+            }
+        }
+
+        // Adiciona nota sobre a estratégia utilizada
+        $nota = "\n\n---\n\n*✨ Análise gerada usando **Resumo Evolutivo**: cada documento foi analisado sequencialmente, "
+              . "mantendo o contexto completo de todos os documentos anteriores. Total de {$totalDocumentos} documentos processados.*";
+
+        Log::info('🎉 Resumo Evolutivo concluído com sucesso', [
+            'total_documentos' => $totalDocumentos,
+            'tamanho_final' => mb_strlen($resumoEvolutivo)
+        ]);
+
+        return $resumoEvolutivo . $nota;
+    }
+
+    /**
+     * Constrói o prompt para análise evolutiva de um documento
+     */
+    private function buildEvolutionaryPrompt(
+        string $promptTemplate,
+        string $resumoAnterior,
+        string $textoDocumento,
+        string $descricaoDocumento,
+        int $sequenciaGlobal,
+        int $docNum,
+        int $totalDocs,
+        string $nomeClasse,
+        string $assuntos,
+        string $numeroProcesso,
+        string $tipoParte,
+        array $contextoDados
+    ): string
+    {
+        $ehPrimeiroDocumento = empty($resumoAnterior);
+
+        if ($ehPrimeiroDocumento) {
+            // Primeiro documento: contexto inicial + prompt do usuário + documento
+            $prompt = "# CONTEXTO DO PROCESSO\n\n";
+            $prompt .= "**Processo:** {$numeroProcesso}\n";
+            $prompt .= "**Classe:** {$nomeClasse}\n";
+            $prompt .= "**Assuntos:** {$assuntos}\n";
+            $prompt .= "**Perspectiva:** {$tipoParte}\n";
+
+            if (!empty($contextoDados['valorCausa'])) {
+                $prompt .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
+
+            $prompt .= "\n---\n\n";
+            $prompt .= "# INSTRUÇÕES DE ANÁLISE\n\n";
+            $prompt .= $promptTemplate;
+            $prompt .= "\n\n---\n\n";
+            $prompt .= "# ESTRATÉGIA: RESUMO EVOLUTIVO\n\n";
+            $prompt .= "Você está iniciando uma análise sequencial de {$totalDocs} documentos. ";
+            $prompt .= "Este é o **primeiro documento** (#{$sequenciaGlobal}). ";
+            $prompt .= "Após analisar este documento, você receberá o próximo e deverá:\n\n";
+            $prompt .= "1. Incorporar as informações do novo documento à sua análise anterior\n";
+            $prompt .= "2. Manter a cronologia dos eventos\n";
+            $prompt .= "3. Identificar conexões entre os documentos\n";
+            $prompt .= "4. Atualizar sua compreensão do caso conforme novos fatos surgem\n\n";
+            $prompt .= "**Por favor, analise o primeiro documento abaixo:**\n\n";
+            $prompt .= "---\n\n";
+            $prompt .= "## DOCUMENTO #{$sequenciaGlobal}: {$descricaoDocumento}\n\n";
+            $prompt .= $textoDocumento;
+
+        } else {
+            // Documentos subsequentes: resumo anterior + novo documento + instruções de atualização
+            $sequenciaAnterior = $sequenciaGlobal - 1;
+            $docsAnalisados = $docNum - 1;
+
+            $prompt = "# RESUMO DOS DOCUMENTOS ANTERIORES (#{$sequenciaAnterior})\n\n";
+            $prompt .= $resumoAnterior;
+            $prompt .= "\n\n---\n\n";
+            $prompt .= "# NOVO DOCUMENTO PARA ANÁLISE\n\n";
+            $prompt .= "Você analisou {$docsAnalisados} documento(s) até agora. ";
+            $prompt .= "Agora você receberá o **documento #{$sequenciaGlobal}** (documento {$docNum} de {$totalDocs}).\n\n";
+            $prompt .= "**INSTRUÇÕES:**\n\n";
+            $prompt .= "1. Leia o novo documento abaixo\n";
+            $prompt .= "2. **ATUALIZE** sua análise anterior incorporando as informações deste novo documento\n";
+            $prompt .= "3. Mantenha a estrutura e formato da sua análise anterior\n";
+            $prompt .= "4. Identifique como este documento se relaciona com os anteriores (ex: resposta a uma petição, decisão sobre um pedido, etc.)\n";
+            $prompt .= "5. Preserve a cronologia dos eventos\n";
+            $prompt .= "6. Retorne a análise COMPLETA E ATUALIZADA (não apenas o novo documento, mas toda a história até aqui)\n\n";
+            $prompt .= "---\n\n";
+            $prompt .= "## DOCUMENTO #{$sequenciaGlobal}: {$descricaoDocumento}\n\n";
+            $prompt .= $textoDocumento;
+            $prompt .= "\n\n---\n\n";
+            $prompt .= "**Agora, retorne sua análise COMPLETA E ATUALIZADA incorporando este novo documento à narrativa anterior.**";
+        }
+
+        return $prompt;
+    }
+
+    /**
+     * Comprime um resumo evolutivo que ficou muito grande
+     * Preserva informações essenciais mas reduz tamanho
+     */
+    private function compressEvolutionarySummary(string $resumoGrande, bool $deepThinkingEnabled): string
+    {
+        Log::info('🗜️ Comprimindo resumo evolutivo', [
+            'tamanho_original' => mb_strlen($resumoGrande)
+        ]);
+
+        $promptCompressao = <<<PROMPT
+Você recebeu um resumo evolutivo de análise de processo que ficou muito extenso e precisa ser comprimido.
+
+**SUA TAREFA:** Reescreva este resumo de forma mais concisa (reduza em ~40%), MAS preservando:
+
+1. ✅ TODOS os pontos principais e decisões importantes
+2. ✅ A cronologia dos eventos
+3. ✅ As relações causais entre documentos (petição → decisão → recurso)
+4. ✅ Fundamentos legais citados
+5. ✅ Pedidos e suas respectivas respostas
+6. ✅ A estrutura e organização da análise
+
+**NÃO REMOVA:** informações essenciais, datas importantes, nomes de partes, decisões judiciais
+
+**PODE REDUZIR:** repetições, detalhes secundários, transcrições literais, descrições muito longas
+
+---
+
+**RESUMO PARA COMPRIMIR:**
+
+{$resumoGrande}
+
+---
+
+**Retorne o resumo comprimido mantendo toda a essência e estrutura:**
+PROMPT;
+
+        $resumoComprimido = $this->callDeepSeekAPI($promptCompressao, $deepThinkingEnabled);
+
+        Log::info('✅ Resumo comprimido', [
+            'tamanho_original' => mb_strlen($resumoGrande),
+            'tamanho_comprimido' => mb_strlen($resumoComprimido),
+            'reducao_percentual' => round((1 - mb_strlen($resumoComprimido) / mb_strlen($resumoGrande)) * 100, 1) . '%'
+        ]);
+
+        return $resumoComprimido;
     }
 
     /**

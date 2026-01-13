@@ -420,7 +420,8 @@ class ProcessDetails extends Page
                 $promptPadrao->deep_thinking_enabled ?? true, // Modo de pensamento profundo (DeepSeek)
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
-                $this->judicialUserId
+                $this->judicialUserId,
+                $promptPadrao->analysis_strategy ?? 'evolutionary' // Estratégia de análise (hierarchical ou evolutionary)
             );
 
             \Filament\Notifications\Notification::make()
