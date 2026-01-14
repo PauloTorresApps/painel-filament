@@ -10,11 +10,12 @@ use App\Services\GeminiService;
 use App\Services\DeepSeekService;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification as FilamentNotification;
 
-class AnalyzeProcessDocuments implements ShouldQueue
+class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
@@ -39,11 +40,49 @@ class AnalyzeProcessDocuments implements ShouldQueue
     ) {}
 
     /**
+     * A chave única para este job (evita duplicação)
+     * Garante que apenas um job seja processado por vez para cada combinação usuário+processo
+     */
+    public function uniqueId(): string
+    {
+        return "analyze_process_{$this->userId}_{$this->numeroProcesso}";
+    }
+
+    /**
+     * Tempo que o lock do unique job deve durar (em segundos)
+     * 10 minutos = tempo máximo de processamento do job
+     */
+    public int $uniqueFor = 600;
+
+    /**
      * Execute o job.
      */
     public function handle(): void
     {
         try {
+            // PROTEÇÃO CONTRA DUPLICAÇÃO: Verifica se já existe análise em andamento ou recente
+            $analiseExistente = DocumentAnalysis::where('user_id', $this->userId)
+                ->where('numero_processo', $this->numeroProcesso)
+                ->where(function($query) {
+                    $query->where('status', 'processing')
+                        ->orWhere(function($q) {
+                            // Ou foi criada nos últimos 5 minutos (evita race conditions)
+                            $q->where('created_at', '>=', now()->subMinutes(5));
+                        });
+                })
+                ->first();
+
+            if ($analiseExistente) {
+                Log::warning('Job bloqueado: análise duplicada detectada', [
+                    'user_id' => $this->userId,
+                    'numero_processo' => $this->numeroProcesso,
+                    'analise_existente_id' => $analiseExistente->id,
+                    'status_existente' => $analiseExistente->status,
+                    'created_at' => $analiseExistente->created_at
+                ]);
+                return; // Aborta silenciosamente para evitar duplicação
+            }
+
             $user = User::find($this->userId);
 
             if (!$user) {

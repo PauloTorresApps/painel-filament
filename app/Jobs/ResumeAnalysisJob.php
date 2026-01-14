@@ -10,11 +10,12 @@ use App\Contracts\AIProviderInterface;
 use App\Services\GeminiService;
 use App\Services\DeepSeekService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification as FilamentNotification;
 
-class ResumeAnalysisJob implements ShouldQueue
+class ResumeAnalysisJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
@@ -27,6 +28,19 @@ class ResumeAnalysisJob implements ShouldQueue
     public function __construct(
         public int $analysisId
     ) {}
+
+    /**
+     * A chave única para este job (evita duplicação)
+     */
+    public function uniqueId(): string
+    {
+        return "resume_analysis_{$this->analysisId}";
+    }
+
+    /**
+     * Tempo que o lock do unique job deve durar (em segundos)
+     */
+    public int $uniqueFor = 600;
 
     /**
      * Execute the job.
