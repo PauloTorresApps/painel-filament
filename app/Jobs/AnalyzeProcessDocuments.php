@@ -60,27 +60,24 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     public function handle(): void
     {
         try {
-            // PROTEÇÃO CONTRA DUPLICAÇÃO: Verifica se já existe análise em andamento ou recente
-            $analiseExistente = DocumentAnalysis::where('user_id', $this->userId)
+            // PROTEÇÃO CONTRA DUPLICAÇÃO: Só bloqueia se houver análise REALMENTE em processamento
+            // Permite nova análise se a anterior não está mais rodando (failed, completed, ou timeout)
+            $analiseEmAndamento = DocumentAnalysis::where('user_id', $this->userId)
                 ->where('numero_processo', $this->numeroProcesso)
-                ->where(function($query) {
-                    $query->where('status', 'processing')
-                        ->orWhere(function($q) {
-                            // Ou foi criada nos últimos 5 minutos (evita race conditions)
-                            $q->where('created_at', '>=', now()->subMinutes(5));
-                        });
-                })
+                ->where('status', 'processing')
+                ->where('updated_at', '>=', now()->subMinutes(15)) // Considera ativa só se atualizada nos últimos 15min
                 ->first();
 
-            if ($analiseExistente) {
-                Log::warning('Job bloqueado: análise duplicada detectada', [
+            if ($analiseEmAndamento) {
+                Log::warning('Job bloqueado: análise em andamento detectada', [
                     'user_id' => $this->userId,
                     'numero_processo' => $this->numeroProcesso,
-                    'analise_existente_id' => $analiseExistente->id,
-                    'status_existente' => $analiseExistente->status,
-                    'created_at' => $analiseExistente->created_at
+                    'analise_existente_id' => $analiseEmAndamento->id,
+                    'status_existente' => $analiseEmAndamento->status,
+                    'updated_at' => $analiseEmAndamento->updated_at,
+                    'minutos_desde_atualizacao' => now()->diffInMinutes($analiseEmAndamento->updated_at)
                 ]);
-                return; // Aborta silenciosamente para evitar duplicação
+                return; // Aborta para evitar duplicação
             }
 
             $user = User::find($this->userId);
@@ -115,11 +112,11 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $totalDocumentos = count($this->documentos);
             $processados = 0;
 
-            // Notifica início
+            // Notifica início do download
             $this->sendNotification(
                 $user,
-                'Análise Iniciada',
-                "Processando {$totalDocumentos} documento(s) do processo {$this->numeroProcesso}",
+                '📥 Baixando Documentos',
+                "Baixando {$totalDocumentos} documento(s) do e-Proc para o processo {$this->numeroProcesso}. Isso pode levar alguns minutos...",
                 'info'
             );
 
@@ -232,6 +229,21 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 'numero_processo' => $this->numeroProcesso,
                 'total_documentos' => count($documentosProcessados)
             ]);
+
+            // Notifica que download terminou e análise vai começar
+            $providerName = match($this->aiProvider) {
+                'gemini' => 'Google Gemini',
+                'deepseek' => 'DeepSeek',
+                'openai' => 'OpenAI',
+                default => 'IA'
+            };
+
+            $this->sendNotification(
+                $user,
+                '🤖 Iniciando Análise por IA',
+                "Download concluído! Agora a {$providerName} está analisando " . count($documentosProcessados) . " documento(s). Aguarde...",
+                'info'
+            );
 
             // Envia TODOS os documentos juntos com Resumo Evolutivo
             // O estado será persistido após cada documento processado

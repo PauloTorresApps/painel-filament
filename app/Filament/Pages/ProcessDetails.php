@@ -424,10 +424,18 @@ class ProcessDetails extends Page
                 $promptPadrao->analysis_strategy ?? 'evolutionary' // Estratégia de análise (hierarchical ou evolutionary)
             );
 
+            $totalDocs = count($documentosParaAnalise);
+            $providerName = match($promptPadrao->ai_provider ?? 'gemini') {
+                'gemini' => 'Google Gemini',
+                'deepseek' => 'DeepSeek',
+                'openai' => 'OpenAI',
+                default => 'IA'
+            };
+
             \Filament\Notifications\Notification::make()
-                ->title('✅ Análise Iniciada com Sucesso')
-                ->body(count($documentosParaAnalise) . ' documento(s) foram enviados para análise. Acompanhe o progresso no widget "Status das Análises de IA" acima.')
-                ->success()
+                ->title('🚀 Análise Iniciada')
+                ->body("**Etapa 1/2:** Baixando {$totalDocs} documento(s) do e-Proc...\n\n**Etapa 2/2:** Em seguida, os documentos serão analisados pela {$providerName}.\n\n⏱️ Este processo pode levar alguns minutos. Você será notificado quando concluir.\n\nAcompanhe o progresso no painel acima.")
+                ->info()
                 ->persistent()
                 ->send();
 

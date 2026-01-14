@@ -788,13 +788,20 @@ PROMPT;
         // Adiciona o parâmetro thinking apenas se o modo de pensamento profundo estiver ativado
         if ($deepThinkingEnabled) {
             $requestBody['thinking'] = ['type' => 'enabled'];
+            Log::info('⚠️ DeepSeek Reasoning Mode ativado - processamento pode levar até 5 minutos por documento', [
+                'model' => $this->model,
+                'timeout' => '300s'
+            ]);
         }
 
         while ($attempt < self::MAX_RETRIES_ON_RATE_LIMIT) {
             $attempt++;
 
             try {
-                $response = Http::timeout(120) // 2 minutos de timeout
+                // Timeout maior para modo de pensamento profundo (reasoning)
+                $timeout = $deepThinkingEnabled ? 300 : 120; // 5min com reasoning, 2min sem
+
+                $response = Http::timeout($timeout)
                     ->withHeaders([
                         'Authorization' => 'Bearer ' . $this->apiKey,
                         'Content-Type' => 'application/json',
@@ -845,16 +852,28 @@ PROMPT;
             } catch (\Exception $e) {
                 $lastException = $e;
 
-                // Se for erro de conexão ou timeout, tenta novamente com backoff menor
-                if ($attempt < 3 && (
+                // Se for erro de conexão ou timeout, tenta novamente
+                // Mais tentativas para timeout (reasoning pode demorar muito)
+                $maxRetries = str_contains($e->getMessage(), 'timeout') ? 3 : 2;
+
+                if ($attempt < $maxRetries && (
                     str_contains($e->getMessage(), 'timeout') ||
                     str_contains($e->getMessage(), 'Connection') ||
                     str_contains($e->getMessage(), 'cURL error')
                 )) {
-                    $retryDelay = 2000 * $attempt; // 2s, 4s, 6s
-                    Log::warning("Erro de conexão. Tentativa {$attempt}/3. Aguardando {$retryDelay}ms", [
-                        'error' => $e->getMessage()
-                    ]);
+                    $retryDelay = 3000 * $attempt; // 3s, 6s, 9s
+
+                    if (str_contains($e->getMessage(), 'timeout')) {
+                        Log::warning("⏱️ Timeout na API DeepSeek (reasoning mode pode ser lento). Tentativa {$attempt}/{$maxRetries}. Aguardando {$retryDelay}ms", [
+                            'error' => $e->getMessage(),
+                            'deep_thinking' => $deepThinkingEnabled
+                        ]);
+                    } else {
+                        Log::warning("Erro de conexão. Tentativa {$attempt}/{$maxRetries}. Aguardando {$retryDelay}ms", [
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+
                     usleep($retryDelay * 1000);
                     continue;
                 }
