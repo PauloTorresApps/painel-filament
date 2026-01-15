@@ -5,6 +5,7 @@ use Laravel\Fortify\Features;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
 use App\Http\Controllers\JudicialUserController;
+use App\Http\Controllers\ContractUploadController;
 
 Route::redirect('/', '/admin');
 
@@ -35,10 +36,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
         Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
 
-        Route::get('analyze_contract', function () {
-            // return view('analyze_contract');
-            echo "Análise de Contratos";
-        })->name('analyze_contract');
+        // Upload de contratos (FilePond chunked upload)
+        Route::post('contracts/upload', [ContractUploadController::class, 'upload'])->name('contracts.upload');
+        Route::delete('contracts/upload', [ContractUploadController::class, 'delete'])->name('contracts.delete');
 
         Route::resource('judicial-users', JudicialUserController::class);
 });
