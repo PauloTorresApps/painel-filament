@@ -19,7 +19,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 600; // 10 minutos
+    public int $timeout = 0; // Sem timeout - permite análises muito longas
     public int $tries = 2; // Tenta 2 vezes se falhar
 
     /**
@@ -60,24 +60,21 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     public function handle(): void
     {
         try {
-            // PROTEÇÃO CONTRA DUPLICAÇÃO: Só bloqueia se houver análise REALMENTE em processamento
-            // Permite nova análise se a anterior não está mais rodando (failed, completed, ou timeout)
+            // PROTEÇÃO CONTRA DUPLICAÇÃO: Bloqueia apenas análises duplicadas do MESMO processo
+            // Permite análises simultâneas de processos diferentes
             $analiseEmAndamento = DocumentAnalysis::where('user_id', $this->userId)
                 ->where('numero_processo', $this->numeroProcesso)
                 ->where('status', 'processing')
-                ->where('updated_at', '>=', now()->subMinutes(15)) // Considera ativa só se atualizada nos últimos 15min
                 ->first();
 
             if ($analiseEmAndamento) {
-                Log::warning('Job bloqueado: análise em andamento detectada', [
+                Log::warning('Job bloqueado: análise duplicada do mesmo processo em andamento', [
                     'user_id' => $this->userId,
                     'numero_processo' => $this->numeroProcesso,
                     'analise_existente_id' => $analiseEmAndamento->id,
-                    'status_existente' => $analiseEmAndamento->status,
-                    'updated_at' => $analiseEmAndamento->updated_at,
-                    'minutos_desde_atualizacao' => now()->diffInMinutes($analiseEmAndamento->updated_at)
+                    'created_at' => $analiseEmAndamento->created_at
                 ]);
-                return; // Aborta para evitar duplicação
+                return; // Aborta para evitar duplicação do mesmo processo
             }
 
             $user = User::find($this->userId);

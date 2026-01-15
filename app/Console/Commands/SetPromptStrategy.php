@@ -14,7 +14,7 @@ class SetPromptStrategy extends Command
     public function handle()
     {
         // Lista os prompts disponíveis
-        $prompts = AiPrompt::with('system', 'user')->get();
+        $prompts = AiPrompt::with('system')->get();
 
         if ($prompts->isEmpty()) {
             $this->error('Nenhum prompt encontrado no sistema.');
@@ -31,13 +31,13 @@ class SetPromptStrategy extends Command
                 'ID' => $prompt->id,
                 'Título' => $prompt->title,
                 'Sistema' => $prompt->system->name ?? 'N/A',
-                'Usuário' => $prompt->user->name ?? 'N/A',
+                'Padrão' => $prompt->is_default ? 'Sim' : 'Não',
                 'Estratégia Atual' => $prompt->analysis_strategy === 'evolutionary' ? 'Resumo Evolutivo' : 'Pipeline Hierárquico',
             ];
         }
 
         $this->table(
-            ['ID', 'Título', 'Sistema', 'Usuário', 'Estratégia Atual'],
+            ['ID', 'Título', 'Sistema', 'Padrão', 'Estratégia Atual'],
             $promptsTable
         );
 

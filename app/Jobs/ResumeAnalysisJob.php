@@ -19,7 +19,7 @@ class ResumeAnalysisJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 600; // 10 minutos
+    public int $timeout = 0; // Sem timeout - permite análises muito longas
     public int $tries = 2;
 
     /**

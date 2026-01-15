@@ -242,9 +242,8 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Busca o prompt padrão do usuário para o sistema atual
-            $promptPadrao = \App\Models\AiPrompt::where('user_id', auth()->user()->id)
-                ->where('system_id', 1) // Assumindo system_id 1 para análise de processos
+            // Busca o prompt padrão do sistema (global)
+            $promptPadrao = \App\Models\AiPrompt::where('system_id', 1) // system_id 1 para análise de processos
                 ->where('is_default', true)
                 ->where('is_active', true)
                 ->first();
@@ -252,12 +251,12 @@ class ProcessDetails extends Page
             if (!$promptPadrao) {
                 \Filament\Notifications\Notification::make()
                     ->title('⚠️ Prompt Não Configurado')
-                    ->body('Você precisa configurar um prompt padrão antes de enviar documentos para análise. Acesse "Prompts de IA" no menu lateral e crie um prompt padrão para o sistema de análise de processos.')
+                    ->body('O sistema não possui um prompt padrão configurado para análise de processos. Entre em contato com o administrador do sistema.')
                     ->danger()
                     ->persistent()
                     ->send();
 
-                Log::warning('Tentativa de análise sem prompt padrão', [
+                Log::warning('Tentativa de análise sem prompt padrão configurado no sistema', [
                     'user_id' => auth()->user()->id,
                     'numero_processo' => $this->numeroProcesso
                 ]);

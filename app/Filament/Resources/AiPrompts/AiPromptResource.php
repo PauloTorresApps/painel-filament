@@ -59,15 +59,7 @@ class AiPromptResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
-
-        $user = Auth::user();
-
-        // Se o usuário não é Admin nem Manager, mostra apenas seus próprios registros
-        if (!$user->hasRole(['Admin', 'Manager'])) {
-            $query->where('user_id', $user->id);
-        }
-
-        return $query;
+        // Acesso controlado pela Policy - todos os prompts são globais agora
+        return parent::getEloquentQuery();
     }
 }

@@ -6,37 +6,15 @@ use Filament\Schemas\Schema;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Toggle;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 
 class AiPromptForm
 {
     public static function configure(Schema $schema): Schema
     {
-        $user = Auth::user();
-        $isAdminOrManager = $user->hasRole(['Admin', 'Manager']);
-
         return $schema
             ->components([
-                // Se for Admin/Manager, mostra o select de usuários
-                // Se não for, usa um campo hidden com o ID do usuário logado
-                $isAdminOrManager
-                    ? Select::make('user_id')
-                        ->label('Usuário')
-                        ->relationship(
-                            'user',
-                            'name',
-                            fn (Builder $query) => $query->orderBy('name')
-                        )
-                        ->default(Auth::id())
-                        ->required()
-                        ->searchable()
-                    : Hidden::make('user_id')
-                        ->default(Auth::id())
-                        ->dehydrated(),
-
                 Select::make('system_id')
                     ->label('Sistema')
                     ->relationship(

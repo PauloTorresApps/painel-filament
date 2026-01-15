@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class AiPrompt extends Model
 {
     protected $fillable = [
-        'user_id',
         'system_id',
         'title',
         'content',
@@ -39,11 +38,6 @@ class AiPrompt extends Model
     public function getProviderBadgeColorAttribute(): string
     {
         return $this->is_default ? 'success' : 'gray';
-    }
-
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     public function system(): BelongsTo

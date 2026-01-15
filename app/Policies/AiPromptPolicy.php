@@ -9,11 +9,19 @@ use Illuminate\Auth\Access\Response;
 class AiPromptPolicy
 {
     /**
+     * Verifica se o usuário é Admin ou Manager
+     */
+    private function isAdminOrManager(User $user): bool
+    {
+        return $user->hasRole(['Admin', 'Manager']);
+    }
+
+    /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -21,7 +29,7 @@ class AiPromptPolicy
      */
     public function view(User $user, AiPrompt $aiPrompt): bool
     {
-        return $user->id === $aiPrompt->user_id;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -29,7 +37,7 @@ class AiPromptPolicy
      */
     public function create(User $user): bool
     {
-        return true;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -37,7 +45,7 @@ class AiPromptPolicy
      */
     public function update(User $user, AiPrompt $aiPrompt): bool
     {
-        return $user->id === $aiPrompt->user_id;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -45,7 +53,7 @@ class AiPromptPolicy
      */
     public function delete(User $user, AiPrompt $aiPrompt): bool
     {
-        return $user->id === $aiPrompt->user_id;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -53,7 +61,7 @@ class AiPromptPolicy
      */
     public function restore(User $user, AiPrompt $aiPrompt): bool
     {
-        return $user->id === $aiPrompt->user_id;
+        return $this->isAdminOrManager($user);
     }
 
     /**
@@ -61,6 +69,6 @@ class AiPromptPolicy
      */
     public function forceDelete(User $user, AiPrompt $aiPrompt): bool
     {
-        return $user->id === $aiPrompt->user_id;
+        return $this->isAdminOrManager($user);
     }
 }
