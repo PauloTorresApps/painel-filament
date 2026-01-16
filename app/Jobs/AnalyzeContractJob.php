@@ -104,7 +104,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 'chars' => strlen($contractText)
             ]);
 
-            // Busca o prompt padrão para contratos
+            // Busca o prompt padrão para análise de contratos
             $system = System::where('name', 'Contratos')->first();
 
             if (!$system) {
@@ -112,12 +112,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             }
 
             $prompt = AiPrompt::where('system_id', $system->id)
+                ->where('prompt_type', AiPrompt::TYPE_ANALYSIS)
                 ->where('is_default', true)
                 ->where('is_active', true)
                 ->first();
 
             if (!$prompt) {
-                throw new \Exception('Nenhum prompt padrão ativo encontrado para análise de contratos.');
+                throw new \Exception('Nenhum prompt padrão ativo encontrado para análise de contratos (tipo: analysis).');
             }
 
             // Atualiza análise com informações do prompt

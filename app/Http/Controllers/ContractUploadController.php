@@ -31,6 +31,21 @@ class ContractUploadController extends Controller
     public function upload(Request $request): JsonResponse
     {
         try {
+            // Debug: log do que está sendo recebido
+            Log::info('Upload request recebido', [
+                'method' => $request->method(),
+                'has_file_filepond' => $request->hasFile('filepond'),
+                'has_file_file' => $request->hasFile('file'),
+                'all_files' => array_keys($request->allFiles()),
+                'all_input' => array_keys($request->all()),
+                'headers' => [
+                    'Upload-Length' => $request->header('Upload-Length'),
+                    'Upload-Offset' => $request->header('Upload-Offset'),
+                    'Upload-Name' => $request->header('Upload-Name'),
+                    'Content-Type' => $request->header('Content-Type'),
+                ],
+            ]);
+
             // Verifica se é upload chunked
             $isChunked = $request->has('patch') || $request->header('Upload-Length');
 
@@ -54,11 +69,24 @@ class ContractUploadController extends Controller
      */
     private function handleRegularUpload(Request $request): JsonResponse
     {
+        // FilePond envia com o nome do input (contract, filepond, ou file)
+        $fileKey = null;
+        foreach (['contract', 'filepond', 'file'] as $key) {
+            if ($request->hasFile($key)) {
+                $fileKey = $key;
+                break;
+            }
+        }
+
+        if (!$fileKey) {
+            return response()->json(['error' => 'Nenhum arquivo enviado'], 400);
+        }
+
         $request->validate([
-            'file' => 'required|file|mimes:pdf|max:102400', // 100MB
+            $fileKey => 'required|file|mimes:pdf|max:102400', // 100MB
         ]);
 
-        $file = $request->file('file');
+        $file = $request->file($fileKey);
         $fileName = $this->generateFileName($file->getClientOriginalName());
 
         // Salva o arquivo

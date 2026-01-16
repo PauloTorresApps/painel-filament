@@ -37,7 +37,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
 
         // Upload de contratos (FilePond chunked upload)
-        Route::post('contracts/upload', [ContractUploadController::class, 'upload'])->name('contracts.upload');
+        Route::match(['post', 'patch', 'head'], 'contracts/upload', [ContractUploadController::class, 'upload'])->name('contracts.upload');
         Route::delete('contracts/upload', [ContractUploadController::class, 'delete'])->name('contracts.delete');
 
         Route::resource('judicial-users', JudicialUserController::class);

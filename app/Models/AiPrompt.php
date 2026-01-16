@@ -7,8 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AiPrompt extends Model
 {
+    // Tipos de prompt para sistema de Contratos
+    public const TYPE_ANALYSIS = 'analysis';
+    public const TYPE_LEGAL_OPINION = 'legal_opinion';
+
     protected $fillable = [
         'system_id',
+        'prompt_type',
         'title',
         'content',
         'ai_provider',
@@ -30,6 +35,7 @@ class AiPrompt extends Model
 
     protected $appends = [
         'provider_badge_color',
+        'prompt_type_label',
     ];
 
     /**
@@ -66,5 +72,28 @@ class AiPrompt extends Model
             'hierarchical' => 'Pipeline Hierárquico (padrão)',
             'evolutionary' => 'Resumo Evolutivo (recomendado para muitos documentos)',
         ];
+    }
+
+    /**
+     * Retorna os tipos de prompt disponíveis para contratos
+     */
+    public static function getContractPromptTypes(): array
+    {
+        return [
+            self::TYPE_ANALYSIS => 'Análise de Contrato',
+            self::TYPE_LEGAL_OPINION => 'Parecer Jurídico',
+        ];
+    }
+
+    /**
+     * Retorna o label do tipo de prompt
+     */
+    public function getPromptTypeLabelAttribute(): ?string
+    {
+        if (!$this->prompt_type) {
+            return null;
+        }
+
+        return self::getContractPromptTypes()[$this->prompt_type] ?? $this->prompt_type;
     }
 }
