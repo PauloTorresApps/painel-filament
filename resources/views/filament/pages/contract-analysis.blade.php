@@ -28,22 +28,15 @@
                     </div>
                 @endif
 
-                {{-- Botão de Análise --}}
-                <div class="flex justify-end">
-                    <x-filament::button
-                        wire:click="analyzeContract"
-                        :disabled="!$this->uploadedFilePath || $this->isAnalyzing"
-                        icon="heroicon-o-sparkles"
-                        size="lg"
-                    >
-                        @if($this->isAnalyzing)
-                            <x-filament::loading-indicator class="h-5 w-5 mr-2" />
-                            Analisando...
-                        @else
-                            Analisar Contrato
-                        @endif
-                    </x-filament::button>
-                </div>
+                {{-- Status de análise em andamento --}}
+                @if($this->isAnalyzing)
+                    <div class="flex items-center gap-2 p-3 bg-info-50 dark:bg-info-950 rounded-lg border border-info-200 dark:border-info-800">
+                        <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
+                        <span class="text-sm text-info-700 dark:text-info-300">
+                            Análise em andamento...
+                        </span>
+                    </div>
+                @endif
             </div>
         </x-filament::section>
 
@@ -109,15 +102,118 @@
                                 @endif
                             </div>
 
-                            <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[600px] overflow-y-auto">
+                            <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto">
                                 {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->analysis_result) !!}
+                            </div>
+
+                            {{-- Botão para gerar parecer jurídico --}}
+                            @if($this->latestAnalysis->canGenerateLegalOpinion() && !$this->latestAnalysis->isLegalOpinionCompleted())
+                                <div class="mt-4 flex justify-end">
+                                    <x-filament::button
+                                        wire:click="generateLegalOpinion"
+                                        :disabled="$this->isGeneratingLegalOpinion"
+                                        icon="heroicon-o-scale"
+                                        color="primary"
+                                    >
+                                        @if($this->isGeneratingLegalOpinion || $this->latestAnalysis->isLegalOpinionProcessing())
+                                            <x-filament::loading-indicator class="h-4 w-4 mr-2" />
+                                            Gerando Parecer...
+                                        @else
+                                            Gerar Parecer Jurídico
+                                        @endif
+                                    </x-filament::button>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+
+                    {{-- Parecer Jurídico em processamento --}}
+                    @if($this->latestAnalysis->isLegalOpinionProcessing())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center gap-3 p-4 bg-info-50 dark:bg-info-950 rounded-lg">
+                                <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
+                                <span class="text-sm text-info-700 dark:text-info-300">
+                                    O parecer jurídico está sendo gerado. Isso pode levar alguns minutos...
+                                </span>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Erro no parecer jurídico --}}
+                    @if($this->latestAnalysis->isLegalOpinionFailed())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="p-4 bg-danger-50 dark:bg-danger-950 rounded-lg border border-danger-200 dark:border-danger-800">
+                                <p class="text-sm text-danger-700 dark:text-danger-300">
+                                    <strong>Erro no Parecer Jurídico:</strong> {{ $this->latestAnalysis->legal_opinion_error }}
+                                </p>
+                            </div>
+                            {{-- Botão para tentar novamente --}}
+                            <div class="mt-3 flex justify-end">
+                                <x-filament::button
+                                    wire:click="generateLegalOpinion"
+                                    icon="heroicon-o-arrow-path"
+                                    color="warning"
+                                    size="sm"
+                                >
+                                    Tentar Novamente
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Parecer Jurídico concluído --}}
+                    @if($this->latestAnalysis->isLegalOpinionCompleted() && $this->latestAnalysis->legal_opinion_result)
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                    <x-heroicon-o-scale class="w-5 h-5 text-primary-600" />
+                                    Parecer Jurídico
+                                </h4>
+                                <div class="flex items-center gap-3">
+                                    @if($this->latestAnalysis->legal_opinion_processing_time_ms)
+                                        <span class="text-xs text-gray-500 dark:text-gray-400">
+                                            Tempo: {{ number_format($this->latestAnalysis->legal_opinion_processing_time_ms / 1000, 1) }}s
+                                        </span>
+                                    @endif
+                                    <x-filament::badge color="success">
+                                        {{ $this->latestAnalysis->legal_opinion_status_label }}
+                                    </x-filament::badge>
+                                </div>
+                            </div>
+
+                            <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto">
+                                {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->legal_opinion_result) !!}
+                            </div>
+
+                            {{-- Botões de ação do parecer --}}
+                            <div class="mt-4 flex justify-end gap-3">
+                                <x-filament::button
+                                    tag="a"
+                                    href="{{ route('contracts.legal-opinion.view', $this->latestAnalysis->id) }}"
+                                    target="_blank"
+                                    icon="heroicon-o-eye"
+                                    color="gray"
+                                    size="sm"
+                                >
+                                    Visualizar PDF
+                                </x-filament::button>
+
+                                <x-filament::button
+                                    tag="a"
+                                    href="{{ route('contracts.legal-opinion.download', $this->latestAnalysis->id) }}"
+                                    icon="heroicon-o-arrow-down-tray"
+                                    color="primary"
+                                    size="sm"
+                                >
+                                    Download PDF
+                                </x-filament::button>
                             </div>
                         </div>
                     @endif
 
                     {{-- Link para histórico --}}
                     <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                        <a href="{{ route('filament.admin.resources.contract-analyses.index') }}"
+                        <a href="{{ route('filament.admin.resources.contract-analysis.contract-analyses.index') }}"
                            class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 flex items-center gap-1">
                             <x-heroicon-o-clock class="w-4 h-4" />
                             Ver histórico de análises

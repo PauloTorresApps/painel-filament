@@ -3,8 +3,11 @@
 namespace App\Filament\Pages;
 
 use App\Jobs\AnalyzeContractJob;
+use App\Jobs\GenerateLegalOpinionJob;
 use App\Models\ContractAnalysis as ContractAnalysisModel;
 use BackedEnum;
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -25,8 +28,14 @@ class ContractAnalysis extends Page
     public ?int $uploadedFileSize = null;
     public bool $isAnalyzing = false;
 
+    // Nome da parte interessada
+    public ?string $interestedPartyName = null;
+
     // Última análise
     public ?ContractAnalysisModel $latestAnalysis = null;
+
+    // Flag para indicar geração de parecer em andamento
+    public bool $isGeneratingLegalOpinion = false;
 
     /**
      * Controle de acesso - apenas Admin, Manager ou Analista de Contrato
@@ -94,9 +103,36 @@ class ContractAnalysis extends Page
     }
 
     /**
-     * Inicia a análise do contrato
+     * Ações do header da página
      */
-    public function analyzeContract(): void
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('analyzeContract')
+                ->label('Analisar Contrato')
+                ->icon('heroicon-o-sparkles')
+                ->size('lg')
+                ->disabled(fn () => !$this->uploadedFilePath || $this->isAnalyzing)
+                ->form([
+                    TextInput::make('interested_party_name')
+                        ->label('Nome da Parte Interessada')
+                        ->placeholder('Informe o nome da parte interessada (conforme consta no contrato)')
+                        ->helperText('Opcional: Informe o nome da parte que está solicitando a análise, caso esteja definido no contrato.')
+                        ->maxLength(255),
+                ])
+                ->modalHeading('Análise de Contrato')
+                ->modalDescription('Informe os dados para iniciar a análise do contrato.')
+                ->modalSubmitActionLabel('Iniciar Análise')
+                ->action(function (array $data): void {
+                    $this->executeAnalysis($data['interested_party_name'] ?? null);
+                }),
+        ];
+    }
+
+    /**
+     * Executa a análise do contrato
+     */
+    public function executeAnalysis(?string $interestedPartyName = null): void
     {
         if (!$this->uploadedFilePath) {
             Notification::make()
@@ -142,6 +178,7 @@ class ContractAnalysis extends Page
                 'file_name' => $this->uploadedFileName,
                 'file_path' => $this->uploadedFilePath,
                 'file_size' => $this->uploadedFileSize ?? 0,
+                'interested_party_name' => $interestedPartyName,
                 'status' => ContractAnalysisModel::STATUS_PENDING,
             ]);
 
@@ -166,7 +203,8 @@ class ContractAnalysis extends Page
 
             Log::info('Análise de contrato iniciada', [
                 'analysis_id' => $analysis->id,
-                'user_id' => Auth::id()
+                'user_id' => Auth::id(),
+                'interested_party_name' => $interestedPartyName
             ]);
 
         } catch (\Exception $e) {
@@ -190,8 +228,71 @@ class ContractAnalysis extends Page
     {
         $this->loadLatestAnalysis();
 
-        if ($this->latestAnalysis && $this->latestAnalysis->isCompleted()) {
-            $this->isAnalyzing = false;
+        if ($this->latestAnalysis) {
+            if ($this->latestAnalysis->isCompleted()) {
+                $this->isAnalyzing = false;
+            }
+
+            if ($this->latestAnalysis->isLegalOpinionCompleted() || $this->latestAnalysis->isLegalOpinionFailed()) {
+                $this->isGeneratingLegalOpinion = false;
+            }
+        }
+    }
+
+    /**
+     * Gera o parecer jurídico a partir da análise
+     */
+    public function generateLegalOpinion(): void
+    {
+        if (!$this->latestAnalysis) {
+            Notification::make()
+                ->title('Nenhuma análise encontrada')
+                ->body('É necessário ter uma análise concluída para gerar o parecer jurídico.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$this->latestAnalysis->canGenerateLegalOpinion()) {
+            Notification::make()
+                ->title('Não é possível gerar parecer')
+                ->body('A análise precisa estar concluída e não pode haver outro parecer em processamento.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        try {
+            // Dispara o job de geração do parecer
+            GenerateLegalOpinionJob::dispatch($this->latestAnalysis->id);
+
+            $this->isGeneratingLegalOpinion = true;
+
+            Notification::make()
+                ->title('Gerando Parecer Jurídico')
+                ->body('O parecer jurídico está sendo gerado. Você será notificado quando concluir.')
+                ->success()
+                ->send();
+
+            // Recarrega última análise
+            $this->loadLatestAnalysis();
+
+            Log::info('Geração de parecer jurídico iniciada', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao iniciar geração de parecer jurídico', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Erro ao gerar parecer')
+                ->body('Ocorreu um erro ao processar sua solicitação. Tente novamente.')
+                ->danger()
+                ->send();
         }
     }
 }

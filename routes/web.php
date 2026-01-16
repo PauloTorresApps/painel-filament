@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
 use App\Http\Controllers\JudicialUserController;
 use App\Http\Controllers\ContractUploadController;
+use App\Http\Controllers\LegalOpinionPdfController;
 
 Route::redirect('/', '/admin');
 
@@ -39,6 +40,10 @@ Route::middleware(['auth'])->group(function () {
         // Upload de contratos (FilePond chunked upload)
         Route::match(['post', 'patch', 'head'], 'contracts/upload', [ContractUploadController::class, 'upload'])->name('contracts.upload');
         Route::delete('contracts/upload', [ContractUploadController::class, 'delete'])->name('contracts.delete');
+
+        // Download de Parecer Jurídico em PDF
+        Route::get('contracts/{id}/legal-opinion/download', [LegalOpinionPdfController::class, 'download'])->name('contracts.legal-opinion.download');
+        Route::get('contracts/{id}/legal-opinion/view', [LegalOpinionPdfController::class, 'view'])->name('contracts.legal-opinion.view');
 
         Route::resource('judicial-users', JudicialUserController::class);
 });

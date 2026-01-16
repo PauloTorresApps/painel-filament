@@ -9,20 +9,18 @@ use App\Models\User;
 use App\Services\DeepSeekService;
 use App\Services\GeminiService;
 use App\Services\OpenAIService;
-use App\Services\PdfToTextService;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Filament\Notifications\Notification as FilamentNotification;
 
-class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
+class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 0; // Sem timeout - permite análises longas
+    public int $timeout = 0; // Sem timeout - permite processamentos longos
     public int $tries = 2;
 
     /**
@@ -37,7 +35,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
      */
     public function uniqueId(): string
     {
-        return "analyze_contract_{$this->contractAnalysisId}";
+        return "legal_opinion_{$this->contractAnalysisId}";
     }
 
     public int $uniqueFor = 600; // 10 minutos
@@ -54,18 +52,24 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             $analysis = ContractAnalysis::find($this->contractAnalysisId);
 
             if (!$analysis) {
-                Log::error('ContractAnalysis não encontrada', ['id' => $this->contractAnalysisId]);
+                Log::error('ContractAnalysis não encontrada para parecer jurídico', ['id' => $this->contractAnalysisId]);
                 return;
             }
 
-            // Verifica se já está em processamento
-            if ($analysis->isProcessing()) {
-                Log::warning('Análise de contrato já em processamento', ['id' => $this->contractAnalysisId]);
+            // Verifica se a análise está concluída
+            if (!$analysis->isCompleted()) {
+                Log::warning('Análise de contrato não está concluída', ['id' => $this->contractAnalysisId]);
+                return;
+            }
+
+            // Verifica se já está gerando parecer
+            if ($analysis->isLegalOpinionProcessing()) {
+                Log::warning('Parecer jurídico já está sendo gerado', ['id' => $this->contractAnalysisId]);
                 return;
             }
 
             // Marca como processando
-            $analysis->markAsProcessing();
+            $analysis->markLegalOpinionAsProcessing();
 
             $user = User::find($analysis->user_id);
             if (!$user) {
@@ -75,71 +79,52 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Notifica início do processamento
             $this->sendNotification(
                 $user,
-                'Análise de Contrato Iniciada',
-                "O contrato '{$analysis->file_name}' está sendo analisado pela IA.",
+                'Gerando Parecer Jurídico',
+                "O parecer jurídico para o contrato '{$analysis->file_name}' está sendo gerado.",
                 'info'
             );
 
-            // Extrai texto do PDF
-            Log::info('Extraindo texto do contrato', [
+            Log::info('Iniciando geração de parecer jurídico', [
                 'id' => $analysis->id,
-                'file_path' => $analysis->file_path
+                'file_name' => $analysis->file_name
             ]);
 
-            $pdfService = new PdfToTextService();
-            $fullPath = Storage::path($analysis->file_path);
-
-            if (!file_exists($fullPath)) {
-                throw new \Exception("Arquivo não encontrado: {$analysis->file_path}");
-            }
-
-            $contractText = $pdfService->extractTextFromPath($fullPath);
-
-            if (empty(trim($contractText))) {
-                throw new \Exception('Não foi possível extrair texto do PDF. O arquivo pode estar protegido ou ser uma imagem.');
-            }
-
-            Log::info('Texto extraído do contrato', [
-                'id' => $analysis->id,
-                'chars' => strlen($contractText)
-            ]);
-
-            // Busca o prompt padrão para análise de contratos
+            // Busca o prompt padrão para parecer jurídico
             $system = System::where('name', 'Contratos')->first();
 
             if (!$system) {
-                throw new \Exception('Sistema "Contratos" não encontrado. Execute o seeder ContractSystemSeeder.');
+                throw new \Exception('Sistema "Contratos" não encontrado.');
             }
 
             $prompt = AiPrompt::where('system_id', $system->id)
-                ->where('prompt_type', AiPrompt::TYPE_ANALYSIS)
+                ->where('prompt_type', AiPrompt::TYPE_LEGAL_OPINION)
                 ->where('is_default', true)
                 ->where('is_active', true)
                 ->first();
 
             if (!$prompt) {
-                throw new \Exception('Nenhum prompt padrão ativo encontrado para análise de contratos (tipo: analysis).');
+                throw new \Exception('Nenhum prompt padrão ativo encontrado para parecer jurídico (tipo: legal_opinion).');
             }
 
             // Atualiza análise com informações do prompt
             $analysis->update([
-                'prompt_id' => $prompt->id,
-                'ai_provider' => $prompt->ai_provider,
+                'legal_opinion_prompt_id' => $prompt->id,
+                'legal_opinion_ai_provider' => $prompt->ai_provider,
             ]);
 
-            // Prepara o documento para análise
+            // Prepara o documento com a análise prévia
             $documentos = [
                 [
-                    'descricao' => $analysis->file_name,
-                    'texto' => $contractText,
+                    'descricao' => "Análise do contrato: {$analysis->file_name}",
+                    'texto' => $analysis->analysis_result,
                 ]
             ];
 
-            // Contexto básico do contrato
+            // Contexto para o parecer jurídico
             $contextoDados = [
-                'tipo' => 'Contrato',
-                'arquivo' => $analysis->file_name,
-                'tamanho' => $analysis->formatted_file_size,
+                'tipo' => 'Parecer Jurídico',
+                'arquivo_original' => $analysis->file_name,
+                'data_analise' => $analysis->updated_at->format('d/m/Y H:i'),
             ];
 
             // Adiciona nome da parte interessada ao contexto, se informado
@@ -150,13 +135,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Obtém o serviço de IA apropriado
             $aiService = $this->getAIService($prompt->ai_provider);
 
-            Log::info('Iniciando análise do contrato com IA', [
+            Log::info('Gerando parecer jurídico com IA', [
                 'id' => $analysis->id,
                 'provider' => $prompt->ai_provider,
                 'deep_thinking' => $prompt->deep_thinking_enabled
             ]);
 
-            // Executa análise
+            // Executa geração do parecer
             $result = $aiService->analyzeDocuments(
                 $prompt->content,
                 $documentos,
@@ -167,10 +152,10 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Calcula tempo de processamento
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como concluída
-            $analysis->markAsCompleted($result, $processingTimeMs);
+            // Marca como concluído
+            $analysis->markLegalOpinionAsCompleted($result, $processingTimeMs);
 
-            Log::info('Análise de contrato concluída', [
+            Log::info('Parecer jurídico gerado com sucesso', [
                 'id' => $analysis->id,
                 'processing_time_ms' => $processingTimeMs
             ]);
@@ -178,13 +163,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Notifica o usuário
             $this->sendNotification(
                 $user,
-                'Análise de Contrato Concluída',
-                "A análise do contrato '{$analysis->file_name}' foi concluída com sucesso.",
+                'Parecer Jurídico Concluído',
+                "O parecer jurídico para o contrato '{$analysis->file_name}' foi gerado com sucesso.",
                 'success'
             );
 
         } catch (\Exception $e) {
-            Log::error('Erro na análise de contrato', [
+            Log::error('Erro ao gerar parecer jurídico', [
                 'id' => $this->contractAnalysisId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -192,13 +177,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
 
             // Tenta atualizar o status para failed
             if (isset($analysis)) {
-                $analysis->markAsFailed($e->getMessage());
+                $analysis->markLegalOpinionAsFailed($e->getMessage());
 
                 if (isset($user)) {
                     $this->sendNotification(
                         $user,
-                        'Erro na Análise de Contrato',
-                        "Ocorreu um erro ao analisar o contrato: {$e->getMessage()}",
+                        'Erro ao Gerar Parecer Jurídico',
+                        "Ocorreu um erro ao gerar o parecer: {$e->getMessage()}",
                         'danger'
                     );
                 }

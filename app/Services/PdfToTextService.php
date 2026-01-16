@@ -67,6 +67,36 @@ class PdfToTextService
     }
 
     /**
+     * Extrai texto de um arquivo PDF diretamente pelo caminho
+     *
+     * @param string $filePath Caminho completo do arquivo PDF
+     * @return string Texto extraído do PDF
+     * @throws \Exception
+     */
+    public function extractTextFromPath(string $filePath): string
+    {
+        try {
+            if (!file_exists($filePath)) {
+                throw new \Exception("Arquivo não encontrado: {$filePath}");
+            }
+
+            // Extrai texto usando pdftotext
+            $text = $this->extractTextFromFile($filePath);
+
+            // Limpa e normaliza o texto
+            return $this->normalizeText($text);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao extrair texto do PDF', [
+                'file_path' => $filePath,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Extrai texto do arquivo PDF usando pdftotext
      */
     private function extractTextFromFile(string $filePath): string

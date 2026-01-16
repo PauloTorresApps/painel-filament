@@ -10,19 +10,27 @@ class ContractAnalysis extends Model
     protected $fillable = [
         'user_id',
         'prompt_id',
+        'legal_opinion_prompt_id',
         'file_name',
         'file_path',
         'file_size',
+        'interested_party_name',
         'status',
+        'legal_opinion_status',
         'ai_provider',
+        'legal_opinion_ai_provider',
         'analysis_result',
+        'legal_opinion_result',
         'error_message',
+        'legal_opinion_error',
         'processing_time_ms',
+        'legal_opinion_processing_time_ms',
     ];
 
     protected $casts = [
         'file_size' => 'integer',
         'processing_time_ms' => 'integer',
+        'legal_opinion_processing_time_ms' => 'integer',
     ];
 
     /**
@@ -42,11 +50,19 @@ class ContractAnalysis extends Model
     }
 
     /**
-     * Relação com o prompt de IA
+     * Relação com o prompt de IA (análise)
      */
     public function prompt(): BelongsTo
     {
         return $this->belongsTo(AiPrompt::class, 'prompt_id');
+    }
+
+    /**
+     * Relação com o prompt de IA (parecer jurídico)
+     */
+    public function legalOpinionPrompt(): BelongsTo
+    {
+        return $this->belongsTo(AiPrompt::class, 'legal_opinion_prompt_id');
     }
 
     /**
@@ -147,6 +163,102 @@ class ContractAnalysis extends Model
         $this->update([
             'status' => self::STATUS_FAILED,
             'error_message' => $errorMessage,
+        ]);
+    }
+
+    // ========== Métodos para Parecer Jurídico ==========
+
+    /**
+     * Retorna a cor do badge de status do parecer jurídico
+     */
+    public function getLegalOpinionStatusBadgeColorAttribute(): string
+    {
+        return match ($this->legal_opinion_status) {
+            self::STATUS_PENDING => 'warning',
+            self::STATUS_PROCESSING => 'info',
+            self::STATUS_COMPLETED => 'success',
+            self::STATUS_FAILED => 'danger',
+            default => 'gray',
+        };
+    }
+
+    /**
+     * Retorna o label do status do parecer jurídico em português
+     */
+    public function getLegalOpinionStatusLabelAttribute(): string
+    {
+        return match ($this->legal_opinion_status) {
+            self::STATUS_PENDING => 'Pendente',
+            self::STATUS_PROCESSING => 'Gerando...',
+            self::STATUS_COMPLETED => 'Concluído',
+            self::STATUS_FAILED => 'Falhou',
+            default => 'Não iniciado',
+        };
+    }
+
+    /**
+     * Verifica se o parecer jurídico está em andamento
+     */
+    public function isLegalOpinionProcessing(): bool
+    {
+        return $this->legal_opinion_status === self::STATUS_PROCESSING;
+    }
+
+    /**
+     * Verifica se o parecer jurídico foi concluído
+     */
+    public function isLegalOpinionCompleted(): bool
+    {
+        return $this->legal_opinion_status === self::STATUS_COMPLETED;
+    }
+
+    /**
+     * Verifica se o parecer jurídico falhou
+     */
+    public function isLegalOpinionFailed(): bool
+    {
+        return $this->legal_opinion_status === self::STATUS_FAILED;
+    }
+
+    /**
+     * Verifica se pode gerar parecer jurídico
+     * (análise deve estar concluída e parecer não pode estar em processamento)
+     */
+    public function canGenerateLegalOpinion(): bool
+    {
+        return $this->isCompleted()
+            && !$this->isLegalOpinionProcessing()
+            && !empty($this->analysis_result);
+    }
+
+    /**
+     * Marca o parecer jurídico como processando
+     */
+    public function markLegalOpinionAsProcessing(): void
+    {
+        $this->update(['legal_opinion_status' => self::STATUS_PROCESSING]);
+    }
+
+    /**
+     * Marca o parecer jurídico como concluído
+     */
+    public function markLegalOpinionAsCompleted(string $result, int $processingTimeMs): void
+    {
+        $this->update([
+            'legal_opinion_status' => self::STATUS_COMPLETED,
+            'legal_opinion_result' => $result,
+            'legal_opinion_processing_time_ms' => $processingTimeMs,
+        ]);
+    }
+
+    /**
+     * Marca o parecer jurídico como falha
+     */
+    public function markLegalOpinionAsFailed(string $errorMessage): void
+    {
+        $this->update([
+            'legal_opinion_status' => self::STATUS_FAILED,
+            'legal_opinion_error' => $errorMessage,
         ]);
     }
 }
