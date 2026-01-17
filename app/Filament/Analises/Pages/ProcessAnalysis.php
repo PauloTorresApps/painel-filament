@@ -1,10 +1,11 @@
 <?php
 
-namespace App\Filament\Pages;
+namespace App\Filament\Analises\Pages;
 
 use BackedEnum;
 use Filament\Pages\Page;
 use UnitEnum;
+use Illuminate\Support\Facades\Auth;
 
 class ProcessAnalysis extends Page
 {
@@ -19,4 +20,18 @@ class ProcessAnalysis extends Page
     protected static ?int $navigationSort = 1;
 
     protected string $view = 'filament.pages.process-analysis';
+
+    /**
+     * Controle de acesso - apenas Admin, Manager ou Analista de Processo
+     */
+    public static function canAccess(): bool
+    {
+        $user = Auth::user();
+
+        if (!$user) {
+            return false;
+        }
+
+        return $user->hasRole(['Admin', 'Manager', 'Analista de Processo']);
+    }
 }

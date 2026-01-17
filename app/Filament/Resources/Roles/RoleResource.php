@@ -18,6 +18,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use App\Filament\Resources\Roles\Pages\ManageRoles;
+use UnitEnum;
 
 class RoleResource extends Resource
 {
@@ -27,6 +28,10 @@ class RoleResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Identification;
 
     protected static ?string $recordTitleAttribute = 'Perfis';
+
+    protected static UnitEnum|string|null $navigationGroup = 'Administração';
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
     {

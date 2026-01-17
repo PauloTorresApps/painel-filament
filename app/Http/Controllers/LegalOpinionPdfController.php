@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ContractAnalysis;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 
@@ -13,7 +12,7 @@ class LegalOpinionPdfController extends Controller
     /**
      * Download do parecer jurídico em PDF
      */
-    public function download(Request $request, int $id): Response
+    public function download(int $id): Response
     {
         $analysis = ContractAnalysis::findOrFail($id);
 
@@ -43,10 +42,12 @@ class LegalOpinionPdfController extends Controller
         // Configura o PDF
         $pdf->setPaper('a4', 'portrait');
         $pdf->setOption('isRemoteEnabled', true);
-        $pdf->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->setOption('isPhpEnabled', true);
+        $pdf->setOption('defaultFont', 'DejaVu Serif');
+        $pdf->setOption('isFontSubsettingEnabled', true);
 
         // Nome do arquivo
-        $fileName = 'parecer-juridico-' . now()->format('Y-m-d-His') . '.pdf';
+        $fileName = 'parecer-juridico-' . $analysis->id . '-' . now()->format('Y-m-d-His') . '.pdf';
 
         return $pdf->download($fileName);
     }
@@ -54,7 +55,7 @@ class LegalOpinionPdfController extends Controller
     /**
      * Visualizar o parecer jurídico em PDF (stream)
      */
-    public function view(Request $request, int $id): Response
+    public function view(int $id): Response
     {
         $analysis = ContractAnalysis::findOrFail($id);
 
@@ -84,8 +85,10 @@ class LegalOpinionPdfController extends Controller
         // Configura o PDF
         $pdf->setPaper('a4', 'portrait');
         $pdf->setOption('isRemoteEnabled', true);
-        $pdf->setOption('defaultFont', 'DejaVu Sans');
+        $pdf->setOption('isPhpEnabled', true);
+        $pdf->setOption('defaultFont', 'DejaVu Serif');
+        $pdf->setOption('isFontSubsettingEnabled', true);
 
-        return $pdf->stream('parecer-juridico.pdf');
+        return $pdf->stream('parecer-juridico-' . $analysis->id . '.pdf');
     }
 }

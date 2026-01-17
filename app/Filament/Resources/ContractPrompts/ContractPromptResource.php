@@ -39,9 +39,9 @@ class ContractPromptResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Prompts de Contratos';
 
-    protected static UnitEnum|string|null $navigationGroup = 'Configurações';
+    protected static UnitEnum|string|null $navigationGroup = 'Contratos';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 3;
 
     protected static ?string $slug = 'contract-prompts';
 

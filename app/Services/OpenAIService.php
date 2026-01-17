@@ -184,6 +184,14 @@ class OpenAIService implements AIProviderInterface
     }
 
     /**
+     * Detecta se é uma análise de contrato baseado no contexto
+     */
+    private function isContractAnalysis(array $contextoDados): bool
+    {
+        return isset($contextoDados['tipo']) && $contextoDados['tipo'] === 'Contrato';
+    }
+
+    /**
      * Monta prompt evolutivo com contexto acumulado
      */
     private function buildEvolutionaryPrompt(
@@ -195,15 +203,31 @@ class OpenAIService implements AIProviderInterface
         int $totalDocs,
         array $contextoDados
     ): string {
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $isContract = $this->isContractAnalysis($contextoDados);
 
-        $prompt = "# ANÁLISE EVOLUTIVA DE PROCESSO JUDICIAL\n\n";
-        $prompt .= "**Processo:** {$numeroProcesso}\n";
-        $prompt .= "**Classe:** {$nomeClasse}\n";
-        $prompt .= "**Assuntos:** {$assuntos}\n";
-        $prompt .= "**Documento atual:** {$docNum}/{$totalDocs}\n\n";
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
+            $numeroProcesso = 'N/A';
+            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
+
+            $prompt = "# ANÁLISE EVOLUTIVA DE CONTRATO\n\n";
+            $prompt .= "**Arquivo:** {$assuntos}\n";
+            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
+                $prompt .= "**Parte Interessada:** {$tipoParte}\n";
+            }
+            $prompt .= "**Documento atual:** {$docNum}/{$totalDocs}\n\n";
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+
+            $prompt = "# ANÁLISE EVOLUTIVA DE PROCESSO JUDICIAL\n\n";
+            $prompt .= "**Processo:** {$numeroProcesso}\n";
+            $prompt .= "**Classe:** {$nomeClasse}\n";
+            $prompt .= "**Assuntos:** {$assuntos}\n";
+            $prompt .= "**Documento atual:** {$docNum}/{$totalDocs}\n\n";
+        }
 
         // Adiciona resumo dos documentos anteriores
         if (!empty($resumoAnterior)) {
@@ -224,10 +248,19 @@ class OpenAIService implements AIProviderInterface
         // Instrução para manter evolução
         if ($docNum < $totalDocs) {
             $prompt .= "\n**IMPORTANTE:** Sua resposta será usada como contexto para analisar os próximos documentos. ";
-            $prompt .= "Inclua informações relevantes que conectem este documento aos anteriores e que sejam úteis para entender os próximos documentos do processo.";
+            if ($isContract) {
+                $prompt .= "Inclua informações relevantes que conectem esta parte do contrato às anteriores.";
+            } else {
+                $prompt .= "Inclua informações relevantes que conectem este documento aos anteriores e que sejam úteis para entender os próximos documentos do processo.";
+            }
         } else {
-            $prompt .= "\n**IMPORTANTE:** Este é o último documento. Forneça uma análise final completa do processo, ";
-            $prompt .= "consolidando todas as informações dos documentos anteriores.";
+            if ($isContract) {
+                $prompt .= "\n**IMPORTANTE:** Este é o último trecho. Forneça uma análise final completa do contrato, ";
+                $prompt .= "consolidando todas as informações identificadas.";
+            } else {
+                $prompt .= "\n**IMPORTANTE:** Este é o último documento. Forneça uma análise final completa do processo, ";
+                $prompt .= "consolidando todas as informações dos documentos anteriores.";
+            }
         }
 
         return $prompt;

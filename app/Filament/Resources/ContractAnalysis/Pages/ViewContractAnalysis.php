@@ -6,8 +6,8 @@ use App\Filament\Resources\ContractAnalysis\ContractAnalysisResource;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
+use Filament\Infolists\Components\TextEntry;
 
 class ViewContractAnalysis extends ViewRecord
 {
@@ -83,17 +83,6 @@ class ViewContractAnalysis extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            \Filament\Actions\Action::make('download')
-                ->label('Baixar Contrato')
-                ->icon('heroicon-o-arrow-down-tray')
-                ->action(function () {
-                    $path = storage_path('app/' . $this->record->file_path);
-                    if (file_exists($path)) {
-                        return response()->download($path, $this->record->file_name);
-                    }
-                })
-                ->visible(fn () => file_exists(storage_path('app/' . $this->record->file_path))),
-
             \Filament\Actions\DeleteAction::make(),
         ];
     }

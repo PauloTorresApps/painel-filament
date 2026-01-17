@@ -170,6 +170,9 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Marca como concluída
             $analysis->markAsCompleted($result, $processingTimeMs);
 
+            // Remove o arquivo do storage após análise concluída
+            $this->deleteContractFile($analysis);
+
             Log::info('Análise de contrato concluída', [
                 'id' => $analysis->id,
                 'processing_time_ms' => $processingTimeMs
@@ -194,6 +197,9 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             if (isset($analysis)) {
                 $analysis->markAsFailed($e->getMessage());
 
+                // Remove o arquivo mesmo em caso de falha
+                $this->deleteContractFile($analysis);
+
                 if (isset($user)) {
                     $this->sendNotification(
                         $user,
@@ -203,6 +209,31 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                     );
                 }
             }
+        }
+    }
+
+    /**
+     * Remove o arquivo de contrato do storage
+     */
+    private function deleteContractFile(ContractAnalysis $analysis): void
+    {
+        try {
+            if ($analysis->file_path && Storage::exists($analysis->file_path)) {
+                Storage::delete($analysis->file_path);
+
+                // Limpa o path no registro
+                $analysis->update(['file_path' => null]);
+
+                Log::info('Arquivo de contrato removido do storage', [
+                    'analysis_id' => $analysis->id,
+                    'file_name' => $analysis->file_name
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Erro ao remover arquivo de contrato', [
+                'analysis_id' => $analysis->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 

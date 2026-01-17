@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Filament\Resources\ContractAnalysis;
+namespace App\Filament\Analises\Resources;
 
-use App\Filament\Resources\ContractAnalysis\Pages\ListContractAnalyses;
-use App\Filament\Resources\ContractAnalysis\Pages\ViewContractAnalysis;
+use App\Filament\Analises\Resources\ContractAnalysisResource\Pages\ListContractAnalyses;
+use App\Filament\Analises\Resources\ContractAnalysisResource\Pages\ViewContractAnalysis;
 use App\Models\ContractAnalysis;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -35,7 +35,7 @@ class ContractAnalysisResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    protected static ?string $slug = 'contract-analyses';
+    protected static ?string $slug = 'historico-contratos';
 
     /**
      * Controle de acesso ao resource

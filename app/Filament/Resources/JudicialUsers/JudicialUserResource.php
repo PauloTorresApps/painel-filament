@@ -29,7 +29,9 @@ class JudicialUserResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Usuários Judiciais';
 
-    protected static UnitEnum|string|null $navigationGroup = 'Configurações';
+    protected static UnitEnum|string|null $navigationGroup = 'Processos';
+
+    protected static ?int $navigationSort = 4;
 
     public static function form(Schema $schema): Schema
     {

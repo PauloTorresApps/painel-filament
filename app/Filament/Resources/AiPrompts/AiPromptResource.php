@@ -29,7 +29,9 @@ class AiPromptResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Prompts de IA';
 
-    protected static UnitEnum|string|null $navigationGroup = 'Configurações';
+    protected static UnitEnum|string|null $navigationGroup = 'Processos';
+
+    protected static ?int $navigationSort = 3;
 
     public static function form(Schema $schema): Schema
     {

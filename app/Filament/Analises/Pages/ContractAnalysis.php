@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Pages;
+namespace App\Filament\Analises\Pages;
 
 use App\Jobs\AnalyzeContractJob;
 use App\Jobs\GenerateLegalOpinionJob;

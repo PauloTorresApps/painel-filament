@@ -75,6 +75,14 @@ class GeminiService implements AIProviderInterface
     }
 
     /**
+     * Detecta se é uma análise de contrato baseado no contexto
+     */
+    private function isContractAnalysis(array $contextoDados): bool
+    {
+        return isset($contextoDados['tipo']) && $contextoDados['tipo'] === 'Contrato';
+    }
+
+    /**
      * Aplica estratégia de Resumo Evolutivo para manter contexto completo do processo
      *
      * Cada documento é analisado junto com o resumo acumulado dos anteriores,
@@ -92,20 +100,39 @@ class GeminiService implements AIProviderInterface
         array $contextoDados,
         ?\App\Models\DocumentAnalysis $documentAnalysis = null
     ): string {
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-        $tipoParte = $this->identificarTipoParte($contextoDados);
+        $isContract = $this->isContractAnalysis($contextoDados);
+
+        // Extrai informações do contexto baseado no tipo
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
+            $numeroProcesso = 'N/A';
+            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+            $tipoParte = $this->identificarTipoParte($contextoDados);
+        }
 
         // Contexto inicial que será mantido em todas as iterações
-        $contextoBase = "# CONTEXTO DO PROCESSO\n\n";
-        $contextoBase .= "**Classe Processual:** {$nomeClasse}\n";
-        $contextoBase .= "**Assuntos:** {$assuntos}\n";
-        $contextoBase .= "**Você está analisando como:** {$tipoParte}\n";
-        $contextoBase .= "**Número do Processo:** {$numeroProcesso}\n";
+        if ($isContract) {
+            $contextoBase = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+            $contextoBase .= "**Tipo:** Análise de Contrato\n";
+            $contextoBase .= "**Arquivo:** {$assuntos}\n";
+            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
+                $contextoBase .= "**Parte Interessada:** {$tipoParte}\n";
+            }
+        } else {
+            $contextoBase = "# CONTEXTO DO PROCESSO\n\n";
+            $contextoBase .= "**Classe Processual:** {$nomeClasse}\n";
+            $contextoBase .= "**Assuntos:** {$assuntos}\n";
+            $contextoBase .= "**Você está analisando como:** {$tipoParte}\n";
+            $contextoBase .= "**Número do Processo:** {$numeroProcesso}\n";
 
-        if (!empty($contextoDados['valorCausa'])) {
-            $contextoBase .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            if (!empty($contextoDados['valorCausa'])) {
+                $contextoBase .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
         }
 
         $contextoBase .= "\n---\n\n";
@@ -433,10 +460,32 @@ PROMPT;
      */
     private function synthesizeBatchAnalyses(array $batchAnalyses, array $contextoDados): string
     {
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+        $isContract = $this->isContractAnalysis($contextoDados);
 
-        $promptSintese = <<<PROMPT
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $numeroProcesso = $contextoDados['arquivo'] ?? 'Contrato';
+
+            $promptSintese = <<<PROMPT
+Você é um assistente jurídico especializado. Você recebeu análises parciais de um contrato que foi dividido em lotes devido ao volume do documento.
+
+**ARQUIVO:** {$numeroProcesso}
+**TIPO:** {$nomeClasse}
+
+**SUA TAREFA:** Sintetize as análises abaixo em UMA ÚNICA narrativa coerente que conte a análise completa do contrato, preservando:
+- Todas as cláusulas importantes identificadas
+- Os riscos e pontos de atenção
+- As recomendações de cada lote
+- A perspectiva da parte interessada
+
+**ANÁLISES PARCIAIS:**
+
+PROMPT;
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+
+            $promptSintese = <<<PROMPT
 Você é um assistente jurídico especializado. Você recebeu análises parciais de um processo judicial que foi dividido em lotes devido ao volume de documentos.
 
 **PROCESSO:** {$numeroProcesso}
@@ -451,6 +500,7 @@ Você é um assistente jurídico especializado. Você recebeu análises parciais
 **ANÁLISES PARCIAIS (EM ORDEM CRONOLÓGICA):**
 
 PROMPT;
+        }
 
         foreach ($batchAnalyses as $index => $analysis) {
             $loteNum = $index + 1;
@@ -486,28 +536,46 @@ PROMPT;
      */
     private function buildPrompt(string $template, array $documentos, array $contextoDados): string
     {
-        // Extrai informações do contexto
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-        $tipoParte = $this->identificarTipoParte($contextoDados);
+        $isContract = $this->isContractAnalysis($contextoDados);
 
-        // Substitui variáveis no template
+        // Extrai informações do contexto baseado no tipo
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
+            $numeroProcesso = 'N/A';
+            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+            $tipoParte = $this->identificarTipoParte($contextoDados);
+        }
+
+        // Substitui variáveis no template (se existirem)
         $prompt = str_replace(
-            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]'],
-            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte],
+            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]', '[parteInteressada]'],
+            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte, $tipoParte],
             $template
         );
 
         // CONTEXTO INICIAL - Informações essenciais para orientar a análise
-        $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
-        $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
-        $contextoInicial .= "**Assuntos:** {$assuntos}\n";
-        $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
-        $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
+        if ($isContract) {
+            $contextoInicial = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+            $contextoInicial .= "**Tipo:** Análise de Contrato\n";
+            $contextoInicial .= "**Arquivo:** {$assuntos}\n";
+            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
+                $contextoInicial .= "**Parte Interessada:** {$tipoParte}\n";
+            }
+        } else {
+            $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
+            $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
+            $contextoInicial .= "**Assuntos:** {$assuntos}\n";
+            $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
+            $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
 
-        if (!empty($contextoDados['valorCausa'])) {
-            $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            if (!empty($contextoDados['valorCausa'])) {
+                $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
         }
 
         $contextoInicial .= "\n---\n\n";
@@ -515,19 +583,21 @@ PROMPT;
         // Adiciona o contexto inicial ANTES do prompt do usuário
         $prompt = $contextoInicial . $prompt;
 
-        // Adiciona informações complementares do processo
-        $prompt .= "\n\n## INFORMAÇÕES COMPLEMENTARES DO PROCESSO\n";
-        $prompt .= "Número: {$numeroProcesso}\n";
-        $prompt .= "Classe: {$nomeClasse}\n";
-        $prompt .= "Assuntos: {$assuntos}\n";
-        $prompt .= "Perspectiva de análise: {$tipoParte}\n";
+        // Adiciona informações complementares (apenas para processos)
+        if (!$isContract) {
+            $prompt .= "\n\n## INFORMAÇÕES COMPLEMENTARES DO PROCESSO\n";
+            $prompt .= "Número: {$numeroProcesso}\n";
+            $prompt .= "Classe: {$nomeClasse}\n";
+            $prompt .= "Assuntos: {$assuntos}\n";
+            $prompt .= "Perspectiva de análise: {$tipoParte}\n";
 
-        if (!empty($contextoDados['valorCausa'])) {
-            $prompt .= "Valor da Causa: R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            if (!empty($contextoDados['valorCausa'])) {
+                $prompt .= "Valor da Causa: R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
         }
 
         // Adiciona documentos
-        $prompt .= "\n## DOCUMENTOS PARA ANÁLISE\n\n";
+        $prompt .= "\n## " . ($isContract ? "CONTRATO" : "DOCUMENTOS") . " PARA ANÁLISE\n\n";
 
         foreach ($documentos as $index => $doc) {
             $docNum = $index + 1;
@@ -543,10 +613,12 @@ PROMPT;
             $prompt .= "---\n\n";
         }
 
-        // Instruções finais
-        $prompt .= "\n## INSTRUÇÕES\n";
-        $prompt .= "Por favor, analise cada documento acima considerando o contexto processual fornecido. ";
-        $prompt .= "Retorne uma análise estruturada e objetiva, destacando pontos relevantes de cada manifestação.";
+        // Instruções finais (apenas se não for contrato - contrato já tem instruções no template)
+        if (!$isContract) {
+            $prompt .= "\n## INSTRUÇÕES\n";
+            $prompt .= "Por favor, analise cada documento acima considerando o contexto processual fornecido. ";
+            $prompt .= "Retorne uma análise estruturada e objetiva, destacando pontos relevantes de cada manifestação.";
+        }
 
         return $prompt;
     }
@@ -656,7 +728,7 @@ PROMPT;
             $attempt++;
 
             try {
-                $response = Http::timeout(120) // 2 minutos de timeout
+                $response = Http::timeout(300) // 5 minutos de timeout para análises jurídicas longas
                     ->post($url, [
                         'contents' => [
                             [

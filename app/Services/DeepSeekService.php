@@ -99,6 +99,14 @@ class DeepSeekService implements AIProviderInterface
     }
 
     /**
+     * Detecta se é uma análise de contrato baseado no contexto
+     */
+    private function isContractAnalysis(array $contextoDados): bool
+    {
+        return isset($contextoDados['tipo']) && $contextoDados['tipo'] === 'Contrato';
+    }
+
+    /**
      * Analisa documentos usando a estratégia de Resumo Evolutivo
      *
      * Processo:
@@ -128,16 +136,28 @@ class DeepSeekService implements AIProviderInterface
         $resumoEvolutivo = '';
         $totalDocumentos = count($documentos);
 
+        // Detecta se é análise de contrato
+        $isContract = $this->isContractAnalysis($contextoDados);
+
         Log::info('🚀 Iniciando Resumo Evolutivo', [
             'total_documentos' => $totalDocumentos,
-            'estrategia' => 'evolutionary_summary'
+            'estrategia' => 'evolutionary_summary',
+            'tipo_analise' => $isContract ? 'contrato' : 'processo'
         ]);
 
         // Extrai informações do contexto para uso nos prompts
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-        $tipoParte = $this->identificarTipoParte($contextoDados);
+        // Para contratos, usa contexto simplificado
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
+            $numeroProcesso = 'N/A';
+            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+            $tipoParte = $this->identificarTipoParte($contextoDados);
+        }
 
         foreach ($documentos as $index => $doc) {
             $docNum = $index + 1;
@@ -264,35 +284,55 @@ class DeepSeekService implements AIProviderInterface
     ): string
     {
         $ehPrimeiroDocumento = empty($resumoAnterior);
+        $isContract = $this->isContractAnalysis($contextoDados);
 
         if ($ehPrimeiroDocumento) {
             // Primeiro documento: contexto inicial + prompt do usuário + documento
-            $prompt = "# CONTEXTO DO PROCESSO\n\n";
-            $prompt .= "**Processo:** {$numeroProcesso}\n";
-            $prompt .= "**Classe:** {$nomeClasse}\n";
-            $prompt .= "**Assuntos:** {$assuntos}\n";
-            $prompt .= "**Perspectiva:** {$tipoParte}\n";
+            if ($isContract) {
+                // Contexto para análise de CONTRATO
+                $prompt = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+                $prompt .= "**Tipo:** Análise de Contrato\n";
+                $prompt .= "**Arquivo:** {$assuntos}\n";
+                if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
+                    $prompt .= "**Parte Interessada:** {$tipoParte}\n";
+                }
+            } else {
+                // Contexto para análise de PROCESSO JUDICIAL
+                $prompt = "# CONTEXTO DO PROCESSO\n\n";
+                $prompt .= "**Processo:** {$numeroProcesso}\n";
+                $prompt .= "**Classe:** {$nomeClasse}\n";
+                $prompt .= "**Assuntos:** {$assuntos}\n";
+                $prompt .= "**Perspectiva:** {$tipoParte}\n";
 
-            if (!empty($contextoDados['valorCausa'])) {
-                $prompt .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+                if (!empty($contextoDados['valorCausa'])) {
+                    $prompt .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+                }
             }
 
             $prompt .= "\n---\n\n";
             $prompt .= "# INSTRUÇÕES DE ANÁLISE\n\n";
             $prompt .= $promptTemplate;
-            $prompt .= "\n\n---\n\n";
-            $prompt .= "# ESTRATÉGIA: RESUMO EVOLUTIVO\n\n";
-            $prompt .= "Você está iniciando uma análise sequencial de {$totalDocs} documentos. ";
-            $prompt .= "Este é o **primeiro documento** (#{$sequenciaGlobal}). ";
-            $prompt .= "Após analisar este documento, você receberá o próximo e deverá:\n\n";
-            $prompt .= "1. Incorporar as informações do novo documento à sua análise anterior\n";
-            $prompt .= "2. Manter a cronologia dos eventos\n";
-            $prompt .= "3. Identificar conexões entre os documentos\n";
-            $prompt .= "4. Atualizar sua compreensão do caso conforme novos fatos surgem\n\n";
-            $prompt .= "**Por favor, analise o primeiro documento abaixo:**\n\n";
-            $prompt .= "---\n\n";
-            $prompt .= "## DOCUMENTO #{$sequenciaGlobal}: {$descricaoDocumento}\n\n";
-            $prompt .= $textoDocumento;
+
+            // Para contratos com apenas 1 documento, não precisa de estratégia evolutiva
+            if ($isContract && $totalDocs === 1) {
+                $prompt .= "\n\n---\n\n";
+                $prompt .= "## CONTRATO PARA ANÁLISE: {$descricaoDocumento}\n\n";
+                $prompt .= $textoDocumento;
+            } else {
+                $prompt .= "\n\n---\n\n";
+                $prompt .= "# ESTRATÉGIA: RESUMO EVOLUTIVO\n\n";
+                $prompt .= "Você está iniciando uma análise sequencial de {$totalDocs} documentos. ";
+                $prompt .= "Este é o **primeiro documento** (#{$sequenciaGlobal}). ";
+                $prompt .= "Após analisar este documento, você receberá o próximo e deverá:\n\n";
+                $prompt .= "1. Incorporar as informações do novo documento à sua análise anterior\n";
+                $prompt .= "2. Manter a cronologia dos eventos\n";
+                $prompt .= "3. Identificar conexões entre os documentos\n";
+                $prompt .= "4. Atualizar sua compreensão do caso conforme novos fatos surgem\n\n";
+                $prompt .= "**Por favor, analise o primeiro documento abaixo:**\n\n";
+                $prompt .= "---\n\n";
+                $prompt .= "## DOCUMENTO #{$sequenciaGlobal}: {$descricaoDocumento}\n\n";
+                $prompt .= $textoDocumento;
+            }
 
         } else {
             // Documentos subsequentes: resumo anterior + novo documento + instruções de atualização
@@ -309,7 +349,13 @@ class DeepSeekService implements AIProviderInterface
             $prompt .= "1. Leia o novo documento abaixo\n";
             $prompt .= "2. **ATUALIZE** sua análise anterior incorporando as informações deste novo documento\n";
             $prompt .= "3. Mantenha a estrutura e formato da sua análise anterior\n";
-            $prompt .= "4. Identifique como este documento se relaciona com os anteriores (ex: resposta a uma petição, decisão sobre um pedido, etc.)\n";
+
+            if ($isContract) {
+                $prompt .= "4. Identifique como este documento se relaciona com os anteriores\n";
+            } else {
+                $prompt .= "4. Identifique como este documento se relaciona com os anteriores (ex: resposta a uma petição, decisão sobre um pedido, etc.)\n";
+            }
+
             $prompt .= "5. Preserve a cronologia dos eventos\n";
             $prompt .= "6. Retorne a análise COMPLETA E ATUALIZADA (não apenas o novo documento, mas toda a história até aqui)\n\n";
             $prompt .= "---\n\n";
@@ -601,28 +647,46 @@ PROMPT;
      */
     private function buildPrompt(string $template, array $documentos, array $contextoDados): string
     {
-        // Extrai informações do contexto
-        $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-        $tipoParte = $this->identificarTipoParte($contextoDados);
+        $isContract = $this->isContractAnalysis($contextoDados);
 
-        // Substitui variáveis no template
+        // Extrai informações do contexto baseado no tipo
+        if ($isContract) {
+            $nomeClasse = 'Análise de Contrato';
+            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
+            $numeroProcesso = 'N/A';
+            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
+        } else {
+            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
+            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+            $tipoParte = $this->identificarTipoParte($contextoDados);
+        }
+
+        // Substitui variáveis no template (se existirem)
         $prompt = str_replace(
-            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]'],
-            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte],
+            ['[nomeClasse]', '[assuntos]', '[numeroProcesso]', '[tipoParte]', '[parteInteressada]'],
+            [$nomeClasse, $assuntos, $numeroProcesso, $tipoParte, $tipoParte],
             $template
         );
 
         // CONTEXTO INICIAL - Informações essenciais para orientar a análise
-        $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
-        $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
-        $contextoInicial .= "**Assuntos:** {$assuntos}\n";
-        $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
-        $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
+        if ($isContract) {
+            $contextoInicial = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+            $contextoInicial .= "**Tipo:** Análise de Contrato\n";
+            $contextoInicial .= "**Arquivo:** {$assuntos}\n";
+            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
+                $contextoInicial .= "**Parte Interessada:** {$tipoParte}\n";
+            }
+        } else {
+            $contextoInicial = "# CONTEXTO DO PROCESSO\n\n";
+            $contextoInicial .= "**Classe Processual:** {$nomeClasse}\n";
+            $contextoInicial .= "**Assuntos:** {$assuntos}\n";
+            $contextoInicial .= "**Você está analisando como:** {$tipoParte}\n";
+            $contextoInicial .= "**Número do Processo:** {$numeroProcesso}\n";
 
-        if (!empty($contextoDados['valorCausa'])) {
-            $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            if (!empty($contextoDados['valorCausa'])) {
+                $contextoInicial .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
         }
 
         $contextoInicial .= "\n---\n\n";
@@ -630,19 +694,21 @@ PROMPT;
         // Adiciona o contexto inicial ANTES do prompt do usuário
         $prompt = $contextoInicial . $prompt;
 
-        // Adiciona informações complementares do processo
-        $prompt .= "\n\n## INFORMAÇÕES COMPLEMENTARES DO PROCESSO\n";
-        $prompt .= "Número: {$numeroProcesso}\n";
-        $prompt .= "Classe: {$nomeClasse}\n";
-        $prompt .= "Assuntos: {$assuntos}\n";
-        $prompt .= "Perspectiva de análise: {$tipoParte}\n";
+        // Adiciona informações complementares (apenas para processos)
+        if (!$isContract) {
+            $prompt .= "\n\n## INFORMAÇÕES COMPLEMENTARES DO PROCESSO\n";
+            $prompt .= "Número: {$numeroProcesso}\n";
+            $prompt .= "Classe: {$nomeClasse}\n";
+            $prompt .= "Assuntos: {$assuntos}\n";
+            $prompt .= "Perspectiva de análise: {$tipoParte}\n";
 
-        if (!empty($contextoDados['valorCausa'])) {
-            $prompt .= "Valor da Causa: R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            if (!empty($contextoDados['valorCausa'])) {
+                $prompt .= "Valor da Causa: R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+            }
         }
 
         // Adiciona documentos
-        $prompt .= "\n## DOCUMENTOS PARA ANÁLISE\n\n";
+        $prompt .= "\n## " . ($isContract ? "CONTRATO" : "DOCUMENTOS") . " PARA ANÁLISE\n\n";
 
         foreach ($documentos as $index => $doc) {
             $docNum = $index + 1;
@@ -658,10 +724,12 @@ PROMPT;
             $prompt .= "---\n\n";
         }
 
-        // Instruções finais
-        $prompt .= "\n## INSTRUÇÕES\n";
-        $prompt .= "Por favor, analise cada documento acima considerando o contexto processual fornecido. ";
-        $prompt .= "Retorne uma análise estruturada e objetiva, destacando pontos relevantes de cada manifestação.";
+        // Instruções finais (apenas se não for contrato - contrato já tem instruções no template)
+        if (!$isContract) {
+            $prompt .= "\n## INSTRUÇÕES\n";
+            $prompt .= "Por favor, analise cada documento acima considerando o contexto processual fornecido. ";
+            $prompt .= "Retorne uma análise estruturada e objetiva, destacando pontos relevantes de cada manifestação.";
+        }
 
         return $prompt;
     }
@@ -788,9 +856,9 @@ PROMPT;
         // Adiciona o parâmetro thinking apenas se o modo de pensamento profundo estiver ativado
         if ($deepThinkingEnabled) {
             $requestBody['thinking'] = ['type' => 'enabled'];
-            Log::info('⚠️ DeepSeek Reasoning Mode ativado - processamento pode levar até 5 minutos por documento', [
+            Log::info('⚠️ DeepSeek Reasoning Mode ativado - processamento pode levar até 10 minutos por documento', [
                 'model' => $this->model,
-                'timeout' => '300s'
+                'timeout' => '600s'
             ]);
         }
 
@@ -799,7 +867,8 @@ PROMPT;
 
             try {
                 // Timeout maior para modo de pensamento profundo (reasoning)
-                $timeout = $deepThinkingEnabled ? 300 : 120; // 5min com reasoning, 2min sem
+                // Aumentado de 120s para 300s mesmo sem deep thinking, pois análises jurídicas podem ser longas
+                $timeout = $deepThinkingEnabled ? 600 : 300; // 10min com reasoning, 5min sem
 
                 $response = Http::timeout($timeout)
                     ->withHeaders([

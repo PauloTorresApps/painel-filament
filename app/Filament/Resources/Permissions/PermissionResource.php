@@ -16,6 +16,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Forms\Components\TextInput;
 use App\Filament\Resources\Permissions\Pages\ManagePermissions;
+use UnitEnum;
 
 class PermissionResource extends Resource
 {
@@ -25,6 +26,10 @@ class PermissionResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?string $recordTitleAttribute = 'Permissões';
+
+    protected static UnitEnum|string|null $navigationGroup = 'Administração';
+
+    protected static ?int $navigationSort = 3;
 
     public static function form(Schema $schema): Schema
     {

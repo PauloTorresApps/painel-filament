@@ -20,15 +20,15 @@ class DocumentAnalysisResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentMagnifyingGlass;
 
-    protected static ?string $navigationLabel = 'Análises de Documentos';
+    protected static ?string $navigationLabel = 'Histórico de Processos';
 
-    protected static ?string $modelLabel = 'Análise de Documento';
+    protected static ?string $modelLabel = 'Análise de Processo';
 
-    protected static ?string $pluralModelLabel = 'Análises de Documentos';
+    protected static ?string $pluralModelLabel = 'Análises de Processos';
 
     protected static UnitEnum|string|null $navigationGroup = 'Processos';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 2;
 
     public static function infolist(Schema $schema): Schema
     {
