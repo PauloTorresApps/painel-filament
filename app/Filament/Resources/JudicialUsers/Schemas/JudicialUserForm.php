@@ -2,13 +2,16 @@
 
 namespace App\Filament\Resources\JudicialUsers\Schemas;
 
+use App\Models\JudicialUser;
 use Filament\Schemas\Schema;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rules\Unique;
 
 class JudicialUserForm
 {
@@ -27,9 +30,10 @@ class JudicialUserForm
                         ->relationship(
                             'user',
                             'name',
-                            fn (Builder $query) => $query->orderBy('name')
+                            fn (Builder $query) => $query
+                                ->whereHas('roles', fn (Builder $q) => $q->where('name', 'Analista de Processo'))
+                                ->orderBy('name')
                         )
-                        ->default(Auth::id())
                         ->required()
                         ->searchable()
                     : Hidden::make('user_id')
@@ -45,7 +49,16 @@ class JudicialUserForm
                     )
                     ->required()
                     ->searchable()
-                    ->helperText('Selecione o sistema judicial'),
+                    ->helperText('Selecione o sistema judicial')
+                    ->unique(
+                        table: JudicialUser::class,
+                        column: 'system_id',
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn (Unique $rule, Get $get) => $rule->where('user_id', $get('user_id'))
+                    )
+                    ->validationMessages([
+                        'unique' => 'Já existe um usuário judicial cadastrado para este sistema.',
+                    ]),
 
                 TextInput::make('user_login')
                     ->label('Login do Webservice')
