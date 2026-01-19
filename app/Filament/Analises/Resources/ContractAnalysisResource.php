@@ -48,7 +48,7 @@ class ContractAnalysisResource extends Resource
             return false;
         }
 
-        return $user->hasRole(['Admin', 'Manager', 'Analista de Contrato']);
+        return $user->hasRole(['Admin', 'Manager', 'Default', 'Analista de Contrato']);
     }
 
     /**

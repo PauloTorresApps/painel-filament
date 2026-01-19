@@ -8,7 +8,7 @@ use App\Http\Controllers\JudicialUserController;
 use App\Http\Controllers\ContractUploadController;
 use App\Http\Controllers\LegalOpinionPdfController;
 
-Route::redirect('/', '/admin');
+Route::redirect('/', '/login')->name('home');
 
 Route::view('dashboard', 'dashboard')
     ->middleware(['auth', 'verified'])
@@ -32,7 +32,7 @@ Route::middleware(['auth'])->group(function () {
         )
         ->name('two-factor.show');
 
-        Route::redirect('document_analysis/eproc', '/admin/process-analysis')->name('eproc');
+        Route::redirect('document_analysis/eproc', '/analises/process-analysis')->name('eproc');
         Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
         Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
         Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');

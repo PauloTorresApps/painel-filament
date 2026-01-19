@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Filament\Resources\ContractAnalysis\Pages;
+namespace App\Filament\Resources\ContractAnalyses\Pages;
 
-use App\Filament\Resources\ContractAnalysis\ContractAnalysisResource;
+use App\Filament\Resources\ContractAnalyses\ContractAnalysisResource;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;

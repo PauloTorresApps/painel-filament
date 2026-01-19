@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Filament\Resources\ContractAnalysis;
+namespace App\Filament\Resources\ContractAnalyses;
 
-use App\Filament\Resources\ContractAnalysis\Pages\ListContractAnalyses;
-use App\Filament\Resources\ContractAnalysis\Pages\ViewContractAnalysis;
+use App\Filament\Resources\ContractAnalyses\Pages\ListContractAnalyses;
+use App\Filament\Resources\ContractAnalyses\Pages\ViewContractAnalysis;
 use App\Models\ContractAnalysis;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -35,43 +35,7 @@ class ContractAnalysisResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    protected static ?string $slug = 'contract-analyses';
-
-    /**
-     * Controle de acesso ao resource
-     */
-    public static function canAccess(): bool
-    {
-        $user = Auth::user();
-
-        if (!$user) {
-            return false;
-        }
-
-        return $user->hasRole(['Admin', 'Manager', 'Analista de Contrato']);
-    }
-
-    /**
-     * Filtra registros baseado no usuário
-     */
-    public static function getEloquentQuery(): Builder
-    {
-        $query = parent::getEloquentQuery();
-        $user = Auth::user();
-
-        // Se não há usuário autenticado, retorna query vazia
-        if (!$user) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        // Admin e Manager veem todas as análises
-        if ($user->hasRole(['Admin', 'Manager'])) {
-            return $query;
-        }
-
-        // Outros usuários veem apenas suas próprias análises
-        return $query->where('user_id', $user->id);
-    }
+    protected static ?string $slug = 'historico-contratos';
 
     public static function table(Table $table): Table
     {
@@ -87,8 +51,7 @@ class ContractAnalysisResource extends Resource
                 TextColumn::make('user.name')
                     ->label('Usuário')
                     ->searchable()
-                    ->sortable()
-                    ->visible(fn () => Auth::user()->hasRole(['Admin', 'Manager'])),
+                    ->sortable(),
 
                 TextColumn::make('status')
                     ->label('Status')
@@ -165,5 +128,10 @@ class ContractAnalysisResource extends Resource
             'index' => ListContractAnalyses::route('/'),
             'view' => ViewContractAnalysis::route('/{record}'),
         ];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
     }
 }

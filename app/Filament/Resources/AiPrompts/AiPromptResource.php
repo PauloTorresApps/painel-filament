@@ -23,11 +23,11 @@ class AiPromptResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSparkles;
 
-    protected static ?string $navigationLabel = 'Prompts de IA';
+    protected static ?string $navigationLabel = 'Prompts de Análise Processual';
 
-    protected static ?string $modelLabel = 'Prompt de IA';
+    protected static ?string $modelLabel = 'Prompt de Análise Processual';
 
-    protected static ?string $pluralModelLabel = 'Prompts de IA';
+    protected static ?string $pluralModelLabel = 'Prompts de Análise Processual';
 
     protected static UnitEnum|string|null $navigationGroup = 'Processos';
 

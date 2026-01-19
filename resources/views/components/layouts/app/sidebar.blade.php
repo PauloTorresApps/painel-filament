@@ -38,7 +38,7 @@
             @if(auth()->user()->can('analyze_contract'))
                 <flux:navlist variant="outline">
                     <flux:navlist.group :heading="__('Análise de Documentos')" class="grid">
-                        <flux:navlist.item icon="home" :href="route('analyze_contract')" :current="request()->routeIs('analyze_contract')" wire:navigate>{{ __('Análise de Contratos') }}</flux:navlist.item>
+                        <flux:navlist.item icon="home" href="/analises/contract-analysis" :current="request()->is('analises/contract-analysis')" wire:navigate>{{ __('Análise de Contratos') }}</flux:navlist.item>
                     </flux:navlist.group>
                 </flux:navlist>
             @endif

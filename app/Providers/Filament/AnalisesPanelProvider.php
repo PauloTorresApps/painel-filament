@@ -2,7 +2,7 @@
 
 namespace App\Providers\Filament;
 
-use Filament\Http\Middleware\Authenticate;
+use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -24,7 +24,6 @@ class AnalisesPanelProvider extends PanelProvider
         return $panel
             ->id('analises')
             ->path('analises')
-            ->login()
             ->brandName('Sistema de Análises')
             ->colors([
                 'primary' => Color::Amber,
@@ -49,7 +48,7 @@ class AnalisesPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
-                Authenticate::class,
+                FilamentAuthenticate::class,
             ])
             ->sidebarCollapsibleOnDesktop();
     }

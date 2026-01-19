@@ -33,11 +33,11 @@ class ContractPromptResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
 
-    protected static ?string $navigationLabel = 'Prompts de Contratos';
+    protected static ?string $navigationLabel = 'Prompts de Análise de Contratos';
 
-    protected static ?string $modelLabel = 'Prompt de Contrato';
+    protected static ?string $modelLabel = 'Prompt de Análise de Contrato';
 
-    protected static ?string $pluralModelLabel = 'Prompts de Contratos';
+    protected static ?string $pluralModelLabel = 'Prompts de Análise de Contratos';
 
     protected static UnitEnum|string|null $navigationGroup = 'Contratos';
 

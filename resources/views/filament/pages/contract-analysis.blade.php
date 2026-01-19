@@ -213,7 +213,7 @@
 
                     {{-- Link para histórico --}}
                     <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                        <a href="{{ route('filament.admin.resources.contract-analysis.contract-analyses.index') }}"
+                        <a href="/analises/historico-contratos"
                            class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 flex items-center gap-1">
                             <x-heroicon-o-clock class="w-4 h-4" />
                             Ver histórico de análises

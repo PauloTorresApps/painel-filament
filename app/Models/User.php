@@ -69,18 +69,17 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessPanel(Panel $panel): bool
     {
-        try {
-            // Admin role has full access
-            if ($this->hasRole('Admin')) {
-                return true;
-            }
-
-            // Check if user has access_admin permission
-            return $this->hasPermissionTo('access_admin');
-        } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
-            // If permission doesn't exist, deny access
-            return false;
+        // Painel admin: apenas Admin e Manager
+        if ($panel->getId() === 'admin') {
+            return $this->hasRole(['Admin', 'Manager']);
         }
+
+        // Painel analises: todos os usuários autenticados com roles de análise
+        if ($panel->getId() === 'analises') {
+            return $this->hasRole(['Admin', 'Manager', 'Default', 'Analista de Contrato', 'Analista de Processo']);
+        }
+
+        return false;
     }
 
     public function judicialUsers(): HasMany
