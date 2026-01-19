@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ContractPrompts;
 use App\Filament\Resources\ContractPrompts\Pages\CreateContractPrompt;
 use App\Filament\Resources\ContractPrompts\Pages\EditContractPrompt;
 use App\Filament\Resources\ContractPrompts\Pages\ListContractPrompts;
+use App\Models\AiModel;
 use App\Models\AiPrompt;
 use App\Models\System;
 use BackedEnum;
@@ -91,13 +92,33 @@ class ContractPromptResource extends Resource
                     ->maxLength(255)
                     ->helperText('Dê um nome descritivo para identificar este prompt'),
 
-                Select::make('ai_provider')
-                    ->label('Provedor de IA')
-                    ->options(AiPrompt::getAvailableProviders())
-                    ->default('gemini')
-                    ->required()
+                Select::make('ai_model_id')
+                    ->label('Modelo de I.A.')
+                    ->options(function (): array {
+                        $options = [];
+                        $providers = AiModel::getAvailableProviders();
+
+                        foreach ($providers as $providerKey => $providerName) {
+                            $models = AiModel::query()
+                                ->where('is_active', true)
+                                ->where('provider', $providerKey)
+                                ->orderBy('name')
+                                ->get();
+
+                            if ($models->isNotEmpty()) {
+                                $options[$providerName] = $models->mapWithKeys(
+                                    fn (AiModel $model): array => [
+                                        $model->id => "{$model->name} ({$model->model_id})"
+                                    ]
+                                )->toArray();
+                            }
+                        }
+
+                        return $options;
+                    })
+                    ->searchable()
                     ->native(false)
-                    ->helperText('Selecione qual inteligência artificial será utilizada'),
+                    ->helperText('Selecione o modelo de I.A. O provedor será definido automaticamente.'),
 
                 Textarea::make('content')
                     ->label('Conteúdo do Prompt')
@@ -145,10 +166,22 @@ class ContractPromptResource extends Resource
                     ->limit(50),
 
                 TextColumn::make('ai_provider')
-                    ->label('Provedor de IA')
+                    ->label('Provedor')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => AiPrompt::getAvailableProviders()[$state] ?? $state)
-                    ->color(fn ($record) => $record->provider_badge_color)
+                    ->color(fn (string $state): string => match ($state) {
+                        'gemini' => 'info',
+                        'openai' => 'success',
+                        'deepseek' => 'warning',
+                        default => 'gray',
+                    })
+                    ->sortable(),
+
+                TextColumn::make('aiModel.name')
+                    ->label('Modelo')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('Padrão (.env)')
                     ->sortable(),
 
                 TextColumn::make('content')

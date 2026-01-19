@@ -13,7 +13,8 @@ class CreateContractPrompt extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         // Garante que o system_id é do sistema de Contratos
-        $data['system_id'] = ContractPromptResource::getContractSystemId();
+        $systemId = ContractPromptResource::getContractSystemId();
+        $data['system_id'] = $systemId;
 
         // Remove HTML tags e scripts para proteção contra XSS
         if (isset($data['content'])) {
@@ -24,7 +25,7 @@ class CreateContractPrompt extends CreateRecord
         // Se este prompt está sendo marcado como padrão, remove o padrão dos outros prompts
         // do mesmo sistema E do mesmo tipo (analysis ou legal_opinion)
         if (isset($data['is_default']) && $data['is_default'] && isset($data['prompt_type'])) {
-            AiPrompt::where('system_id', $data['system_id'])
+            AiPrompt::where('system_id', $systemId)
                 ->where('prompt_type', $data['prompt_type'])
                 ->where('is_default', true)
                 ->update(['is_default' => false]);

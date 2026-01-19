@@ -17,6 +17,7 @@ class AiPrompt extends Model
         'title',
         'content',
         'ai_provider',
+        'ai_model_id',
         'deep_thinking_enabled',
         'analysis_strategy',
         'is_active',
@@ -38,6 +39,19 @@ class AiPrompt extends Model
         'prompt_type_label',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (AiPrompt $prompt) {
+            // Atualiza o ai_provider automaticamente baseado no modelo selecionado
+            if ($prompt->ai_model_id) {
+                $model = AiModel::find($prompt->ai_model_id);
+                if ($model) {
+                    $prompt->ai_provider = $model->provider;
+                }
+            }
+        });
+    }
+
     /**
      * Get the badge color for the AI provider
      */
@@ -49,6 +63,11 @@ class AiPrompt extends Model
     public function system(): BelongsTo
     {
         return $this->belongsTo(System::class);
+    }
+
+    public function aiModel(): BelongsTo
+    {
+        return $this->belongsTo(AiModel::class);
     }
 
     /**
