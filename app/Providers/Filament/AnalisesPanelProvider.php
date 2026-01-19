@@ -6,7 +6,6 @@ use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -31,9 +30,7 @@ class AnalisesPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->discoverResources(in: app_path('Filament/Analises/Resources'), for: 'App\Filament\Analises\Resources')
             ->discoverPages(in: app_path('Filament/Analises/Pages'), for: 'App\Filament\Analises\Pages')
-            ->pages([
-                Dashboard::class,
-            ])
+            ->pages([])
             ->discoverWidgets(in: app_path('Filament/Analises/Widgets'), for: 'App\Filament\Analises\Widgets')
             ->widgets([])
             ->middleware([
