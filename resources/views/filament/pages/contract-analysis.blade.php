@@ -81,8 +81,8 @@
 
                     {{-- Erro se falhou --}}
                     @if($this->latestAnalysis->isFailed())
-                        <div class="p-4 bg-danger-50 dark:bg-danger-950 rounded-lg border border-danger-200 dark:border-danger-800">
-                            <p class="text-sm text-danger-700 dark:text-danger-300">
+                        <div class="p-4 bg-warning-50 dark:bg-warning-950 rounded-lg border border-warning-200 dark:border-warning-800">
+                            <p class="text-sm text-warning-700 dark:text-warning-300">
                                 <strong>Erro:</strong> {{ $this->latestAnalysis->error_message }}
                             </p>
                         </div>
@@ -142,8 +142,8 @@
                     {{-- Erro no parecer jurídico --}}
                     @if($this->latestAnalysis->isLegalOpinionFailed())
                         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <div class="p-4 bg-danger-50 dark:bg-danger-950 rounded-lg border border-danger-200 dark:border-danger-800">
-                                <p class="text-sm text-danger-700 dark:text-danger-300">
+                            <div class="p-4 bg-warning-50 dark:bg-warning-950 rounded-lg border border-warning-200 dark:border-warning-800">
+                                <p class="text-sm text-warning-700 dark:text-warning-300">
                                     <strong>Erro no Parecer Jurídico:</strong> {{ $this->latestAnalysis->legal_opinion_error }}
                                 </p>
                             </div>
