@@ -46,6 +46,17 @@ return [
         'url' => env('URL_CNJ_WEBSERVICE', 'https://www.cnj.jus.br/sgt/sgt_ws.php'),
     ],
 
+/*
+    |--------------------------------------------------------------------------
+    | AI Provider Configuration
+    |--------------------------------------------------------------------------
+    */
+
+    'ai' => [
+        'default_provider' => env('AI_DEFAULT_PROVIDER', 'gemini'),
+        'batch_size' => env('AI_BATCH_SIZE', 10),
+    ],
+
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
         'api_url' => env('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models'),

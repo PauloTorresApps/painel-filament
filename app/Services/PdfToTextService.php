@@ -157,13 +157,4 @@ class PdfToTextService
         }
     }
 
-    /**
-     * Estima o número de tokens do texto (aproximação)
-     * Útil para calcular custos da API
-     */
-    public function estimateTokens(string $text): int
-    {
-        // Aproximação: 1 token ≈ 4 caracteres para português
-        return (int) ceil(mb_strlen($text) / 4);
-    }
 }

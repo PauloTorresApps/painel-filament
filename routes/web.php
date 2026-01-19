@@ -4,7 +4,6 @@ use Livewire\Volt\Volt;
 use Laravel\Fortify\Features;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
-use App\Http\Controllers\JudicialUserController;
 use App\Http\Controllers\ContractUploadController;
 use App\Http\Controllers\LegalOpinionPdfController;
 
@@ -45,5 +44,4 @@ Route::middleware(['auth'])->group(function () {
         Route::get('contracts/{id}/legal-opinion/download', [LegalOpinionPdfController::class, 'download'])->name('contracts.legal-opinion.download');
         Route::get('contracts/{id}/legal-opinion/view', [LegalOpinionPdfController::class, 'view'])->name('contracts.legal-opinion.view');
 
-        Route::resource('judicial-users', JudicialUserController::class);
 });

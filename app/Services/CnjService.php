@@ -99,23 +99,6 @@ class CnjService
     }
 
     /**
-     * Busca descrições de múltiplas classes de uma vez
-     *
-     * @param array $codigosClasses Array de códigos de classes
-     * @return array Array associativo [codigo => descricao]
-     */
-    public function getMultiplasClassesDescricoes(array $codigosClasses): array
-    {
-        $descricoes = [];
-
-        foreach ($codigosClasses as $codigo) {
-            $descricoes[$codigo] = $this->getClasseDescricao($codigo);
-        }
-
-        return $descricoes;
-    }
-
-    /**
      * Busca descrições de múltiplos assuntos de uma vez
      *
      * @param array $codigosAssuntos Array de códigos de assuntos
