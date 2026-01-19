@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60" fill="currentColor">
+  <!-- Ícone documento com lupa -->
+  <g transform="translate(5, 5)">
+    <!-- Documento -->
+    <path d="M8 4C8 1.79 9.79 0 12 0h18l12 12v32c0 2.21-1.79 4-4 4H12c-2.21 0-4-1.79-4-4V4z" fill="currentColor"/>
+    <!-- Dobra do documento -->
+    <path d="M30 0v8c0 2.21 1.79 4 4 4h8L30 0z" fill="currentColor" opacity="0.6"/>
+    <!-- Lupa -->
+    <circle cx="24" cy="30" r="8" fill="none" stroke="white" stroke-width="3"/>
+    <line x1="30" y1="36" x2="36" y2="42" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Texto "OLHADINHA - Análises Jurídicas" -->
+  <text x="60" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">
+    OLHADINHA
+  </text>
+  <text x="60" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400">
+    Análises Jurídicas
+  </text>
+</svg>

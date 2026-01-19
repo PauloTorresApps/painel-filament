@@ -23,7 +23,11 @@ class AnalisesPanelProvider extends PanelProvider
         return $panel
             ->id('analises')
             ->path('analises')
-            ->brandName('Sistema de Análises')
+            ->brandName('OLHADINHA - Análises Jurídicas')
+            ->brandLogo(asset('images/logo.svg'))
+            ->brandLogoHeight('3rem')
+            ->login()
+            ->passwordReset()
             ->colors([
                 'primary' => Color::Amber,
             ])
