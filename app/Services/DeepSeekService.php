@@ -74,30 +74,39 @@ class DeepSeekService extends AbstractAIService
         $attempt = 0;
         $lastException = null;
 
-        // Determina o modelo correto baseado no deep thinking
-        // - Se deep thinking está HABILITADO: usa deepseek-reasoner com thinking mode
-        // - Se deep thinking está DESABILITADO: usa deepseek-chat (rápido)
+        // Determina o modelo correto baseado no deep thinking e configuração
+        // IMPORTANTE: O modelo deepseek-reasoner REQUER thinking mode ativado para funcionar corretamente
+        // Sem o parâmetro thinking, ele pode retornar content vazio (apenas reasoning_content)
         $modelToUse = $this->model;
         $useThinkingMode = false;
 
-        if ($deepThinkingEnabled) {
-            // Deep thinking habilitado: usa modelo reasoner
-            $modelToUse = 'deepseek-reasoner';
+        // Verifica se o modelo configurado é reasoner (requer thinking mode)
+        $isReasonerModel = str_contains($this->model, 'reasoner');
+
+        if ($isReasonerModel) {
+            // Modelo reasoner SEMPRE usa thinking mode (é obrigatório para funcionar)
             $useThinkingMode = true;
-            Log::info('Deep Thinking habilitado - usando DeepSeek Reasoner com thinking mode', [
-                'original_model' => $this->model,
-                'model_used' => $modelToUse,
+            Log::info('DeepSeek Reasoner detectado - ativando thinking mode obrigatório', [
+                'model' => $modelToUse,
+                'deep_thinking_param' => $deepThinkingEnabled,
                 'timeout' => '600s'
             ]);
-        } elseif (str_contains($this->model, 'reasoner')) {
-            // Modelo é reasoner mas deep thinking está desabilitado: usa chat
-            $modelToUse = 'deepseek-chat';
-            Log::info('Modelo deepseek-reasoner configurado mas deep thinking desabilitado. Usando deepseek-chat.', [
-                'original_model' => $this->model,
-                'fallback_model' => $modelToUse
+        } elseif ($deepThinkingEnabled) {
+            // Deep thinking solicitado mas modelo não suporta
+            Log::info('Deep Thinking solicitado mas modelo não suporta thinking mode', [
+                'model' => $modelToUse,
+                'info' => 'Para usar thinking mode, configure DEEPSEEK_MODEL=deepseek-reasoner'
+            ]);
+        } else {
+            // Modelo normal sem thinking mode
+            Log::info('Usando modelo DeepSeek sem thinking mode', [
+                'model' => $modelToUse
             ]);
         }
 
+        // Monta o corpo da requisição
+        // IMPORTANTE: No thinking mode, os parâmetros temperature, top_p, presence_penalty,
+        // frequency_penalty NÃO são suportados conforme documentação da DeepSeek
         $requestBody = [
             'model' => $modelToUse,
             'messages' => [
@@ -110,14 +119,18 @@ class DeepSeekService extends AbstractAIService
                     'content' => $prompt
                 ]
             ],
-            'temperature' => 0.4,
-            'max_tokens' => 4096,
+            'max_tokens' => $useThinkingMode ? 16384 : 4096, // Thinking mode pode gerar respostas maiores
             'stream' => false,
         ];
 
-        // Adiciona o parâmetro thinking se deep thinking estiver ativado
+        // Adiciona parâmetros condicionais baseado no modo
         if ($useThinkingMode) {
+            // Thinking mode: ativa o pensamento profundo
+            // Não inclui temperature, top_p, etc. (não suportados)
             $requestBody['thinking'] = ['type' => 'enabled'];
+        } else {
+            // Modo normal: pode usar temperature
+            $requestBody['temperature'] = config('services.deepseek.temperature', 0.4);
         }
 
         while ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
@@ -125,7 +138,7 @@ class DeepSeekService extends AbstractAIService
 
             try {
                 // Timeout maior para modo de pensamento profundo (reasoning)
-                $timeout = $deepThinkingEnabled ? 600 : 300;
+                $timeout = $useThinkingMode ? 600 : 300;
 
                 $response = Http::timeout($timeout)
                     ->withHeaders([
@@ -180,14 +193,33 @@ class DeepSeekService extends AbstractAIService
                 // Acumula metadados da resposta
                 $this->accumulateMetadata($usage, $data['model'] ?? $modelToUse);
 
-                // Extrai o texto da resposta (formato OpenAI-compatible)
-                $text = $data['choices'][0]['message']['content'] ?? null;
+                // Extrai o texto da resposta
+                // No thinking mode, a resposta vem em 'content' e o raciocínio em 'reasoning_content'
+                $message = $data['choices'][0]['message'] ?? [];
+                $text = $message['content'] ?? null;
+                $reasoningContent = $message['reasoning_content'] ?? null;
+
+                // Log para debug do thinking mode
+                if ($useThinkingMode) {
+                    Log::info('DeepSeek Thinking Mode - Estrutura da resposta', [
+                        'has_content' => !empty($text),
+                        'content_length' => $text ? mb_strlen($text) : 0,
+                        'has_reasoning_content' => !empty($reasoningContent),
+                        'reasoning_content_length' => $reasoningContent ? mb_strlen($reasoningContent) : 0,
+                        'message_keys' => array_keys($message),
+                    ]);
+                }
 
                 if (empty($text)) {
+                    // Log detalhado para diagnóstico
                     Log::error('DeepSeek retornou resposta vazia', [
                         'response_data' => $data,
                         'status_code' => $response->status(),
                         'model' => $data['model'] ?? $modelToUse,
+                        'thinking_mode' => $useThinkingMode,
+                        'has_reasoning_content' => !empty($reasoningContent),
+                        'reasoning_content_preview' => $reasoningContent ? mb_substr($reasoningContent, 0, 500) : null,
+                        'raw_message' => $message,
                     ]);
                     throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
                 }
