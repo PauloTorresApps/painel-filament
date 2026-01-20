@@ -20,7 +20,9 @@ class ContractAnalysis extends Model
         'ai_provider',
         'legal_opinion_ai_provider',
         'analysis_result',
+        'analysis_ai_metadata',
         'legal_opinion_result',
+        'legal_opinion_ai_metadata',
         'error_message',
         'legal_opinion_error',
         'processing_time_ms',
@@ -31,6 +33,8 @@ class ContractAnalysis extends Model
         'file_size' => 'integer',
         'processing_time_ms' => 'integer',
         'legal_opinion_processing_time_ms' => 'integer',
+        'analysis_ai_metadata' => 'array',
+        'legal_opinion_ai_metadata' => 'array',
     ];
 
     /**
@@ -146,13 +150,19 @@ class ContractAnalysis extends Model
     /**
      * Marca a análise como concluída
      */
-    public function markAsCompleted(string $result, int $processingTimeMs): void
+    public function markAsCompleted(string $result, int $processingTimeMs, ?array $aiMetadata = null): void
     {
-        $this->update([
+        $data = [
             'status' => self::STATUS_COMPLETED,
             'analysis_result' => $result,
             'processing_time_ms' => $processingTimeMs,
-        ]);
+        ];
+
+        if ($aiMetadata !== null) {
+            $data['analysis_ai_metadata'] = $aiMetadata;
+        }
+
+        $this->update($data);
     }
 
     /**
@@ -242,13 +252,19 @@ class ContractAnalysis extends Model
     /**
      * Marca o parecer jurídico como concluído
      */
-    public function markLegalOpinionAsCompleted(string $result, int $processingTimeMs): void
+    public function markLegalOpinionAsCompleted(string $result, int $processingTimeMs, ?array $aiMetadata = null): void
     {
-        $this->update([
+        $data = [
             'legal_opinion_status' => self::STATUS_COMPLETED,
             'legal_opinion_result' => $result,
             'legal_opinion_processing_time_ms' => $processingTimeMs,
-        ]);
+        ];
+
+        if ($aiMetadata !== null) {
+            $data['legal_opinion_ai_metadata'] = $aiMetadata;
+        }
+
+        $this->update($data);
     }
 
     /**

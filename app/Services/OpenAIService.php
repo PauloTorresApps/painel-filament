@@ -2,15 +2,15 @@
 
 namespace App\Services;
 
-use App\Contracts\AIProviderInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class OpenAIService implements AIProviderInterface
+class OpenAIService extends AbstractAIService
 {
-    private string $apiKey;
-    private string $apiUrl;
-    private string $model;
+    /**
+     * Limite de caracteres específico para OpenAI (contexto menor que Gemini/DeepSeek)
+     */
+    protected const TOTAL_PROMPT_CHAR_LIMIT = 500000; // ~125k tokens (GPT-4 tem 128k context window)
 
     public function __construct()
     {
@@ -24,282 +24,48 @@ class OpenAIService implements AIProviderInterface
     }
 
     /**
-     * Limites de tokens e caracteres
+     * Retorna o nome do rate limiter para este provider
      */
-    private const SINGLE_DOC_CHAR_LIMIT = 30000; // ~7.5k tokens
-    private const TOTAL_PROMPT_CHAR_LIMIT = 500000; // ~125k tokens (GPT-4 tem 128k context window)
+    protected function getRateLimiterKey(): string
+    {
+        return 'openai';
+    }
 
     /**
-     * Configurações de rate limiting
+     * Retorna o nome do provider
      */
-    private const RATE_LIMIT_DELAY_MS = 1000; // 1 segundo entre chamadas
-    private const MAX_RETRIES_ON_RATE_LIMIT = 5;
-    private const RATE_LIMIT_BACKOFF_BASE_MS = 5000; // 5 segundos base para backoff
+    public function getName(): string
+    {
+        return 'OpenAI';
+    }
 
     /**
-     * Analisa documentos com estratégia de Resumo Evolutivo
+     * Valida se a API está acessível
      */
-    public function analyzeDocuments(
-        string $promptTemplate,
-        array $documentos,
-        array $contextoDados,
-        bool $deepThinkingEnabled = true,
-        ?\App\Models\DocumentAnalysis $documentAnalysis = null
-    ): string {
+    public function healthCheck(): bool
+    {
         try {
-            Log::info('Iniciando análise OpenAI com estratégia de Resumo Evolutivo', [
-                'total_documentos' => count($documentos),
-                'total_chars_estimate' => array_sum(array_map(fn($d) => mb_strlen($d['texto'] ?? ''), $documentos)),
-                'has_persistence' => $documentAnalysis !== null,
-                'analysis_id' => $documentAnalysis?->id,
-                'model' => $this->model
-            ]);
+            $url = "{$this->apiUrl}/models";
 
-            return $this->applyEvolutiveSummarization($promptTemplate, $documentos, $contextoDados, $documentAnalysis);
-        } catch (\Exception $e) {
-            Log::error('Erro ao chamar OpenAI API', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
+            $response = Http::timeout(10)
+                ->withHeaders([
+                    'Authorization' => "Bearer {$this->apiKey}",
+                ])
+                ->get($url);
+
+            return $response->successful();
+        } catch (\Exception) {
+            return false;
         }
     }
 
     /**
-     * Aplica estratégia de Resumo Evolutivo (idêntica ao Gemini)
+     * Faz a chamada HTTP para a API do OpenAI com exponential backoff para rate limiting
      */
-    private function applyEvolutiveSummarization(
-        string $promptTemplate,
-        array $documentos,
-        array $contextoDados,
-        ?\App\Models\DocumentAnalysis $documentAnalysis
-    ): string {
-        $totalDocumentos = count($documentos);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-
-        // Verifica se pode retomar de onde parou
-        $startIndex = 0;
-        $resumoEvolutivo = '';
-
-        if ($documentAnalysis && $documentAnalysis->canBeResumed()) {
-            $startIndex = $documentAnalysis->getNextDocumentIndex();
-            $resumoEvolutivo = $documentAnalysis->getEvolutionarySummary();
-
-            Log::info('Retomando Resumo Evolutivo de onde parou', [
-                'analysis_id' => $documentAnalysis->id,
-                'start_index' => $startIndex,
-                'total_documentos' => $totalDocumentos,
-                'progresso' => $documentAnalysis->getProgressPercentage() . '%'
-            ]);
-        } else {
-            // Inicializa novo processamento
-            if ($documentAnalysis) {
-                $documentAnalysis->initializeEvolutionaryAnalysis($totalDocumentos);
-            }
-
-            Log::info('Iniciando Resumo Evolutivo', [
-                'total_documentos' => $totalDocumentos,
-                'processo' => $numeroProcesso,
-                'analysis_id' => $documentAnalysis?->id
-            ]);
-        }
-
-        $documentosProcessados = $startIndex;
-
-        foreach ($documentos as $index => $doc) {
-            // Pula documentos já processados
-            if ($index < $startIndex) {
-                continue;
-            }
-
-            $docNum = $index + 1;
-            $descricao = $doc['descricao'] ?? "Documento {$docNum}";
-            $texto = $doc['texto'] ?? '';
-            $charCount = mb_strlen($texto);
-
-            Log::info("Processando documento {$docNum}/{$totalDocumentos}: {$descricao}", [
-                'char_count' => $charCount,
-                'index' => $index
-            ]);
-
-            // Se documento é muito grande, sumariza primeiro
-            if ($charCount > self::SINGLE_DOC_CHAR_LIMIT) {
-                Log::info("Documento {$docNum} excede limite. Sumarizando...", [
-                    'char_count' => $charCount,
-                    'limit' => self::SINGLE_DOC_CHAR_LIMIT
-                ]);
-
-                $texto = $this->summarizeDocument($texto, $descricao);
-            }
-
-            // Monta prompt evolutivo
-            $promptEvolutivo = $this->buildEvolutionaryPrompt(
-                $promptTemplate,
-                $resumoEvolutivo,
-                $texto,
-                $descricao,
-                $docNum,
-                $totalDocumentos,
-                $contextoDados
-            );
-
-            // Chama API OpenAI
-            try {
-                $response = $this->callOpenAIAPI($promptEvolutivo);
-                $resumoEvolutivo = $response;
-                $documentosProcessados++;
-
-                // Persiste estado após cada documento
-                if ($documentAnalysis) {
-                    $documentAnalysis->updateEvolutionaryState($index, $resumoEvolutivo);
-                }
-
-                Log::info("Documento {$docNum} processado com sucesso", [
-                    'resumo_length' => mb_strlen($resumoEvolutivo)
-                ]);
-
-                // Rate limiting
-                if ($docNum < $totalDocumentos) {
-                    usleep(self::RATE_LIMIT_DELAY_MS * 1000);
-                }
-            } catch (\Exception $e) {
-                Log::error("Erro ao processar documento {$docNum}", [
-                    'error' => $e->getMessage(),
-                    'index' => $index
-                ]);
-
-                // Salva erro e permite retomada
-                if ($documentAnalysis) {
-                    $documentAnalysis->update([
-                        'error_message' => "Falha no Resumo Evolutivo no documento {$docNum} ({$descricao}): {$e->getMessage()}"
-                    ]);
-                }
-
-                throw $e;
-            }
-        }
-
-        // Retorna análise final
-        return $resumoEvolutivo;
-    }
-
-    /**
-     * Detecta se é uma análise de contrato baseado no contexto
-     */
-    private function isContractAnalysis(array $contextoDados): bool
-    {
-        return isset($contextoDados['tipo']) && $contextoDados['tipo'] === 'Contrato';
-    }
-
-    /**
-     * Monta prompt evolutivo com contexto acumulado
-     */
-    private function buildEvolutionaryPrompt(
-        string $promptTemplate,
-        string $resumoAnterior,
-        string $textoDocumento,
-        string $descricaoDocumento,
-        int $docNum,
-        int $totalDocs,
-        array $contextoDados
-    ): string {
-        $isContract = $this->isContractAnalysis($contextoDados);
-
-        if ($isContract) {
-            $nomeClasse = 'Análise de Contrato';
-            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
-            $numeroProcesso = 'N/A';
-            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
-
-            $prompt = "# ANÁLISE EVOLUTIVA DE CONTRATO\n\n";
-            $prompt .= "**Arquivo:** {$assuntos}\n";
-            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
-                $prompt .= "**Parte Interessada:** {$tipoParte}\n";
-            }
-            $prompt .= "**Documento atual:** {$docNum}/{$totalDocs}\n\n";
-        } else {
-            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-
-            $prompt = "# ANÁLISE EVOLUTIVA DE PROCESSO JUDICIAL\n\n";
-            $prompt .= "**Processo:** {$numeroProcesso}\n";
-            $prompt .= "**Classe:** {$nomeClasse}\n";
-            $prompt .= "**Assuntos:** {$assuntos}\n";
-            $prompt .= "**Documento atual:** {$docNum}/{$totalDocs}\n\n";
-        }
-
-        // Adiciona resumo dos documentos anteriores
-        if (!empty($resumoAnterior)) {
-            $prompt .= "## RESUMO DOS DOCUMENTOS ANTERIORES\n\n";
-            $prompt .= $resumoAnterior . "\n\n";
-            $prompt .= "---\n\n";
-        }
-
-        // Adiciona documento atual
-        $prompt .= "## DOCUMENTO {$docNum}: {$descricaoDocumento}\n\n";
-        $prompt .= $textoDocumento . "\n\n";
-        $prompt .= "---\n\n";
-
-        // Adiciona instruções do usuário
-        $prompt .= "## INSTRUÇÕES\n\n";
-        $prompt .= $promptTemplate . "\n\n";
-
-        // Instrução para manter evolução
-        if ($docNum < $totalDocs) {
-            $prompt .= "\n**IMPORTANTE:** Sua resposta será usada como contexto para analisar os próximos documentos. ";
-            if ($isContract) {
-                $prompt .= "Inclua informações relevantes que conectem esta parte do contrato às anteriores.";
-            } else {
-                $prompt .= "Inclua informações relevantes que conectem este documento aos anteriores e que sejam úteis para entender os próximos documentos do processo.";
-            }
-        } else {
-            if ($isContract) {
-                $prompt .= "\n**IMPORTANTE:** Este é o último trecho. Forneça uma análise final completa do contrato, ";
-                $prompt .= "consolidando todas as informações identificadas.";
-            } else {
-                $prompt .= "\n**IMPORTANTE:** Este é o último documento. Forneça uma análise final completa do processo, ";
-                $prompt .= "consolidando todas as informações dos documentos anteriores.";
-            }
-        }
-
-        return $prompt;
-    }
-
-    /**
-     * Sumariza documento individual muito grande
-     */
-    private function summarizeDocument(string $texto, string $descricao): string
-    {
-        $promptSumarizacao = <<<PROMPT
-Você é um assistente jurídico especializado. Resuma o documento abaixo em 2-3 parágrafos concisos, destacando:
-
-1. **Tipo de manifestação** (petição inicial, contestação, decisão, despacho, sentença, recurso, etc.)
-2. **Partes envolvidas**
-3. **Pedidos ou decisões principais**
-4. **Fundamentos legais citados**
-5. **Fatos relevantes** que conectem este documento aos demais do processo
-6. **Datas importantes**
-
-**Descrição:** {$descricao}
-
-**DOCUMENTO:**
-
-{$texto}
-PROMPT;
-
-        $response = $this->callOpenAIAPI($promptSumarizacao);
-
-        return "**[RESUMO AUTOMÁTICO - Documento original: " . number_format(mb_strlen($texto)) . " caracteres]**\n\n" . $response;
-    }
-
-    /**
-     * Chama API OpenAI com retry exponencial
-     */
-    private function callOpenAIAPI(string $prompt, array $options = []): string
+    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
     {
         // Aplica rate limiting antes da chamada
-        RateLimiterService::apply('openai');
+        RateLimiterService::apply($this->getRateLimiterKey());
 
         $url = "{$this->apiUrl}/chat/completions";
         $attempt = 0;
@@ -321,26 +87,23 @@ PROMPT;
             'max_tokens' => 4096,
         ];
 
-        // Merge com opções adicionais
-        $requestBody = array_merge($requestBody, $options);
-
-        while ($attempt < self::MAX_RETRIES_ON_RATE_LIMIT) {
+        while ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
             $attempt++;
 
             try {
                 $response = Http::timeout(180)
                     ->withHeaders([
-                        'Authorization' => 'Bearer ' . $this->apiKey,
+                        'Authorization' => "Bearer {$this->apiKey}",
                         'Content-Type' => 'application/json',
                     ])
                     ->post($url, $requestBody);
 
-                // Rate limit (429)
+                // Se recebeu 429 (rate limit), aplica exponential backoff
                 if ($response->status() === 429) {
-                    if ($attempt < self::MAX_RETRIES_ON_RATE_LIMIT) {
-                        $backoffMs = self::RATE_LIMIT_BACKOFF_BASE_MS * pow(2, $attempt - 1);
+                    if ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
+                        $backoffMs = $this->calculateBackoff($attempt);
 
-                        Log::warning("Rate limit atingido (429). Tentativa {$attempt}/" . self::MAX_RETRIES_ON_RATE_LIMIT . ". Aguardando {$backoffMs}ms", [
+                        Log::warning("Rate limit atingido (429). Tentativa {$attempt}/" . static::MAX_RETRIES_ON_RATE_LIMIT . ". Aguardando {$backoffMs}ms", [
                             'attempt' => $attempt,
                             'backoff_ms' => $backoffMs
                         ]);
@@ -349,7 +112,7 @@ PROMPT;
                         continue;
                     }
 
-                    throw new \Exception('Rate limit da API OpenAI excedido após ' . self::MAX_RETRIES_ON_RATE_LIMIT . ' tentativas. Aguarde alguns minutos e tente novamente.');
+                    throw new \Exception('Rate limit da API OpenAI excedido após ' . static::MAX_RETRIES_ON_RATE_LIMIT . ' tentativas. Aguarde alguns minutos e tente novamente.');
                 }
 
                 if (!$response->successful()) {
@@ -357,14 +120,38 @@ PROMPT;
                     $errorBody = $response->json();
                     $errorMessage = $errorBody['error']['message'] ?? $errorBody['message'] ?? 'Erro desconhecido';
 
-                    throw new \Exception($this->translateOpenAIError($statusCode, $errorMessage));
+                    throw new \Exception($this->translateError($statusCode, $errorMessage));
                 }
 
                 $data = $response->json();
+
+                // Log detalhado da resposta com informações de uso
+                $usage = $data['usage'] ?? [];
+                Log::info('OpenAI API - Resposta recebida', [
+                    'model' => $data['model'] ?? $this->model,
+                    'finish_reason' => $data['choices'][0]['finish_reason'] ?? 'unknown',
+                    'usage' => [
+                        'prompt_tokens' => $usage['prompt_tokens'] ?? 'N/A',
+                        'completion_tokens' => $usage['completion_tokens'] ?? 'N/A',
+                        'total_tokens' => $usage['total_tokens'] ?? 'N/A',
+                    ],
+                    'response_id' => $data['id'] ?? 'N/A',
+                    'created_at' => isset($data['created']) ? date('Y-m-d H:i:s', $data['created']) : 'N/A',
+                ]);
+
+                // Acumula metadados da resposta
+                $this->accumulateMetadata($usage, $data['model'] ?? $this->model);
+
+                // Extrai o texto da resposta
                 $text = $data['choices'][0]['message']['content'] ?? null;
 
                 if (empty($text)) {
-                    throw new \Exception('A API retornou uma resposta vazia.');
+                    Log::error('OpenAI retornou resposta vazia', [
+                        'response_data' => $data,
+                        'status_code' => $response->status(),
+                        'model' => $data['model'] ?? $this->model,
+                    ]);
+                    throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
                 }
 
                 return $text;
@@ -372,7 +159,7 @@ PROMPT;
             } catch (\Exception $e) {
                 $lastException = $e;
 
-                // Retry em erros de conexão
+                // Se for erro de conexão ou timeout, tenta novamente
                 if ($attempt < 3 && (
                     str_contains($e->getMessage(), 'timeout') ||
                     str_contains($e->getMessage(), 'Connection') ||
@@ -394,11 +181,11 @@ PROMPT;
     }
 
     /**
-     * Traduz erros da API para mensagens amigáveis
+     * Traduz erros técnicos da API OpenAI para mensagens amigáveis
      */
-    private function translateOpenAIError(int $statusCode, string $technicalMessage): string
+    protected function translateError(int $statusCode, string $technicalMessage): string
     {
-        // Erro de saldo/quota
+        // Erros de quota/rate limit
         if ($statusCode === 429) {
             if (str_contains(strtolower($technicalMessage), 'quota')) {
                 return 'Limite de uso da API OpenAI excedido. Verifique seu plano ou aguarde o reset mensal.';
@@ -416,58 +203,11 @@ PROMPT;
             return 'Documento muito grande para o modelo OpenAI. O sistema tentará sumarizar automaticamente.';
         }
 
-        // Erro de servidor
+        // Erro genérico do servidor
         if ($statusCode >= 500) {
             return "Erro temporário no servidor OpenAI (código {$statusCode}). Tente novamente em alguns minutos.";
         }
 
         return "Erro na API OpenAI: " . substr($technicalMessage, 0, 150);
-    }
-
-    /**
-     * Formata assuntos
-     */
-    private function formatAssuntos(array $assuntos): string
-    {
-        if (empty($assuntos)) {
-            return 'Não informados';
-        }
-
-        $nomes = array_map(function($assunto) {
-            return $assunto['nomeAssunto']
-                ?? $assunto['descricao']
-                ?? $assunto['codigoAssunto']
-                ?? 'Assunto';
-        }, $assuntos);
-
-        return implode(', ', $nomes);
-    }
-
-    /**
-     * Health check da API
-     */
-    public function healthCheck(): bool
-    {
-        try {
-            $url = "{$this->apiUrl}/models";
-
-            $response = Http::timeout(10)
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $this->apiKey,
-                ])
-                ->get($url);
-
-            return $response->successful();
-        } catch (\Exception) {
-            return false;
-        }
-    }
-
-    /**
-     * Retorna nome do provider
-     */
-    public function getName(): string
-    {
-        return 'OpenAI';
     }
 }

@@ -164,11 +164,14 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 $prompt->deep_thinking_enabled
             );
 
+            // Captura metadados da IA
+            $aiMetadata = $aiService->getLastAnalysisMetadata();
+
             // Calcula tempo de processamento
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como concluída
-            $analysis->markAsCompleted($result, $processingTimeMs);
+            // Marca como concluída com metadados
+            $analysis->markAsCompleted($result, $processingTimeMs, $aiMetadata);
 
             // Remove o arquivo do storage após análise concluída
             $this->deleteContractFile($analysis);

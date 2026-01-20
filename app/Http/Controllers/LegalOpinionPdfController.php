@@ -39,12 +39,16 @@ class LegalOpinionPdfController extends Controller
         // Gera o PDF
         $pdf = Pdf::loadView('pdf.legal-opinion', $data);
 
-        // Configura o PDF
+        // Configura o PDF com margens ABNT
         $pdf->setPaper('a4', 'portrait');
         $pdf->setOption('isRemoteEnabled', true);
         $pdf->setOption('isPhpEnabled', true);
         $pdf->setOption('defaultFont', 'DejaVu Serif');
         $pdf->setOption('isFontSubsettingEnabled', true);
+        $pdf->setOption('margin_top', 25);
+        $pdf->setOption('margin_bottom', 20);
+        $pdf->setOption('margin_left', 25);
+        $pdf->setOption('margin_right', 20);
 
         // Nome do arquivo
         $fileName = 'parecer-juridico-' . $analysis->id . '-' . now()->format('Y-m-d-His') . '.pdf';
@@ -82,12 +86,16 @@ class LegalOpinionPdfController extends Controller
         // Gera o PDF
         $pdf = Pdf::loadView('pdf.legal-opinion', $data);
 
-        // Configura o PDF
+        // Configura o PDF com margens ABNT
         $pdf->setPaper('a4', 'portrait');
         $pdf->setOption('isRemoteEnabled', true);
         $pdf->setOption('isPhpEnabled', true);
         $pdf->setOption('defaultFont', 'DejaVu Serif');
         $pdf->setOption('isFontSubsettingEnabled', true);
+        $pdf->setOption('margin_top', 25);
+        $pdf->setOption('margin_bottom', 20);
+        $pdf->setOption('margin_left', 25);
+        $pdf->setOption('margin_right', 20);
 
         return $pdf->stream('parecer-juridico-' . $analysis->id . '.pdf');
     }

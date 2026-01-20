@@ -34,6 +34,7 @@ class ContractSystemSeeder extends Seeder
         $this->command->info("System 'Contratos' criado/verificado (ID: {$system->id}).");
 
         // 3. Criar AiPrompt padrão para ANÁLISE de contratos
+        // Análise básica não precisa de deep thinking (mais rápido)
         $analysisPrompt = AiPrompt::firstOrCreate(
             [
                 'system_id' => $system->id,
@@ -43,7 +44,7 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Análise de Contratos',
                 'content' => $this->getAnalysisPrompt(),
-                'ai_provider' => 'gemini',
+                'ai_provider' => 'deepseek',
                 'deep_thinking_enabled' => false,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
@@ -53,6 +54,7 @@ class ContractSystemSeeder extends Seeder
         $this->command->info("AiPrompt padrão para ANÁLISE de contratos criado/verificado (ID: {$analysisPrompt->id}).");
 
         // 4. Criar AiPrompt padrão para PARECER JURÍDICO
+        // Parecer jurídico requer análise mais profunda - deep thinking habilitado
         $legalOpinionPrompt = AiPrompt::firstOrCreate(
             [
                 'system_id' => $system->id,
@@ -62,8 +64,8 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Parecer Jurídico',
                 'content' => $this->getLegalOpinionPrompt(),
-                'ai_provider' => 'gemini',
-                'deep_thinking_enabled' => false,
+                'ai_provider' => 'deepseek',
+                'deep_thinking_enabled' => true,  // Parecer jurídico usa pensamento profundo
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
             ]

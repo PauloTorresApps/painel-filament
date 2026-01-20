@@ -77,6 +77,52 @@ class ViewContractAnalysis extends ViewRecord
                     ])
                     ->visible(fn ($record) => $record->isCompleted() && $record->analysis_result)
                     ->collapsible(),
+
+                Section::make('Metadados da IA')
+                    ->description('Informações técnicas sobre o processamento')
+                    ->schema([
+                        Grid::make(4)
+                            ->schema([
+                                TextEntry::make('analysis_ai_metadata.provider')
+                                    ->label('Provedor')
+                                    ->default('-'),
+
+                                TextEntry::make('analysis_ai_metadata.model')
+                                    ->label('Modelo')
+                                    ->default('-'),
+
+                                TextEntry::make('analysis_ai_metadata.api_calls_count')
+                                    ->label('Chamadas API')
+                                    ->default('-'),
+
+                                TextEntry::make('analysis_ai_metadata.documents_processed')
+                                    ->label('Documentos Processados')
+                                    ->default('-'),
+                            ]),
+
+                        Grid::make(4)
+                            ->schema([
+                                TextEntry::make('analysis_ai_metadata.total_prompt_tokens')
+                                    ->label('Tokens de Entrada')
+                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
+
+                                TextEntry::make('analysis_ai_metadata.total_completion_tokens')
+                                    ->label('Tokens de Saída')
+                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
+
+                                TextEntry::make('analysis_ai_metadata.total_tokens')
+                                    ->label('Total de Tokens')
+                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
+
+                                TextEntry::make('analysis_ai_metadata.total_reasoning_tokens')
+                                    ->label('Tokens de Raciocínio')
+                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-')
+                                    ->visible(fn ($record) => ($record->analysis_ai_metadata['total_reasoning_tokens'] ?? 0) > 0),
+                            ]),
+                    ])
+                    ->visible(fn ($record) => $record->isCompleted() && !empty($record->analysis_ai_metadata))
+                    ->collapsed()
+                    ->collapsible(),
             ]);
     }
 

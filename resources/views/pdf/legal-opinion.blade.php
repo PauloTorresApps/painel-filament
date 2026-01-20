@@ -3,10 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-    <title>Parecer Jurídico</title>
+    <title>Parecer Jurídico - {{ $analysis->id }}/{{ date('Y') }}</title>
     <style>
+        /* ============================================
+           CONFIGURAÇÕES DE PÁGINA - PADRÃO ABNT
+           Margens: superior 3cm, inferior 2cm,
+           esquerda 3cm, direita 2cm
+        ============================================ */
         @page {
-            margin: 3cm 2.5cm 2.5cm 3cm;
+            margin: 2.5cm 2cm 2cm 2.5cm;
         }
 
         * {
@@ -15,391 +20,504 @@
             box-sizing: border-box;
         }
 
+        /* ============================================
+           TIPOGRAFIA - Padrão jurídico brasileiro
+           Fonte: Times New Roman ou similar serifada
+           Tamanho: 12pt, espaçamento 1.5
+        ============================================ */
         body {
-            font-family: 'DejaVu Serif', 'Times New Roman', serif;
+            font-family: 'DejaVu Serif', 'Times New Roman', Georgia, serif;
             font-size: 12pt;
-            line-height: 1.8;
-            color: #1a1a1a;
+            line-height: 1.5;
+            color: #000000;
             text-align: justify;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
         }
 
-        /* Cabeçalho do documento */
-        .document-header {
+        /* ============================================
+           CABEÇALHO INSTITUCIONAL
+        ============================================ */
+        .header-institucional {
             text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 3px double #1a365d;
+            padding-bottom: 25px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #000000;
         }
 
-        .document-header .title {
+        .header-titulo {
             font-size: 16pt;
             font-weight: bold;
-            color: #1a365d;
             text-transform: uppercase;
-            letter-spacing: 3px;
-            margin-bottom: 8px;
+            letter-spacing: 4px;
+            color: #000000;
+            margin-bottom: 5px;
         }
 
-        .document-header .subtitle {
+        .header-subtitulo {
             font-size: 11pt;
-            color: #4a5568;
-            font-style: italic;
+            font-weight: normal;
+            color: #333333;
+            letter-spacing: 2px;
         }
 
-        /* Número do parecer */
-        .parecer-number {
-            text-align: right;
-            font-size: 11pt;
-            color: #4a5568;
+        /* ============================================
+           EPÍGRAFE / IDENTIFICAÇÃO
+        ============================================ */
+        .epigrafe {
             margin-bottom: 30px;
         }
 
-        /* Bloco de identificação */
-        .identification-block {
-            margin-bottom: 35px;
-            padding: 20px 25px;
-            background-color: #f7fafc;
-            border-left: 4px solid #1a365d;
+        .epigrafe-item {
+            margin-bottom: 8px;
+            font-size: 12pt;
         }
 
-        .identification-block table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .identification-block td {
-            padding: 6px 0;
-            vertical-align: top;
-            font-size: 11pt;
-        }
-
-        .identification-block .field-label {
+        .epigrafe-label {
             font-weight: bold;
-            color: #1a365d;
-            width: 180px;
             text-transform: uppercase;
             font-size: 10pt;
             letter-spacing: 0.5px;
         }
 
-        .identification-block .field-value {
-            color: #2d3748;
+        .epigrafe-valor {
+            margin-left: 10px;
         }
 
-        /* Linha separadora decorativa */
-        .separator {
-            text-align: center;
-            margin: 30px 0;
-            color: #1a365d;
-            font-size: 14pt;
-            letter-spacing: 10px;
+        .numero-parecer {
+            text-align: right;
+            font-weight: bold;
+            font-size: 12pt;
+            margin-bottom: 25px;
         }
 
-        /* Conteúdo principal */
+        /* ============================================
+           EMENTA
+        ============================================ */
+        .ementa {
+            margin: 25px 0 25px 8cm;
+            padding: 0;
+            font-size: 11pt;
+            line-height: 1.4;
+            text-align: justify;
+        }
+
+        .ementa-label {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 10pt;
+        }
+
+        /* ============================================
+           CORPO DO PARECER
+        ============================================ */
         .content {
             text-align: justify;
-            hyphens: auto;
-        }
-
-        .content h1 {
-            font-size: 14pt;
-            color: #1a365d;
-            text-transform: uppercase;
-            letter-spacing: 1px;
             margin-top: 30px;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #cbd5e0;
         }
 
-        .content h2 {
-            font-size: 13pt;
-            color: #1a365d;
-            margin-top: 25px;
-            margin-bottom: 12px;
+        /* Títulos de seção - numeração romana */
+        .content h1 {
+            font-size: 12pt;
             font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            text-align: left;
+            page-break-after: avoid;
+        }
+
+        /* Subtítulos */
+        .content h2 {
+            font-size: 12pt;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 12px;
+            text-align: left;
+            page-break-after: avoid;
         }
 
         .content h3 {
             font-size: 12pt;
-            color: #2d3748;
-            margin-top: 20px;
-            margin-bottom: 10px;
             font-weight: bold;
             font-style: italic;
+            margin-top: 18px;
+            margin-bottom: 10px;
+            text-align: left;
+            page-break-after: avoid;
         }
 
-        .content h4, .content h5, .content h6 {
+        .content h4,
+        .content h5,
+        .content h6 {
             font-size: 12pt;
-            color: #2d3748;
+            font-weight: bold;
             margin-top: 15px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            text-align: left;
         }
 
+        /* Parágrafos com recuo ABNT */
         .content p {
-            margin-bottom: 14px;
-            text-indent: 2.5cm;
+            margin-bottom: 12pt;
+            text-indent: 1.25cm;
             text-align: justify;
+            orphans: 3;
+            widows: 3;
         }
 
-        .content p:first-of-type {
-            text-indent: 0;
+        /* Primeiro parágrafo após título sem recuo */
+        .content h1 + p,
+        .content h2 + p,
+        .content h3 + p,
+        .content h4 + p {
+            text-indent: 1.25cm;
         }
 
-        .content ul, .content ol {
-            margin-left: 1.5cm;
-            margin-bottom: 14px;
+        /* Listas */
+        .content ul,
+        .content ol {
+            margin-left: 1.25cm;
+            margin-bottom: 12pt;
             padding-left: 0.5cm;
         }
 
         .content li {
-            margin-bottom: 8px;
+            margin-bottom: 6pt;
             text-align: justify;
         }
 
         .content li p {
             text-indent: 0;
-            margin-bottom: 6px;
+            margin-bottom: 6pt;
         }
 
+        /* Negrito e itálico */
         .content strong {
-            color: #1a202c;
+            font-weight: bold;
         }
 
         .content em {
             font-style: italic;
         }
 
+        /* ============================================
+           CITAÇÕES - Padrão ABNT
+           Citações longas: recuo 4cm, fonte 10pt
+        ============================================ */
         .content blockquote {
-            margin: 20px 0;
-            margin-left: 1cm;
-            padding: 15px 20px;
-            background-color: #f7fafc;
-            border-left: 4px solid #1a365d;
-            font-style: italic;
-            color: #4a5568;
+            margin: 15pt 0 15pt 4cm;
+            padding: 0;
+            font-size: 10pt;
+            line-height: 1.0;
+            text-align: justify;
+            font-style: normal;
+            border: none;
+            background: none;
         }
 
         .content blockquote p {
             text-indent: 0;
-            margin-bottom: 8px;
+            margin-bottom: 10pt;
+            font-size: 10pt;
         }
 
         .content blockquote p:last-child {
             margin-bottom: 0;
         }
 
-        /* Tabelas */
+        /* ============================================
+           TABELAS
+        ============================================ */
         .content table {
             width: 100%;
             border-collapse: collapse;
-            margin: 20px 0;
+            margin: 15pt 0;
             font-size: 11pt;
+            page-break-inside: avoid;
         }
 
         .content table th,
         .content table td {
-            border: 1px solid #cbd5e0;
-            padding: 10px 12px;
+            border: 1px solid #000000;
+            padding: 8pt 10pt;
             text-align: left;
             vertical-align: top;
         }
 
         .content table th {
-            background-color: #1a365d;
-            color: white;
+            background-color: #f0f0f0;
             font-weight: bold;
-            text-transform: uppercase;
-            font-size: 10pt;
-            letter-spacing: 0.5px;
-        }
-
-        .content table tr:nth-child(even) {
-            background-color: #f7fafc;
-        }
-
-        .content table tr:hover {
-            background-color: #edf2f7;
-        }
-
-        /* Código/destaque */
-        .content code {
-            background-color: #edf2f7;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'DejaVu Sans Mono', monospace;
-            font-size: 10pt;
-        }
-
-        .content pre {
-            background-color: #2d3748;
-            color: #e2e8f0;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 15px 0;
-            overflow-x: auto;
-            font-family: 'DejaVu Sans Mono', monospace;
-            font-size: 10pt;
-        }
-
-        /* Linha horizontal */
-        .content hr {
-            border: none;
-            border-top: 1px solid #cbd5e0;
-            margin: 25px 0;
-        }
-
-        /* Aviso legal */
-        .legal-notice {
-            margin-top: 40px;
-            padding: 20px;
-            background-color: #fffbeb;
-            border: 1px solid #f59e0b;
-            border-radius: 0;
-            font-size: 10pt;
-            line-height: 1.6;
-        }
-
-        .legal-notice .notice-title {
-            font-weight: bold;
-            color: #92400e;
-            text-transform: uppercase;
-            font-size: 9pt;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }
-
-        .legal-notice p {
-            text-indent: 0;
-            margin: 0;
-            color: #78350f;
-        }
-
-        /* Assinatura */
-        .signature-block {
-            margin-top: 50px;
             text-align: center;
         }
 
-        .signature-line {
-            width: 250px;
-            border-top: 1px solid #1a365d;
-            margin: 0 auto 10px auto;
-            padding-top: 10px;
-        }
-
-        .signature-name {
-            font-weight: bold;
-            color: #1a365d;
-        }
-
-        .signature-title {
+        .content table caption {
             font-size: 10pt;
-            color: #4a5568;
-            font-style: italic;
+            text-align: center;
+            margin-bottom: 8pt;
+            font-weight: bold;
         }
 
-        /* Rodapé */
+        /* ============================================
+           LINHA HORIZONTAL
+        ============================================ */
+        .content hr {
+            border: none;
+            border-top: 1px solid #000000;
+            margin: 20pt 0;
+        }
+
+        /* ============================================
+           CONCLUSÃO / DISPOSITIVO
+        ============================================ */
+        .dispositivo {
+            margin-top: 30pt;
+            padding-top: 15pt;
+            border-top: 1px solid #000000;
+        }
+
+        /* ============================================
+           FECHO
+        ============================================ */
+        .fecho {
+            margin-top: 30pt;
+            text-align: justify;
+        }
+
+        .fecho p {
+            text-indent: 1.25cm;
+        }
+
+        /* ============================================
+           LOCAL E DATA
+        ============================================ */
+        .local-data {
+            margin-top: 30pt;
+            text-align: right;
+            font-size: 12pt;
+        }
+
+        /* ============================================
+           ASSINATURA
+        ============================================ */
+        .assinatura {
+            margin-top: 60pt;
+            text-align: center;
+        }
+
+        .assinatura-linha {
+            width: 60%;
+            margin: 0 auto;
+            border-top: 1px solid #000000;
+            padding-top: 8pt;
+        }
+
+        .assinatura-texto {
+            font-size: 11pt;
+            font-style: italic;
+            color: #333333;
+        }
+
+        /* ============================================
+           NOTA DE RODAPÉ / ADVERTÊNCIA
+        ============================================ */
+        .advertencia {
+            margin-top: 40pt;
+            padding: 15pt;
+            border: 1px solid #666666;
+            background-color: #fafafa;
+            font-size: 9pt;
+            line-height: 1.4;
+        }
+
+        .advertencia-titulo {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 8pt;
+            letter-spacing: 1px;
+            margin-bottom: 8pt;
+            color: #333333;
+        }
+
+        .advertencia p {
+            text-indent: 0;
+            margin: 0;
+            color: #444444;
+            text-align: justify;
+        }
+
+        /* ============================================
+           RODAPÉ DE PÁGINA
+        ============================================ */
         .footer {
             position: fixed;
-            bottom: -1.5cm;
+            bottom: 0;
             left: 0;
             right: 0;
             text-align: center;
             font-size: 9pt;
-            color: #718096;
-            padding-top: 10px;
-            border-top: 1px solid #e2e8f0;
+            color: #666666;
+            border-top: 0.5pt solid #cccccc;
+            padding-top: 5pt;
+            background: #ffffff;
         }
 
-        .footer .page-info {
-            margin-bottom: 3px;
-        }
-
-        /* Quebra de página */
+        /* ============================================
+           CONTROLE DE QUEBRA DE PÁGINA
+        ============================================ */
         .page-break {
             page-break-after: always;
         }
 
-        /* Evitar quebras indesejadas */
+        .no-break {
+            page-break-inside: avoid;
+        }
+
         h1, h2, h3, h4, h5, h6 {
             page-break-after: avoid;
         }
 
-        table, blockquote {
+        table, blockquote, .advertencia {
             page-break-inside: avoid;
+        }
+
+        /* ============================================
+           AJUSTES PARA CÓDIGO (se houver)
+        ============================================ */
+        .content code {
+            font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+            font-size: 10pt;
+            background-color: #f5f5f5;
+            padding: 1pt 4pt;
+        }
+
+        .content pre {
+            font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+            font-size: 9pt;
+            background-color: #f5f5f5;
+            padding: 10pt;
+            margin: 15pt 0;
+            border: 1px solid #dddddd;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
     </style>
 </head>
 <body>
-    <!-- Cabeçalho do documento -->
-    <div class="document-header">
-        <div class="title">Parecer Jurídico</div>
-        <div class="subtitle">Análise Contratual</div>
+    {{-- ============================================
+         CABEÇALHO DO DOCUMENTO
+    ============================================ --}}
+    <div class="header-institucional">
+        <div class="header-titulo">Parecer Jurídico</div>
+        <div class="header-subtitulo">Consultoria em Direito Contratual</div>
     </div>
 
-    <!-- Número/Referência -->
-    <div class="parecer-number">
-        Ref.: {{ $analysis->id }}/{{ date('Y') }}
+    {{-- ============================================
+         NÚMERO DO PARECER
+    ============================================ --}}
+    <div class="numero-parecer">
+        PARECER N.º {{ str_pad($analysis->id, 3, '0', STR_PAD_LEFT) }}/{{ date('Y') }}
     </div>
 
-    <!-- Bloco de identificação -->
-    <div class="identification-block">
-        <table>
-            <tr>
-                <td class="field-label">Documento:</td>
-                <td class="field-value">{{ $fileName }}</td>
-            </tr>
-            @if($interestedParty)
-            <tr>
-                <td class="field-label">Interessado:</td>
-                <td class="field-value">{{ $interestedParty }}</td>
-            </tr>
-            @endif
-            <tr>
-                <td class="field-label">Data de Emissão:</td>
-                <td class="field-value">{{ $generatedAt }}</td>
-            </tr>
-            <tr>
-                <td class="field-label">Análise Realizada em:</td>
-                <td class="field-value">{{ $analysis->created_at->format('d/m/Y H:i') }}</td>
-            </tr>
-        </table>
+    {{-- ============================================
+         EPÍGRAFE / IDENTIFICAÇÃO
+    ============================================ --}}
+    <div class="epigrafe">
+        <div class="epigrafe-item">
+            <span class="epigrafe-label">Interessado:</span>
+            <span class="epigrafe-valor">{{ $interestedParty ?: 'Não informado' }}</span>
+        </div>
+        <div class="epigrafe-item">
+            <span class="epigrafe-label">Assunto:</span>
+            <span class="epigrafe-valor">Análise de instrumento contratual - {{ $fileName }}</span>
+        </div>
+        <div class="epigrafe-item">
+            <span class="epigrafe-label">Referência:</span>
+            <span class="epigrafe-valor">Protocolo n.º {{ $analysis->id }}/{{ date('Y') }}</span>
+        </div>
     </div>
 
-    <!-- Separador -->
-    <div class="separator">* * *</div>
+    {{-- ============================================
+         EMENTA
+    ============================================ --}}
+    <div class="ementa">
+        <span class="ementa-label">Ementa:</span>
+        Direito Contratual. Direito do Consumidor. Análise de cláusulas contratuais.
+        Verificação de conformidade legal. Identificação de riscos jurídicos.
+        Recomendações para adequação contratual.
+    </div>
 
-    <!-- Conteúdo do parecer -->
+    {{-- ============================================
+         CORPO DO PARECER
+    ============================================ --}}
     <div class="content">
         {!! \Illuminate\Support\Str::markdown($content) !!}
     </div>
 
-    <!-- Aviso legal -->
-    <div class="legal-notice">
-        <div class="notice-title">Aviso Importante</div>
+    {{-- ============================================
+         FECHO
+    ============================================ --}}
+    <div class="fecho">
         <p>
-            Este parecer foi elaborado com auxílio de inteligência artificial, tendo como base a análise automatizada do documento contratual fornecido. As informações e recomendações aqui contidas têm caráter orientativo e não substituem a consulta a um advogado devidamente habilitado. Recomenda-se a revisão por profissional jurídico qualificado antes de qualquer tomada de decisão baseada neste documento.
+            É o parecer, salvo melhor juízo.
         </p>
     </div>
 
-    <!-- Rodapé -->
-    <div class="footer">
-        <div class="page-info">
-            Parecer Jurídico - Ref. {{ $analysis->id }}/{{ date('Y') }} - Página <span class="page-number"></span>
-        </div>
-        Documento gerado automaticamente em {{ $generatedAt }}
+    {{-- ============================================
+         LOCAL E DATA
+    ============================================ --}}
+    <div class="local-data">
+        {{ $generatedAt }}
     </div>
 
+    {{-- ============================================
+         ASSINATURA
+    ============================================ --}}
+    <div class="assinatura">
+        <div class="assinatura-linha">
+            <div class="assinatura-texto">Assinatura Eletrônica</div>
+            <div class="assinatura-texto">Sistema de Análise Contratual</div>
+        </div>
+    </div>
+
+    {{-- ============================================
+         ADVERTÊNCIA LEGAL
+    ============================================ --}}
+    <div class="advertencia no-break">
+        <div class="advertencia-titulo">Nota de Esclarecimento</div>
+        <p>
+            O presente parecer foi elaborado com auxílio de sistema de inteligência artificial,
+            tendo por base a análise automatizada do instrumento contratual submetido.
+            As informações e recomendações aqui consignadas possuem caráter meramente orientativo,
+            não substituindo, em hipótese alguma, a consulta a advogado regularmente inscrito
+            nos quadros da Ordem dos Advogados do Brasil.
+            Recomenda-se a submissão deste documento à apreciação de profissional habilitado
+            antes de qualquer tomada de decisão fundamentada em seu conteúdo.
+        </p>
+    </div>
+
+    {{-- ============================================
+         RODAPÉ
+    ============================================ --}}
+    <div class="footer">
+        Parecer n.º {{ str_pad($analysis->id, 3, '0', STR_PAD_LEFT) }}/{{ date('Y') }} |
+        Emitido em {{ $generatedAt }}
+    </div>
+
+    {{-- ============================================
+         NUMERAÇÃO DE PÁGINAS (via DomPDF)
+    ============================================ --}}
     <script type="text/php">
         if (isset($pdf)) {
             $text = "Página {PAGE_NUM} de {PAGE_COUNT}";
             $size = 9;
-            $font = $fontMetrics->getFont("DejaVu Sans");
+            $font = $fontMetrics->getFont("DejaVu Serif");
             $width = $fontMetrics->get_text_width($text, $font, $size) / 2;
             $x = ($pdf->get_width() - $width) / 2;
-            $y = $pdf->get_height() - 35;
-            $pdf->page_text($x, $y, $text, $font, $size, array(0.44, 0.5, 0.56));
+            $y = $pdf->get_height() - 28;
+            $pdf->page_text($x, $y, $text, $font, $size, array(0.4, 0.4, 0.4));
         }
     </script>
 </body>

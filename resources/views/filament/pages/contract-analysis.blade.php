@@ -106,6 +106,51 @@
                                 {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->analysis_result) !!}
                             </div>
 
+                            {{-- Metadados da IA (Análise) --}}
+                            @if($this->latestAnalysis->analysis_ai_metadata)
+                                <details class="mt-4 text-xs">
+                                    <summary class="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                        Detalhes técnicos da análise
+                                    </summary>
+                                    <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Provedor:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->analysis_ai_metadata['provider'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Modelo:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->analysis_ai_metadata['model'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Chamadas API:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->analysis_ai_metadata['api_calls_count'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Documentos:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->analysis_ai_metadata['documents_processed'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Entrada:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->analysis_ai_metadata['total_prompt_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Saída:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->analysis_ai_metadata['total_completion_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Total Tokens:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->analysis_ai_metadata['total_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        @if(($this->latestAnalysis->analysis_ai_metadata['total_reasoning_tokens'] ?? 0) > 0)
+                                            <div>
+                                                <span class="text-gray-500 dark:text-gray-400">Tokens Raciocínio:</span>
+                                                <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->analysis_ai_metadata['total_reasoning_tokens']) }}</span>
+                                            </div>
+                                        @endif
+                                    </div>
+                                </details>
+                            @endif
+
                             {{-- Botão para gerar parecer jurídico --}}
                             @if($this->latestAnalysis->canGenerateLegalOpinion() && !$this->latestAnalysis->isLegalOpinionCompleted())
                                 <div class="mt-4 flex justify-end">
@@ -184,6 +229,51 @@
                             <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto">
                                 {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->legal_opinion_result) !!}
                             </div>
+
+                            {{-- Metadados da IA (Parecer) --}}
+                            @if($this->latestAnalysis->legal_opinion_ai_metadata)
+                                <details class="mt-4 text-xs">
+                                    <summary class="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                        Detalhes técnicos do parecer
+                                    </summary>
+                                    <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Provedor:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->legal_opinion_ai_metadata['provider'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Modelo:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->legal_opinion_ai_metadata['model'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Chamadas API:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->legal_opinion_ai_metadata['api_calls_count'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Documentos:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->legal_opinion_ai_metadata['documents_processed'] ?? '-' }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Entrada:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->legal_opinion_ai_metadata['total_prompt_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Saída:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->legal_opinion_ai_metadata['total_completion_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Total Tokens:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->legal_opinion_ai_metadata['total_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        @if(($this->latestAnalysis->legal_opinion_ai_metadata['total_reasoning_tokens'] ?? 0) > 0)
+                                            <div>
+                                                <span class="text-gray-500 dark:text-gray-400">Tokens Raciocínio:</span>
+                                                <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->legal_opinion_ai_metadata['total_reasoning_tokens']) }}</span>
+                                            </div>
+                                        @endif
+                                    </div>
+                                </details>
+                            @endif
 
                             {{-- Botões de ação do parecer --}}
                             <div class="mt-4 flex justify-end gap-3">

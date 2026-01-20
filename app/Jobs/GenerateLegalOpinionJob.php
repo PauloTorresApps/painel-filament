@@ -149,11 +149,14 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
                 $prompt->deep_thinking_enabled
             );
 
+            // Captura metadados da IA
+            $aiMetadata = $aiService->getLastAnalysisMetadata();
+
             // Calcula tempo de processamento
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como concluído
-            $analysis->markLegalOpinionAsCompleted($result, $processingTimeMs);
+            // Marca como concluído com metadados
+            $analysis->markLegalOpinionAsCompleted($result, $processingTimeMs, $aiMetadata);
 
             Log::info('Parecer jurídico gerado com sucesso', [
                 'id' => $analysis->id,
