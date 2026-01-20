@@ -28,8 +28,8 @@
                     </div>
                 @endif
 
-                {{-- Status de análise em andamento --}}
-                @if($this->isAnalyzing)
+                {{-- Status de análise em andamento (só mostra se NÃO houver latestAnalysis para evitar duplicação) --}}
+                @if($this->isAnalyzing && !$this->latestAnalysis)
                     <div class="flex items-center gap-2 p-3 bg-info-50 dark:bg-info-950 rounded-lg border border-info-200 dark:border-info-800">
                         <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
                         <span class="text-sm text-info-700 dark:text-info-300">
@@ -71,11 +71,31 @@
 
                     {{-- Progresso se estiver processando --}}
                     @if($this->latestAnalysis->isProcessing())
-                        <div class="flex items-center gap-3 p-4 bg-info-50 dark:bg-info-950 rounded-lg">
-                            <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
-                            <span class="text-sm text-info-700 dark:text-info-300">
-                                A IA está analisando o contrato. Isso pode levar alguns minutos...
-                            </span>
+                        <div class="flex items-center justify-between gap-3 p-4 bg-info-50 dark:bg-info-950 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
+                                <span class="text-sm text-info-700 dark:text-info-300">
+                                    A IA está analisando o contrato. Isso pode levar alguns minutos...
+                                </span>
+                            </div>
+                            <x-filament::button
+                                wire:click="cancelAnalysis"
+                                wire:confirm="Tem certeza que deseja cancelar esta análise?"
+                                icon="heroicon-o-x-mark"
+                                color="danger"
+                                size="sm"
+                            >
+                                Cancelar
+                            </x-filament::button>
+                        </div>
+                    @endif
+
+                    {{-- Análise cancelada --}}
+                    @if($this->latestAnalysis->isCancelled())
+                        <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <p class="text-sm text-gray-600 dark:text-gray-400">
+                                <strong>Cancelada:</strong> {{ $this->latestAnalysis->error_message }}
+                            </p>
                         </div>
                     @endif
 
@@ -175,11 +195,44 @@
                     {{-- Parecer Jurídico em processamento --}}
                     @if($this->latestAnalysis->isLegalOpinionProcessing())
                         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <div class="flex items-center gap-3 p-4 bg-info-50 dark:bg-info-950 rounded-lg">
-                                <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
-                                <span class="text-sm text-info-700 dark:text-info-300">
-                                    O parecer jurídico está sendo gerado. Isso pode levar alguns minutos...
-                                </span>
+                            <div class="flex items-center justify-between gap-3 p-4 bg-info-50 dark:bg-info-950 rounded-lg">
+                                <div class="flex items-center gap-3">
+                                    <x-filament::loading-indicator class="h-5 w-5 text-info-600" />
+                                    <span class="text-sm text-info-700 dark:text-info-300">
+                                        O parecer jurídico está sendo gerado. Isso pode levar alguns minutos...
+                                    </span>
+                                </div>
+                                <x-filament::button
+                                    wire:click="cancelLegalOpinion"
+                                    wire:confirm="Tem certeza que deseja cancelar a geração do parecer?"
+                                    icon="heroicon-o-x-mark"
+                                    color="danger"
+                                    size="sm"
+                                >
+                                    Cancelar
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Parecer Jurídico cancelado --}}
+                    @if($this->latestAnalysis->isLegalOpinionCancelled())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    <strong>Cancelado:</strong> {{ $this->latestAnalysis->legal_opinion_error }}
+                                </p>
+                            </div>
+                            {{-- Botão para tentar novamente --}}
+                            <div class="mt-3 flex justify-end">
+                                <x-filament::button
+                                    wire:click="generateLegalOpinion"
+                                    icon="heroicon-o-arrow-path"
+                                    color="primary"
+                                    size="sm"
+                                >
+                                    Tentar Novamente
+                                </x-filament::button>
                             </div>
                         </div>
                     @endif

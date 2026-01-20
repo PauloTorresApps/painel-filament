@@ -18,6 +18,26 @@ abstract class AbstractAIService implements AIProviderInterface
     protected array $lastAnalysisMetadata = [];
 
     /**
+     * Define o modelo a ser utilizado
+     * Permite sobrescrever o modelo padrão configurado no .env
+     */
+    public function setModel(string $model): self
+    {
+        if (!empty($model)) {
+            $this->model = $model;
+        }
+        return $this;
+    }
+
+    /**
+     * Retorna o modelo atual
+     */
+    public function getModel(): string
+    {
+        return $this->model;
+    }
+
+    /**
      * Limites de tokens para pipeline de sumarização
      */
     protected const SINGLE_DOC_CHAR_LIMIT = 30000; // ~7.5k tokens

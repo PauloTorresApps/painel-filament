@@ -58,6 +58,12 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
+            // Verifica se foi cancelada
+            if ($analysis->isCancelled()) {
+                Log::info('Análise de contrato foi cancelada', ['id' => $this->contractAnalysisId]);
+                return;
+            }
+
             // Verifica se já está em processamento
             if ($analysis->isProcessing()) {
                 Log::warning('Análise de contrato já em processamento', ['id' => $this->contractAnalysisId]);
@@ -150,11 +156,24 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Obtém o serviço de IA apropriado
             $aiService = $this->getAIService($prompt->ai_provider);
 
+            // Define o modelo específico do prompt (se houver)
+            if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
+                $aiService->setModel($prompt->aiModel->model_id);
+            }
+
             Log::info('Iniciando análise do contrato com IA', [
                 'id' => $analysis->id,
                 'provider' => $prompt->ai_provider,
+                'model' => $aiService->getModel(),
                 'deep_thinking' => $prompt->deep_thinking_enabled
             ]);
+
+            // Verifica novamente se foi cancelada antes de chamar a IA
+            $analysis->refresh();
+            if ($analysis->isCancelled()) {
+                Log::info('Análise de contrato foi cancelada antes da chamada IA', ['id' => $this->contractAnalysisId]);
+                return;
+            }
 
             // Executa análise
             $result = $aiService->analyzeDocuments(
@@ -163,6 +182,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 $contextoDados,
                 $prompt->deep_thinking_enabled
             );
+
+            // Verifica se foi cancelada durante o processamento da IA
+            $analysis->refresh();
+            if ($analysis->isCancelled()) {
+                Log::info('Análise de contrato foi cancelada durante processamento', ['id' => $this->contractAnalysisId]);
+                return;
+            }
 
             // Captura metadados da IA
             $aiMetadata = $aiService->getLastAnalysisMetadata();

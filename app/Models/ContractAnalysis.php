@@ -44,6 +44,7 @@ class ContractAnalysis extends Model
     public const STATUS_PROCESSING = 'processing';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_FAILED = 'failed';
+    public const STATUS_CANCELLED = 'cancelled';
 
     /**
      * Relação com o usuário
@@ -97,6 +98,7 @@ class ContractAnalysis extends Model
             self::STATUS_PROCESSING => 'info',
             self::STATUS_COMPLETED => 'success',
             self::STATUS_FAILED => 'danger',
+            self::STATUS_CANCELLED => 'gray',
             default => 'gray',
         };
     }
@@ -111,6 +113,7 @@ class ContractAnalysis extends Model
             self::STATUS_PROCESSING => 'Processando',
             self::STATUS_COMPLETED => 'Concluída',
             self::STATUS_FAILED => 'Falhou',
+            self::STATUS_CANCELLED => 'Cancelada',
             default => 'Desconhecido',
         };
     }
@@ -176,6 +179,33 @@ class ContractAnalysis extends Model
         ]);
     }
 
+    /**
+     * Verifica se a análise foi cancelada
+     */
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
+    }
+
+    /**
+     * Verifica se a análise pode ser cancelada
+     */
+    public function canBeCancelled(): bool
+    {
+        return in_array($this->status, [self::STATUS_PENDING, self::STATUS_PROCESSING]);
+    }
+
+    /**
+     * Marca a análise como cancelada
+     */
+    public function markAsCancelled(): void
+    {
+        $this->update([
+            'status' => self::STATUS_CANCELLED,
+            'error_message' => 'Análise cancelada pelo usuário.',
+        ]);
+    }
+
     // ========== Métodos para Parecer Jurídico ==========
 
     /**
@@ -188,6 +218,7 @@ class ContractAnalysis extends Model
             self::STATUS_PROCESSING => 'info',
             self::STATUS_COMPLETED => 'success',
             self::STATUS_FAILED => 'danger',
+            self::STATUS_CANCELLED => 'gray',
             default => 'gray',
         };
     }
@@ -202,6 +233,7 @@ class ContractAnalysis extends Model
             self::STATUS_PROCESSING => 'Gerando...',
             self::STATUS_COMPLETED => 'Concluído',
             self::STATUS_FAILED => 'Falhou',
+            self::STATUS_CANCELLED => 'Cancelado',
             default => 'Não iniciado',
         };
     }
@@ -275,6 +307,33 @@ class ContractAnalysis extends Model
         $this->update([
             'legal_opinion_status' => self::STATUS_FAILED,
             'legal_opinion_error' => $errorMessage,
+        ]);
+    }
+
+    /**
+     * Verifica se o parecer jurídico foi cancelado
+     */
+    public function isLegalOpinionCancelled(): bool
+    {
+        return $this->legal_opinion_status === self::STATUS_CANCELLED;
+    }
+
+    /**
+     * Verifica se o parecer jurídico pode ser cancelado
+     */
+    public function canLegalOpinionBeCancelled(): bool
+    {
+        return $this->legal_opinion_status === self::STATUS_PROCESSING;
+    }
+
+    /**
+     * Marca o parecer jurídico como cancelado
+     */
+    public function markLegalOpinionAsCancelled(): void
+    {
+        $this->update([
+            'legal_opinion_status' => self::STATUS_CANCELLED,
+            'legal_opinion_error' => 'Geração de parecer cancelada pelo usuário.',
         ]);
     }
 }

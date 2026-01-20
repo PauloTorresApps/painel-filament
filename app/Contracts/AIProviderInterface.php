@@ -31,4 +31,14 @@ interface AIProviderInterface
      * Retorna o nome do provider
      */
     public function getName(): string;
+
+    /**
+     * Define o modelo a ser utilizado
+     */
+    public function setModel(string $model): self;
+
+    /**
+     * Retorna o modelo atual
+     */
+    public function getModel(): string;
 }

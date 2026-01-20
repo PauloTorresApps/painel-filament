@@ -62,6 +62,12 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
+            // Verifica se foi cancelado
+            if ($analysis->isLegalOpinionCancelled()) {
+                Log::info('Parecer jurídico foi cancelado', ['id' => $this->contractAnalysisId]);
+                return;
+            }
+
             // Verifica se já está gerando parecer
             if ($analysis->isLegalOpinionProcessing()) {
                 Log::warning('Parecer jurídico já está sendo gerado', ['id' => $this->contractAnalysisId]);
@@ -135,11 +141,24 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             // Obtém o serviço de IA apropriado
             $aiService = $this->getAIService($prompt->ai_provider);
 
+            // Define o modelo específico do prompt (se houver)
+            if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
+                $aiService->setModel($prompt->aiModel->model_id);
+            }
+
             Log::info('Gerando parecer jurídico com IA', [
                 'id' => $analysis->id,
                 'provider' => $prompt->ai_provider,
+                'model' => $aiService->getModel(),
                 'deep_thinking' => $prompt->deep_thinking_enabled
             ]);
+
+            // Verifica novamente se foi cancelado antes de chamar a IA
+            $analysis->refresh();
+            if ($analysis->isLegalOpinionCancelled()) {
+                Log::info('Parecer jurídico foi cancelado antes da chamada IA', ['id' => $this->contractAnalysisId]);
+                return;
+            }
 
             // Executa geração do parecer
             $result = $aiService->analyzeDocuments(
@@ -148,6 +167,13 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
                 $contextoDados,
                 $prompt->deep_thinking_enabled
             );
+
+            // Verifica se foi cancelado durante o processamento da IA
+            $analysis->refresh();
+            if ($analysis->isLegalOpinionCancelled()) {
+                Log::info('Parecer jurídico foi cancelado durante processamento', ['id' => $this->contractAnalysisId]);
+                return;
+            }
 
             // Captura metadados da IA
             $aiMetadata = $aiService->getLastAnalysisMetadata();

@@ -232,13 +232,126 @@ class ContractAnalysis extends Page
         $this->loadLatestAnalysis();
 
         if ($this->latestAnalysis) {
-            if ($this->latestAnalysis->isCompleted()) {
+            if ($this->latestAnalysis->isCompleted() || $this->latestAnalysis->isCancelled()) {
                 $this->isAnalyzing = false;
             }
 
-            if ($this->latestAnalysis->isLegalOpinionCompleted() || $this->latestAnalysis->isLegalOpinionFailed()) {
+            if ($this->latestAnalysis->isLegalOpinionCompleted() || $this->latestAnalysis->isLegalOpinionFailed() || $this->latestAnalysis->isLegalOpinionCancelled()) {
                 $this->isGeneratingLegalOpinion = false;
             }
+        }
+    }
+
+    /**
+     * Cancela a análise em andamento
+     */
+    public function cancelAnalysis(): void
+    {
+        if (!$this->latestAnalysis) {
+            Notification::make()
+                ->title('Nenhuma análise encontrada')
+                ->body('Não há análise para cancelar.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$this->latestAnalysis->canBeCancelled()) {
+            Notification::make()
+                ->title('Não é possível cancelar')
+                ->body('A análise já foi concluída ou já foi cancelada.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        try {
+            // Remove o arquivo se existir
+            if ($this->latestAnalysis->file_path && Storage::exists($this->latestAnalysis->file_path)) {
+                Storage::delete($this->latestAnalysis->file_path);
+            }
+
+            $this->latestAnalysis->markAsCancelled();
+            $this->isAnalyzing = false;
+
+            Notification::make()
+                ->title('Análise cancelada')
+                ->body('A análise foi cancelada com sucesso.')
+                ->success()
+                ->send();
+
+            $this->loadLatestAnalysis();
+
+            Log::info('Análise de contrato cancelada', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao cancelar análise', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Erro ao cancelar')
+                ->body('Ocorreu um erro ao cancelar a análise.')
+                ->danger()
+                ->send();
+        }
+    }
+
+    /**
+     * Cancela a geração do parecer jurídico em andamento
+     */
+    public function cancelLegalOpinion(): void
+    {
+        if (!$this->latestAnalysis) {
+            Notification::make()
+                ->title('Nenhuma análise encontrada')
+                ->body('Não há parecer para cancelar.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$this->latestAnalysis->canLegalOpinionBeCancelled()) {
+            Notification::make()
+                ->title('Não é possível cancelar')
+                ->body('O parecer já foi concluído ou já foi cancelado.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        try {
+            $this->latestAnalysis->markLegalOpinionAsCancelled();
+            $this->isGeneratingLegalOpinion = false;
+
+            Notification::make()
+                ->title('Geração de parecer cancelada')
+                ->body('A geração do parecer jurídico foi cancelada.')
+                ->success()
+                ->send();
+
+            $this->loadLatestAnalysis();
+
+            Log::info('Geração de parecer jurídico cancelada', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao cancelar geração de parecer', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Erro ao cancelar')
+                ->body('Ocorreu um erro ao cancelar a geração do parecer.')
+                ->danger()
+                ->send();
         }
     }
 

@@ -79,34 +79,42 @@
             text-transform: uppercase;
             font-size: 10pt;
             letter-spacing: 0.5px;
+            display: inline-block;
+            min-width: 100px;
         }
 
         .epigrafe-valor {
-            margin-left: 10px;
+            margin-left: 15px;
+            display: inline;
         }
 
         .numero-parecer {
             text-align: right;
             font-weight: bold;
             font-size: 12pt;
-            margin-bottom: 25px;
+            margin-bottom: 35px;
+            letter-spacing: 0.5px;
         }
 
         /* ============================================
            EMENTA
         ============================================ */
         .ementa {
-            margin: 25px 0 25px 8cm;
-            padding: 0;
+            margin: 30px 0 30px 6cm;
+            padding: 12pt;
             font-size: 11pt;
             line-height: 1.4;
             text-align: justify;
+            border-left: 2px solid #333333;
+            background-color: #fafafa;
         }
 
         .ementa-label {
             font-weight: bold;
             text-transform: uppercase;
             font-size: 10pt;
+            display: block;
+            margin-bottom: 6pt;
         }
 
         /* ============================================
@@ -302,48 +310,59 @@
            ASSINATURA
         ============================================ */
         .assinatura {
-            margin-top: 60pt;
+            margin-top: 50pt;
+            margin-bottom: 20pt;
             text-align: center;
         }
 
         .assinatura-linha {
-            width: 60%;
+            width: 50%;
             margin: 0 auto;
             border-top: 1px solid #000000;
-            padding-top: 8pt;
+            padding-top: 10pt;
         }
 
         .assinatura-texto {
-            font-size: 11pt;
+            font-size: 10pt;
             font-style: italic;
-            color: #333333;
+            color: #444444;
+            margin-bottom: 3pt;
+        }
+
+        .assinatura-texto:last-child {
+            font-style: normal;
+            font-size: 9pt;
+            color: #666666;
         }
 
         /* ============================================
            NOTA DE RODAPÉ / ADVERTÊNCIA
         ============================================ */
         .advertencia {
-            margin-top: 40pt;
-            padding: 15pt;
-            border: 1px solid #666666;
-            background-color: #fafafa;
+            margin-top: 50pt;
+            padding: 15pt 20pt;
+            border: 1px solid #999999;
+            border-left: 4px solid #666666;
+            background-color: #f8f8f8;
             font-size: 9pt;
-            line-height: 1.4;
+            line-height: 1.5;
         }
 
         .advertencia-titulo {
             font-weight: bold;
             text-transform: uppercase;
-            font-size: 8pt;
+            font-size: 9pt;
             letter-spacing: 1px;
-            margin-bottom: 8pt;
+            margin-bottom: 10pt;
             color: #333333;
+            border-bottom: 1px solid #cccccc;
+            padding-bottom: 6pt;
         }
 
         .advertencia p {
             text-indent: 0;
             margin: 0;
-            color: #444444;
+            color: #333333;
             text-align: justify;
         }
 
@@ -360,7 +379,13 @@
             color: #666666;
             border-top: 0.5pt solid #cccccc;
             padding-top: 5pt;
+            padding-bottom: 25pt;
             background: #ffffff;
+        }
+
+        /* Espaço inferior para evitar sobreposição com rodapé */
+        .content-wrapper {
+            padding-bottom: 80pt;
         }
 
         /* ============================================
@@ -406,6 +431,7 @@
     </style>
 </head>
 <body>
+    <div class="content-wrapper">
     {{-- ============================================
          CABEÇALHO DO DOCUMENTO
     ============================================ --}}
@@ -497,6 +523,7 @@
             antes de qualquer tomada de decisão fundamentada em seu conteúdo.
         </p>
     </div>
+    </div><!-- fim content-wrapper -->
 
     {{-- ============================================
          RODAPÉ
