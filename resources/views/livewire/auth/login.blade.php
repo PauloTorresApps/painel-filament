@@ -9,19 +9,64 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 56px;
-            height: 56px;
-            background: rgba(59, 130, 246, 0.1);
-            border-radius: 12px;
-            color: var(--auth-primary);
             margin-bottom: 24px;
-            border: 1px solid rgba(59, 130, 246, 0.2);
         }
 
         .auth-logo-area svg {
-            width: 32px;
-            height: 32px;
+            width: 72px;
+            height: 72px;
         }
+
+        /* Animações do logo */
+        @keyframes scanMove {
+            0%, 100% { transform: translateY(-12px); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(20px); opacity: 0; }
+        }
+
+        @keyframes eyePulse {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+
+        @keyframes eyeGlow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+
+        .scan-line {
+            animation: scanMove 2.5s ease-in-out infinite;
+        }
+
+        .ai-eye {
+            animation: eyePulse 2s ease-in-out infinite;
+        }
+
+        .eye-glow {
+            animation: eyeGlow 2s ease-in-out infinite;
+        }
+
+        /* Cores para tema escuro */
+        .logo-doc-bg { fill: #1e293b; }
+        .logo-doc-border { stroke: #3b82f6; }
+        .logo-fold { fill: #334155; stroke: #3b82f6; }
+        .logo-section-symbol { fill: #94a3b8; }
+        .logo-scan-line { stroke: #22d3ee; }
+        .logo-scan-glow { fill: url(#scanGradient); }
+        .logo-eye-outer { fill: #0f172a; stroke: #3b82f6; }
+        .logo-eye-iris { fill: #3b82f6; }
+        .logo-eye-pupil { fill: #0f172a; }
+        .logo-eye-highlight { fill: #ffffff; }
+        .logo-eye-glow { fill: #3b82f6; }
+
+        /* Cores para tema claro */
+        html:not(.dark) .logo-doc-bg { fill: #f8fafc; }
+        html:not(.dark) .logo-doc-border { stroke: #3b82f6; }
+        html:not(.dark) .logo-fold { fill: #e2e8f0; stroke: #3b82f6; }
+        html:not(.dark) .logo-section-symbol { fill: #64748b; }
+        html:not(.dark) .logo-eye-outer { fill: #ffffff; stroke: #3b82f6; }
+        html:not(.dark) .logo-eye-pupil { fill: #1e293b; }
 
         .auth-title {
             font-size: 1.5rem;
@@ -203,12 +248,44 @@
 
     <header class="auth-header">
         <div class="auth-logo-area">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+                <defs>
+                    <linearGradient id="scanGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#22d3ee" stop-opacity="0"/>
+                        <stop offset="50%" stop-color="#22d3ee" stop-opacity="0.8"/>
+                        <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- Documento base -->
+                <path class="logo-doc-bg logo-doc-border" d="M12 4 L44 4 L52 12 L52 56 C52 58 50 60 48 60 L16 60 C14 60 12 58 12 56 Z" stroke-width="2"/>
+
+                <!-- Dobra do canto -->
+                <path class="logo-fold" d="M44 4 L44 12 L52 12 Z" stroke-width="1"/>
+
+                <!-- Símbolo § centralizado -->
+                <text x="32" y="38" text-anchor="middle" class="logo-section-symbol" style="font-family: 'Times New Roman', serif; font-size: 24px; font-weight: bold;">§</text>
+
+                <!-- Linha de scan animada -->
+                <g class="scan-line">
+                    <rect class="logo-scan-glow" x="16" y="20" width="32" height="4" rx="2"/>
+                    <line class="logo-scan-line" x1="16" y1="22" x2="48" y2="22" stroke-width="2" stroke-linecap="round"/>
+                </g>
+
+                <!-- Indicador de IA (olho) no canto -->
+                <g class="ai-eye" transform="translate(44, 8)">
+                    <circle class="logo-eye-outer" cx="6" cy="6" r="5" stroke-width="1.5"/>
+                    <circle class="logo-eye-iris" cx="6" cy="6" r="3"/>
+                    <circle class="logo-eye-pupil" cx="6" cy="6" r="1.5"/>
+                    <circle class="logo-eye-highlight" cx="4.5" cy="4.5" r="0.8" opacity="0.8"/>
+                </g>
+
+                <!-- Brilho do olho -->
+                <circle class="eye-glow logo-eye-glow" cx="50" cy="14" r="8" opacity="0.3"/>
             </svg>
         </div>
         <h1 class="auth-title">Acesso ao Sistema</h1>
-        <p class="auth-subtitle">Faca login para gerenciar processos e contratos.</p>
+        <p class="auth-subtitle">Faça login para gerenciar processos e contratos.</p>
     </header>
 
     <!-- Session Status -->
