@@ -8,6 +8,7 @@ use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Actions\Action;
 
 class ViewContractAnalysis extends ViewRecord
 {
@@ -16,7 +17,9 @@ class ViewContractAnalysis extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         return $schema
+            ->columns(1)
             ->components([
+                // 1. Informações do Contrato
                 Section::make('Informações do Contrato')
                     ->schema([
                         Grid::make(3)
@@ -57,72 +60,69 @@ class ViewContractAnalysis extends ViewRecord
                                     ->label('Tempo de Processamento')
                                     ->formatStateUsing(fn ($state) => $state ? number_format($state / 1000, 1) . ' segundos' : '-'),
                             ]),
-                    ]),
 
-                Section::make('Erro')
-                    ->schema([
+                        // Mensagem de erro (se houver)
                         TextEntry::make('error_message')
-                            ->label('')
+                            ->label('Erro')
+                            ->visible(fn ($record) => $record->isFailed() && $record->error_message)
                             ->columnSpanFull(),
                     ])
-                    ->visible(fn ($record) => $record->isFailed() && $record->error_message)
-                    ->collapsible(),
+                    ->columnSpanFull(),
 
+                // 2. Resultado da Análise (recolhido)
                 Section::make('Resultado da Análise')
+                    ->icon('heroicon-o-document-text')
                     ->schema([
                         TextEntry::make('analysis_result')
                             ->label('')
                             ->markdown()
                             ->columnSpanFull(),
                     ])
-                    ->visible(fn ($record) => $record->isCompleted() && $record->analysis_result)
-                    ->collapsible(),
+                    ->headerActions([
+                        Action::make('viewAnalysisPdf')
+                            ->label('Visualizar PDF')
+                            ->icon('heroicon-o-eye')
+                            ->color('gray')
+                            ->url(fn ($record) => route('contracts.analysis.view', $record->id))
+                            ->openUrlInNewTab(),
 
-                Section::make('Metadados da IA')
-                    ->description('Informações técnicas sobre o processamento')
-                    ->schema([
-                        Grid::make(4)
-                            ->schema([
-                                TextEntry::make('analysis_ai_metadata.provider')
-                                    ->label('Provedor')
-                                    ->default('-'),
-
-                                TextEntry::make('analysis_ai_metadata.model')
-                                    ->label('Modelo')
-                                    ->default('-'),
-
-                                TextEntry::make('analysis_ai_metadata.api_calls_count')
-                                    ->label('Chamadas API')
-                                    ->default('-'),
-
-                                TextEntry::make('analysis_ai_metadata.documents_processed')
-                                    ->label('Documentos Processados')
-                                    ->default('-'),
-                            ]),
-
-                        Grid::make(4)
-                            ->schema([
-                                TextEntry::make('analysis_ai_metadata.total_prompt_tokens')
-                                    ->label('Tokens de Entrada')
-                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
-
-                                TextEntry::make('analysis_ai_metadata.total_completion_tokens')
-                                    ->label('Tokens de Saída')
-                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
-
-                                TextEntry::make('analysis_ai_metadata.total_tokens')
-                                    ->label('Total de Tokens')
-                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-'),
-
-                                TextEntry::make('analysis_ai_metadata.total_reasoning_tokens')
-                                    ->label('Tokens de Raciocínio')
-                                    ->formatStateUsing(fn ($state) => $state ? number_format($state) : '-')
-                                    ->visible(fn ($record) => ($record->analysis_ai_metadata['total_reasoning_tokens'] ?? 0) > 0),
-                            ]),
+                        Action::make('downloadAnalysisPdf')
+                            ->label('Download PDF')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('primary')
+                            ->url(fn ($record) => route('contracts.analysis.download', $record->id)),
                     ])
-                    ->visible(fn ($record) => $record->isCompleted() && !empty($record->analysis_ai_metadata))
+                    ->visible(fn ($record) => $record->isCompleted() && $record->analysis_result)
                     ->collapsed()
-                    ->collapsible(),
+                    ->collapsible()
+                    ->columnSpanFull(),
+
+                // 3. Parecer Jurídico (aberto)
+                Section::make('Parecer Jurídico')
+                    ->icon('heroicon-o-scale')
+                    ->schema([
+                        TextEntry::make('legal_opinion_result')
+                            ->label('')
+                            ->markdown()
+                            ->columnSpanFull(),
+                    ])
+                    ->headerActions([
+                        Action::make('viewLegalOpinionPdf')
+                            ->label('Visualizar PDF')
+                            ->icon('heroicon-o-eye')
+                            ->color('gray')
+                            ->url(fn ($record) => route('contracts.legal-opinion.view', $record->id))
+                            ->openUrlInNewTab(),
+
+                        Action::make('downloadLegalOpinionPdf')
+                            ->label('Download PDF')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('primary')
+                            ->url(fn ($record) => route('contracts.legal-opinion.download', $record->id)),
+                    ])
+                    ->visible(fn ($record) => $record->isLegalOpinionCompleted() && $record->legal_opinion_result)
+                    ->collapsible()
+                    ->columnSpanFull(),
             ]);
     }
 

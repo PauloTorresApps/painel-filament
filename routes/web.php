@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EprocController;
 use App\Http\Controllers\ContractUploadController;
 use App\Http\Controllers\LegalOpinionPdfController;
+use App\Http\Controllers\ContractAnalysisPdfController;
 
 Route::redirect('/', '/login')->name('home');
 
@@ -43,5 +44,9 @@ Route::middleware(['auth'])->group(function () {
         // Download de Parecer Jurídico em PDF
         Route::get('contracts/{id}/legal-opinion/download', [LegalOpinionPdfController::class, 'download'])->name('contracts.legal-opinion.download');
         Route::get('contracts/{id}/legal-opinion/view', [LegalOpinionPdfController::class, 'view'])->name('contracts.legal-opinion.view');
+
+        // Download de Análise Contratual em PDF
+        Route::get('contracts/{id}/analysis/download', [ContractAnalysisPdfController::class, 'download'])->name('contracts.analysis.download');
+        Route::get('contracts/{id}/analysis/view', [ContractAnalysisPdfController::class, 'view'])->name('contracts.analysis.view');
 
 });
