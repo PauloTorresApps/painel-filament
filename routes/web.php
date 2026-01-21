@@ -33,7 +33,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('two-factor.show');
 
         Route::redirect('document_analysis/eproc', '/analises/process-analysis')->name('eproc');
-        Route::get('document_analysis/eproc/debug', [EprocController::class, 'debug'])->name('eproc.debug');
         Route::post('document_analysis/eproc/consultar', [EprocController::class, 'consultarProcesso'])->name('eproc.consultar');
         Route::post('document_analysis/eproc/visualizar', [EprocController::class, 'visualizarDocumento'])->name('eproc.visualizar');
 

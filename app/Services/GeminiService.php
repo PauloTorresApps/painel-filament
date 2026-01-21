@@ -52,135 +52,91 @@ class GeminiService extends AbstractAIService
      */
     protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
     {
-        // Aplica rate limiting antes da chamada
-        RateLimiterService::apply($this->getRateLimiterKey());
+        return $this->withRetry(function () use ($prompt) {
+            // Aplica rate limiting antes da chamada
+            RateLimiterService::apply($this->getRateLimiterKey());
 
-        $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
-        $attempt = 0;
-        $lastException = null;
+            $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
 
-        while ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
-            $attempt++;
-
-            try {
-                $response = Http::timeout(300) // 5 minutos de timeout para análises jurídicas longas
-                    ->post($url, [
-                        'contents' => [
-                            [
-                                'parts' => [
-                                    ['text' => $prompt]
-                                ]
-                            ]
-                        ],
-                        'generationConfig' => [
-                            'temperature' => 0.4, // Mais determinístico para análises jurídicas
-                            'topK' => 32,
-                            'topP' => 0.95,
-                            'maxOutputTokens' => 8192, // Permite respostas longas
-                        ],
-                        'safetySettings' => [
-                            [
-                                'category' => 'HARM_CATEGORY_HARASSMENT',
-                                'threshold' => 'BLOCK_NONE'
-                            ],
-                            [
-                                'category' => 'HARM_CATEGORY_HATE_SPEECH',
-                                'threshold' => 'BLOCK_NONE'
-                            ],
-                            [
-                                'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                                'threshold' => 'BLOCK_NONE'
-                            ],
-                            [
-                                'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                                'threshold' => 'BLOCK_NONE'
+            $response = Http::timeout(300) // 5 minutos de timeout para análises jurídicas longas
+                ->post($url, [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                ['text' => $prompt]
                             ]
                         ]
-                    ]);
-
-                // Se recebeu 429 (rate limit), aplica exponential backoff
-                if ($response->status() === 429) {
-                    if ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
-                        $backoffMs = $this->calculateBackoff($attempt);
-
-                        Log::warning("Rate limit atingido (429). Tentativa {$attempt}/" . static::MAX_RETRIES_ON_RATE_LIMIT . ". Aguardando {$backoffMs}ms", [
-                            'attempt' => $attempt,
-                            'backoff_ms' => $backoffMs
-                        ]);
-
-                        usleep($backoffMs * 1000);
-                        continue;
-                    }
-
-                    throw new \Exception('Rate limit da API Gemini excedido após ' . static::MAX_RETRIES_ON_RATE_LIMIT . ' tentativas. Aguarde alguns minutos e tente novamente.');
-                }
-
-                if (!$response->successful()) {
-                    $statusCode = $response->status();
-                    $errorBody = $response->json();
-                    $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
-
-                    throw new \Exception($this->translateError($statusCode, $errorMessage));
-                }
-
-                $data = $response->json();
-
-                // Log detalhado da resposta com informações de uso
-                $usageMetadata = $data['usageMetadata'] ?? [];
-                Log::info('Gemini API - Resposta recebida', [
-                    'model' => $this->model,
-                    'finish_reason' => $data['candidates'][0]['finishReason'] ?? 'unknown',
-                    'usage' => [
-                        'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 'N/A',
-                        'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 'N/A',
-                        'total_tokens' => $usageMetadata['totalTokenCount'] ?? 'N/A',
                     ],
-                    'safety_ratings' => $data['candidates'][0]['safetyRatings'] ?? [],
+                    'generationConfig' => [
+                        'temperature' => 0.4, // Mais determinístico para análises jurídicas
+                        'topK' => 32,
+                        'topP' => 0.95,
+                        'maxOutputTokens' => 8192, // Permite respostas longas
+                    ],
+                    'safetySettings' => [
+                        [
+                            'category' => 'HARM_CATEGORY_HARASSMENT',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                            'threshold' => 'BLOCK_NONE'
+                        ]
+                    ]
                 ]);
 
-                // Acumula metadados da resposta (normaliza formato Gemini para padrão)
-                $this->accumulateMetadata([
-                    'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 0,
-                    'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 0,
-                    'total_tokens' => $usageMetadata['totalTokenCount'] ?? 0,
-                ], $this->model);
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $errorBody = $response->json();
+                $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
 
-                // Extrai o texto da resposta
-                $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
-
-                if (empty($text)) {
-                    Log::error('Gemini retornou resposta vazia', [
-                        'response_data' => $data,
-                        'status_code' => $response->status(),
-                        'model' => $this->model,
-                    ]);
-                    throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
-                }
-
-                return $text;
-
-            } catch (\Exception $e) {
-                $lastException = $e;
-
-                // Se for erro de conexão ou timeout, tenta novamente com backoff menor
-                if ($attempt < 3 && (
-                    str_contains($e->getMessage(), 'timeout') ||
-                    str_contains($e->getMessage(), 'Connection') ||
-                    str_contains($e->getMessage(), 'cURL error')
-                )) {
-                    $retryDelay = 2000 * $attempt;
-                    Log::warning("Erro de conexão. Tentativa {$attempt}/3. Aguardando {$retryDelay}ms", [
-                        'error' => $e->getMessage()
-                    ]);
-                    usleep($retryDelay * 1000);
-                    continue;
-                }
-
-                throw $e;
+                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
             }
-        }
 
-        throw $lastException ?? new \Exception('Falha ao chamar API Gemini após múltiplas tentativas');
+            $data = $response->json();
+
+            // Log detalhado da resposta com informações de uso
+            $usageMetadata = $data['usageMetadata'] ?? [];
+            Log::info('Gemini API - Resposta recebida', [
+                'model' => $this->model,
+                'finish_reason' => $data['candidates'][0]['finishReason'] ?? 'unknown',
+                'usage' => [
+                    'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 'N/A',
+                    'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 'N/A',
+                    'total_tokens' => $usageMetadata['totalTokenCount'] ?? 'N/A',
+                ],
+                'safety_ratings' => $data['candidates'][0]['safetyRatings'] ?? [],
+            ]);
+
+            // Acumula metadados da resposta (normaliza formato Gemini para padrão)
+            $this->accumulateMetadata([
+                'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 0,
+                'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 0,
+                'total_tokens' => $usageMetadata['totalTokenCount'] ?? 0,
+            ], $this->model);
+
+            // Extrai o texto da resposta
+            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+            if (empty($text)) {
+                Log::error('Gemini retornou resposta vazia', [
+                    'response_data' => $data,
+                    'status_code' => $response->status(),
+                    'model' => $this->model,
+                ]);
+                throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
+            }
+
+            return $text;
+        });
     }
 
     /**

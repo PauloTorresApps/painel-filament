@@ -475,28 +475,72 @@ PROMPT;
     }
 
     /**
-     * Trunca documentos muito grandes para evitar exceder limite de tokens da API
+     * Helper para executar chamadas à API com lógica de retry e backoff centralizada
      */
-    protected function truncateDocument(string $texto): string
+    protected function withRetry(callable $apiCall, int $maxRetries = self::MAX_RETRIES_ON_RATE_LIMIT): string
     {
-        $maxChars = 15000; // ~3.750 tokens
+        $attempt = 0;
+        $lastException = null;
 
-        if (mb_strlen($texto) <= $maxChars) {
-            return $texto;
+        while ($attempt < $maxRetries) {
+            $attempt++;
+
+            try {
+                return $apiCall($attempt);
+            } catch (\Exception $e) {
+                $lastException = $e;
+
+                // Se recebeu 429 (rate limit), aplica exponential backoff
+                if ($this->isRateLimitError($e)) {
+                    if ($attempt < $maxRetries) {
+                        $backoffMs = $this->calculateBackoff($attempt);
+                        Log::warning("Rate limit atingido (429) no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms", [
+                            'attempt' => $attempt,
+                            'backoff_ms' => $backoffMs
+                        ]);
+                        usleep($backoffMs * 1000);
+                        continue;
+                    }
+                }
+
+                // Se for erro de conexão ou timeout, tenta novamente com backoff simples
+                if ($attempt < 3 && $this->isConnectionError($e)) {
+                    $retryDelay = 2000 * $attempt;
+                    Log::warning("Erro de conexão no " . $this->getName() . ". Tentativa {$attempt}/3. Aguardando {$retryDelay}ms", [
+                        'error' => $e->getMessage()
+                    ]);
+                    usleep($retryDelay * 1000);
+                    continue;
+                }
+
+                throw $e;
+            }
         }
 
-        // Para documentos muito grandes, pega 70% do início e 30% do fim
-        $inicioChars = (int) ($maxChars * 0.7);
-        $fimChars = (int) ($maxChars * 0.3);
+        throw $lastException ?? new \Exception("Falha ao chamar API " . $this->getName() . " após múltiplas tentativas");
+    }
 
-        $inicio = mb_substr($texto, 0, $inicioChars);
-        $fim = mb_substr($texto, -$fimChars);
+    /**
+     * Detecta se o erro é de rate limit (429)
+     */
+    protected function isRateLimitError(\Exception $e): bool
+    {
+        $msg = strtolower($e->getMessage());
+        return str_contains($msg, '429') || 
+               str_contains($msg, 'rate limit') || 
+               str_contains($msg, 'too many requests');
+    }
 
-        $caracteresOmitidos = mb_strlen($texto) - $maxChars;
-
-        return $inicio .
-               "\n\n[... DOCUMENTO TRUNCADO - {$caracteresOmitidos} caracteres omitidos da parte central ...]\n\n" .
-               $fim;
+    /**
+     * Detecta se o erro é de conexão ou timeout
+     */
+    protected function isConnectionError(\Exception $e): bool
+    {
+        $msg = strtolower($e->getMessage());
+        return str_contains($msg, 'timeout') ||
+               str_contains($msg, 'connection') ||
+               str_contains($msg, 'curl error') ||
+               str_contains($msg, '504');
     }
 
     /**

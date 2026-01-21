@@ -13,23 +13,7 @@ class EprocController extends Controller
     // Removido a injeção de dependência do EprocService
     // Agora será instanciado dentro de cada método com as credenciais do usuário
 
-    public function debug()
-    {
-        try {
-            $eprocService = new EprocService();
-            $funcoes = $eprocService->listarFuncoes();
-            $tipos = $eprocService->listarTipos();
 
-            return response()->json([
-                'funcoes' => $funcoes,
-                'tipos' => $tipos
-            ]);
-        } catch (Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 
     public function consultarProcesso(Request $request)
     {

@@ -64,120 +64,76 @@ class OpenAIService extends AbstractAIService
      */
     protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
     {
-        // Aplica rate limiting antes da chamada
-        RateLimiterService::apply($this->getRateLimiterKey());
+        return $this->withRetry(function () use ($prompt) {
+            // Aplica rate limiting antes da chamada
+            RateLimiterService::apply($this->getRateLimiterKey());
 
-        $url = "{$this->apiUrl}/chat/completions";
-        $attempt = 0;
-        $lastException = null;
+            $url = "{$this->apiUrl}/chat/completions";
 
-        $requestBody = [
-            'model' => $this->model,
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'Você é um assistente jurídico especializado em análise de processos judiciais. Forneça análises objetivas, estruturadas e fundamentadas em linguagem clara.'
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt
-                ]
-            ],
-            'temperature' => 0.3,
-            'max_tokens' => 4096,
-        ];
-
-        while ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
-            $attempt++;
-
-            try {
-                $response = Http::timeout(180)
-                    ->withHeaders([
-                        'Authorization' => "Bearer {$this->apiKey}",
-                        'Content-Type' => 'application/json',
-                    ])
-                    ->post($url, $requestBody);
-
-                // Se recebeu 429 (rate limit), aplica exponential backoff
-                if ($response->status() === 429) {
-                    if ($attempt < static::MAX_RETRIES_ON_RATE_LIMIT) {
-                        $backoffMs = $this->calculateBackoff($attempt);
-
-                        Log::warning("Rate limit atingido (429). Tentativa {$attempt}/" . static::MAX_RETRIES_ON_RATE_LIMIT . ". Aguardando {$backoffMs}ms", [
-                            'attempt' => $attempt,
-                            'backoff_ms' => $backoffMs
-                        ]);
-
-                        usleep($backoffMs * 1000);
-                        continue;
-                    }
-
-                    throw new \Exception('Rate limit da API OpenAI excedido após ' . static::MAX_RETRIES_ON_RATE_LIMIT . ' tentativas. Aguarde alguns minutos e tente novamente.');
-                }
-
-                if (!$response->successful()) {
-                    $statusCode = $response->status();
-                    $errorBody = $response->json();
-                    $errorMessage = $errorBody['error']['message'] ?? $errorBody['message'] ?? 'Erro desconhecido';
-
-                    throw new \Exception($this->translateError($statusCode, $errorMessage));
-                }
-
-                $data = $response->json();
-
-                // Log detalhado da resposta com informações de uso
-                $usage = $data['usage'] ?? [];
-                Log::info('OpenAI API - Resposta recebida', [
-                    'model' => $data['model'] ?? $this->model,
-                    'finish_reason' => $data['choices'][0]['finish_reason'] ?? 'unknown',
-                    'usage' => [
-                        'prompt_tokens' => $usage['prompt_tokens'] ?? 'N/A',
-                        'completion_tokens' => $usage['completion_tokens'] ?? 'N/A',
-                        'total_tokens' => $usage['total_tokens'] ?? 'N/A',
+            $requestBody = [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Você é um assistente jurídico especializado em análise de processos judiciais. Forneça análises objetivas, estruturadas e fundamentadas em linguagem clara.'
                     ],
-                    'response_id' => $data['id'] ?? 'N/A',
-                    'created_at' => isset($data['created']) ? date('Y-m-d H:i:s', $data['created']) : 'N/A',
-                ]);
+                    [
+                        'role' => 'user',
+                        'content' => $prompt
+                    ]
+                ],
+                'temperature' => 0.3,
+                'max_tokens' => 4096,
+            ];
 
-                // Acumula metadados da resposta
-                $this->accumulateMetadata($usage, $data['model'] ?? $this->model);
+            $response = Http::timeout(180)
+                ->withHeaders([
+                    'Authorization' => "Bearer {$this->apiKey}",
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, $requestBody);
 
-                // Extrai o texto da resposta
-                $text = $data['choices'][0]['message']['content'] ?? null;
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $errorBody = $response->json();
+                $errorMessage = $errorBody['error']['message'] ?? $errorBody['message'] ?? 'Erro desconhecido';
 
-                if (empty($text)) {
-                    Log::error('OpenAI retornou resposta vazia', [
-                        'response_data' => $data,
-                        'status_code' => $response->status(),
-                        'model' => $data['model'] ?? $this->model,
-                    ]);
-                    throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
-                }
-
-                return $text;
-
-            } catch (\Exception $e) {
-                $lastException = $e;
-
-                // Se for erro de conexão ou timeout, tenta novamente
-                if ($attempt < 3 && (
-                    str_contains($e->getMessage(), 'timeout') ||
-                    str_contains($e->getMessage(), 'Connection') ||
-                    str_contains($e->getMessage(), 'cURL error')
-                )) {
-                    $retryDelay = 2000 * $attempt;
-                    Log::warning("Erro de conexão. Tentativa {$attempt}/3. Aguardando {$retryDelay}ms", [
-                        'error' => $e->getMessage()
-                    ]);
-                    usleep($retryDelay * 1000);
-                    continue;
-                }
-
-                throw $e;
+                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
             }
-        }
 
-        throw $lastException ?? new \Exception('Falha ao chamar API OpenAI após múltiplas tentativas');
+            $data = $response->json();
+
+            // Log detalhado da resposta com informações de uso
+            $usage = $data['usage'] ?? [];
+            Log::info('OpenAI API - Resposta recebida', [
+                'model' => $data['model'] ?? $this->model,
+                'finish_reason' => $data['choices'][0]['finish_reason'] ?? 'unknown',
+                'usage' => [
+                    'prompt_tokens' => $usage['prompt_tokens'] ?? 'N/A',
+                    'completion_tokens' => $usage['completion_tokens'] ?? 'N/A',
+                    'total_tokens' => $usage['total_tokens'] ?? 'N/A',
+                ],
+                'response_id' => $data['id'] ?? 'N/A',
+                'created_at' => isset($data['created']) ? date('Y-m-d H:i:s', $data['created']) : 'N/A',
+            ]);
+
+            // Acumula metadados da resposta
+            $this->accumulateMetadata($usage, $data['model'] ?? $this->model);
+
+            // Extrai o texto da resposta
+            $text = $data['choices'][0]['message']['content'] ?? null;
+
+            if (empty($text)) {
+                Log::error('OpenAI retornou resposta vazia', [
+                    'response_data' => $data,
+                    'status_code' => $response->status(),
+                    'model' => $data['model'] ?? $this->model,
+                ]);
+                throw new \Exception('A API retornou uma resposta vazia. Tente novamente em alguns instantes.');
+            }
+
+            return $text;
+        });
     }
 
     /**
