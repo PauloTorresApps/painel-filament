@@ -32,7 +32,10 @@
             color: #000000;
             text-align: justify;
             background: #ffffff;
-            margin: 0;
+            margin-top: 2cm;
+            margin-left: 3cm;
+            margin-right: 2cm;
+            margin-bottom: 2cm;
             padding: 0;
         }
 
