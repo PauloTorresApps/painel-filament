@@ -4,6 +4,7 @@ namespace App\Filament\Analises\Pages;
 
 use App\Jobs\AnalyzeContractJob;
 use App\Jobs\GenerateLegalOpinionJob;
+use App\Jobs\GenerateInfographicJob;
 use App\Models\ContractAnalysis as ContractAnalysisModel;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -39,6 +40,9 @@ class ContractAnalysis extends Page
 
     // Flag para indicar geração de parecer em andamento
     public bool $isGeneratingLegalOpinion = false;
+
+    // Flag para indicar geração de infográfico em andamento
+    public bool $isGeneratingInfographic = false;
 
     /**
      * Controle de acesso - apenas Admin, Manager ou Analista de Contrato
@@ -239,6 +243,10 @@ class ContractAnalysis extends Page
             if ($this->latestAnalysis->isLegalOpinionCompleted() || $this->latestAnalysis->isLegalOpinionFailed() || $this->latestAnalysis->isLegalOpinionCancelled()) {
                 $this->isGeneratingLegalOpinion = false;
             }
+
+            if ($this->latestAnalysis->isInfographicCompleted() || $this->latestAnalysis->isInfographicFailed() || $this->latestAnalysis->isInfographicCancelled()) {
+                $this->isGeneratingInfographic = false;
+            }
         }
     }
 
@@ -407,6 +415,117 @@ class ContractAnalysis extends Page
             Notification::make()
                 ->title('Erro ao gerar parecer')
                 ->body('Ocorreu um erro ao processar sua solicitação. Tente novamente.')
+                ->danger()
+                ->send();
+        }
+    }
+
+    /**
+     * Gera o infográfico a partir do parecer jurídico
+     */
+    public function generateInfographic(): void
+    {
+        if (!$this->latestAnalysis) {
+            Notification::make()
+                ->title('Nenhuma análise encontrada')
+                ->body('É necessário ter um parecer jurídico concluído para gerar o infográfico.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$this->latestAnalysis->canGenerateInfographic()) {
+            Notification::make()
+                ->title('Não é possível gerar infográfico')
+                ->body('O parecer jurídico precisa estar concluído e não pode haver outro infográfico em processamento.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        try {
+            // Dispara o job de geração do infográfico
+            GenerateInfographicJob::dispatch($this->latestAnalysis->id);
+
+            $this->isGeneratingInfographic = true;
+
+            Notification::make()
+                ->title('Gerando Infográfico')
+                ->body('O infográfico está sendo gerado. Você será notificado quando concluir.')
+                ->success()
+                ->send();
+
+            // Recarrega última análise
+            $this->loadLatestAnalysis();
+
+            Log::info('Geração de infográfico iniciada', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao iniciar geração de infográfico', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Erro ao gerar infográfico')
+                ->body('Ocorreu um erro ao processar sua solicitação. Tente novamente.')
+                ->danger()
+                ->send();
+        }
+    }
+
+    /**
+     * Cancela a geração do infográfico em andamento
+     */
+    public function cancelInfographic(): void
+    {
+        if (!$this->latestAnalysis) {
+            Notification::make()
+                ->title('Nenhuma análise encontrada')
+                ->body('Não há infográfico para cancelar.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$this->latestAnalysis->canInfographicBeCancelled()) {
+            Notification::make()
+                ->title('Não é possível cancelar')
+                ->body('O infográfico já foi concluído ou já foi cancelado.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        try {
+            $this->latestAnalysis->markInfographicAsCancelled();
+            $this->isGeneratingInfographic = false;
+
+            Notification::make()
+                ->title('Geração de infográfico cancelada')
+                ->body('A geração do infográfico foi cancelada.')
+                ->success()
+                ->send();
+
+            $this->loadLatestAnalysis();
+
+            Log::info('Geração de infográfico cancelada', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao cancelar geração de infográfico', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Erro ao cancelar')
+                ->body('Ocorreu um erro ao cancelar a geração do infográfico.')
                 ->danger()
                 ->send();
         }

@@ -351,6 +351,165 @@
                                     Download PDF
                                 </x-filament::button>
                             </div>
+
+                            {{-- Botão para gerar infográfico (após parecer concluído) --}}
+                            @if($this->latestAnalysis->canGenerateInfographic() && !$this->latestAnalysis->isInfographicCompleted())
+                                <div class="mt-4 flex justify-end">
+                                    <x-filament::button
+                                        wire:click="generateInfographic"
+                                        :disabled="$this->isGeneratingInfographic"
+                                        icon="heroicon-o-chart-bar"
+                                        color="success"
+                                    >
+                                        @if($this->isGeneratingInfographic || $this->latestAnalysis->isInfographicProcessing())
+                                            <x-filament::loading-indicator class="h-4 w-4 mr-2" />
+                                            Gerando Infográfico...
+                                        @else
+                                            Gerar Infográfico
+                                        @endif
+                                    </x-filament::button>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+
+                    {{-- Infográfico em processamento --}}
+                    @if($this->latestAnalysis->isInfographicProcessing())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center justify-between gap-3 p-4 bg-success-50 dark:bg-success-950 rounded-lg">
+                                <div class="flex items-center gap-3">
+                                    <x-filament::loading-indicator class="h-5 w-5 text-success-600" />
+                                    <span class="text-sm text-success-700 dark:text-success-300">
+                                        O infográfico está sendo gerado. Isso pode levar alguns minutos...
+                                    </span>
+                                </div>
+                                <x-filament::button
+                                    wire:click="cancelInfographic"
+                                    wire:confirm="Tem certeza que deseja cancelar a geração do infográfico?"
+                                    icon="heroicon-o-x-mark"
+                                    color="danger"
+                                    size="sm"
+                                >
+                                    Cancelar
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Infográfico cancelado --}}
+                    @if($this->latestAnalysis->isInfographicCancelled())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    <strong>Cancelado:</strong> {{ $this->latestAnalysis->infographic_error }}
+                                </p>
+                            </div>
+                            {{-- Botão para tentar novamente --}}
+                            <div class="mt-3 flex justify-end">
+                                <x-filament::button
+                                    wire:click="generateInfographic"
+                                    icon="heroicon-o-arrow-path"
+                                    color="success"
+                                    size="sm"
+                                >
+                                    Tentar Novamente
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Erro no infográfico --}}
+                    @if($this->latestAnalysis->isInfographicFailed())
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="p-4 bg-warning-50 dark:bg-warning-950 rounded-lg border border-warning-200 dark:border-warning-800">
+                                <p class="text-sm text-warning-700 dark:text-warning-300">
+                                    <strong>Erro no Infográfico:</strong> {{ $this->latestAnalysis->infographic_error }}
+                                </p>
+                            </div>
+                            {{-- Botão para tentar novamente --}}
+                            <div class="mt-3 flex justify-end">
+                                <x-filament::button
+                                    wire:click="generateInfographic"
+                                    icon="heroicon-o-arrow-path"
+                                    color="warning"
+                                    size="sm"
+                                >
+                                    Tentar Novamente
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Infográfico concluído --}}
+                    @if($this->latestAnalysis->isInfographicCompleted() && $this->latestAnalysis->infographic_html_result)
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                    <x-heroicon-o-chart-bar class="w-5 h-5 text-success-600" />
+                                    Infográfico Visual Law
+                                </h4>
+                                <div class="flex items-center gap-3">
+                                    @if($this->latestAnalysis->infographic_processing_time_ms)
+                                        <span class="text-xs text-gray-500 dark:text-gray-400">
+                                            Tempo: {{ number_format($this->latestAnalysis->infographic_processing_time_ms / 1000, 1) }}s
+                                        </span>
+                                    @endif
+                                    <x-filament::badge color="success">
+                                        {{ $this->latestAnalysis->infographic_status_label }}
+                                    </x-filament::badge>
+                                </div>
+                            </div>
+
+                            {{-- Metadados da IA (Infográfico) --}}
+                            @if($this->latestAnalysis->infographic_ai_metadata)
+                                <details class="mt-4 text-xs">
+                                    <summary class="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                        Detalhes técnicos do infográfico
+                                    </summary>
+                                    <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Entrada (Total):</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->infographic_ai_metadata['totals']['total_prompt_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Tokens Saída (Total):</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->infographic_ai_metadata['totals']['total_completion_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Total Tokens:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ number_format($this->latestAnalysis->infographic_ai_metadata['totals']['total_tokens'] ?? 0) }}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-500 dark:text-gray-400">Chamadas API:</span>
+                                            <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->latestAnalysis->infographic_ai_metadata['totals']['api_calls_count'] ?? '-' }}</span>
+                                        </div>
+                                    </div>
+                                </details>
+                            @endif
+
+                            {{-- Botões de ação do infográfico --}}
+                            <div class="mt-4 flex justify-end gap-3">
+                                <x-filament::button
+                                    tag="a"
+                                    href="{{ route('contracts.infographic.view', $this->latestAnalysis->id) }}"
+                                    target="_blank"
+                                    icon="heroicon-o-eye"
+                                    color="success"
+                                    size="sm"
+                                >
+                                    Visualizar Infográfico
+                                </x-filament::button>
+
+                                <x-filament::button
+                                    tag="a"
+                                    href="{{ route('contracts.infographic.download', $this->latestAnalysis->id) }}"
+                                    icon="heroicon-o-arrow-down-tray"
+                                    color="gray"
+                                    size="sm"
+                                >
+                                    Download HTML
+                                </x-filament::button>
+                            </div>
                         </div>
                     @endif
 

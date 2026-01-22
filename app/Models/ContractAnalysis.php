@@ -11,30 +11,40 @@ class ContractAnalysis extends Model
         'user_id',
         'prompt_id',
         'legal_opinion_prompt_id',
+        'infographic_storyboard_prompt_id',
+        'infographic_html_prompt_id',
         'file_name',
         'file_path',
         'file_size',
         'interested_party_name',
         'status',
         'legal_opinion_status',
+        'infographic_status',
         'ai_provider',
         'legal_opinion_ai_provider',
         'analysis_result',
         'analysis_ai_metadata',
         'legal_opinion_result',
         'legal_opinion_ai_metadata',
+        'infographic_storyboard_json',
+        'infographic_html_result',
+        'infographic_ai_metadata',
         'error_message',
         'legal_opinion_error',
+        'infographic_error',
         'processing_time_ms',
         'legal_opinion_processing_time_ms',
+        'infographic_processing_time_ms',
     ];
 
     protected $casts = [
         'file_size' => 'integer',
         'processing_time_ms' => 'integer',
         'legal_opinion_processing_time_ms' => 'integer',
+        'infographic_processing_time_ms' => 'integer',
         'analysis_ai_metadata' => 'array',
         'legal_opinion_ai_metadata' => 'array',
+        'infographic_ai_metadata' => 'array',
     ];
 
     /**
@@ -334,6 +344,158 @@ class ContractAnalysis extends Model
         $this->update([
             'legal_opinion_status' => self::STATUS_CANCELLED,
             'legal_opinion_error' => 'Geração de parecer cancelada pelo usuário.',
+        ]);
+    }
+
+    // ========== Métodos para Infográfico ==========
+
+    /**
+     * Relação com o prompt de IA (storyboard do infográfico)
+     */
+    public function infographicStoryboardPrompt(): BelongsTo
+    {
+        return $this->belongsTo(AiPrompt::class, 'infographic_storyboard_prompt_id');
+    }
+
+    /**
+     * Relação com o prompt de IA (HTML do infográfico)
+     */
+    public function infographicHtmlPrompt(): BelongsTo
+    {
+        return $this->belongsTo(AiPrompt::class, 'infographic_html_prompt_id');
+    }
+
+    /**
+     * Retorna a cor do badge de status do infográfico
+     */
+    public function getInfographicStatusBadgeColorAttribute(): string
+    {
+        return match ($this->infographic_status) {
+            self::STATUS_PENDING => 'warning',
+            self::STATUS_PROCESSING => 'info',
+            self::STATUS_COMPLETED => 'success',
+            self::STATUS_FAILED => 'danger',
+            self::STATUS_CANCELLED => 'gray',
+            default => 'gray',
+        };
+    }
+
+    /**
+     * Retorna o label do status do infográfico em português
+     */
+    public function getInfographicStatusLabelAttribute(): string
+    {
+        return match ($this->infographic_status) {
+            self::STATUS_PENDING => 'Pendente',
+            self::STATUS_PROCESSING => 'Gerando...',
+            self::STATUS_COMPLETED => 'Concluído',
+            self::STATUS_FAILED => 'Falhou',
+            self::STATUS_CANCELLED => 'Cancelado',
+            default => 'Não iniciado',
+        };
+    }
+
+    /**
+     * Verifica se o infográfico está em andamento
+     */
+    public function isInfographicProcessing(): bool
+    {
+        return $this->infographic_status === self::STATUS_PROCESSING;
+    }
+
+    /**
+     * Verifica se o infográfico foi concluído
+     */
+    public function isInfographicCompleted(): bool
+    {
+        return $this->infographic_status === self::STATUS_COMPLETED;
+    }
+
+    /**
+     * Verifica se o infográfico falhou
+     */
+    public function isInfographicFailed(): bool
+    {
+        return $this->infographic_status === self::STATUS_FAILED;
+    }
+
+    /**
+     * Verifica se o infográfico foi cancelado
+     */
+    public function isInfographicCancelled(): bool
+    {
+        return $this->infographic_status === self::STATUS_CANCELLED;
+    }
+
+    /**
+     * Verifica se pode gerar infográfico
+     * (parecer jurídico deve estar concluído e infográfico não pode estar em processamento)
+     */
+    public function canGenerateInfographic(): bool
+    {
+        return $this->isLegalOpinionCompleted()
+            && !$this->isInfographicProcessing()
+            && !empty($this->legal_opinion_result);
+    }
+
+    /**
+     * Verifica se o infográfico pode ser cancelado
+     */
+    public function canInfographicBeCancelled(): bool
+    {
+        return $this->infographic_status === self::STATUS_PROCESSING;
+    }
+
+    /**
+     * Marca o infográfico como processando
+     */
+    public function markInfographicAsProcessing(): void
+    {
+        $this->update(['infographic_status' => self::STATUS_PROCESSING]);
+    }
+
+    /**
+     * Marca o infográfico como concluído
+     */
+    public function markInfographicAsCompleted(
+        string $storyboardJson,
+        string $htmlResult,
+        int $processingTimeMs,
+        ?array $aiMetadata = null
+    ): void {
+        $data = [
+            'infographic_status' => self::STATUS_COMPLETED,
+            'infographic_storyboard_json' => $storyboardJson,
+            'infographic_html_result' => $htmlResult,
+            'infographic_processing_time_ms' => $processingTimeMs,
+        ];
+
+        if ($aiMetadata !== null) {
+            $data['infographic_ai_metadata'] = $aiMetadata;
+        }
+
+        $this->update($data);
+    }
+
+    /**
+     * Marca o infográfico como falha
+     */
+    public function markInfographicAsFailed(string $errorMessage): void
+    {
+        $this->update([
+            'infographic_status' => self::STATUS_FAILED,
+            'infographic_error' => $errorMessage,
+        ]);
+    }
+
+    /**
+     * Marca o infográfico como cancelado
+     */
+    public function markInfographicAsCancelled(): void
+    {
+        $this->update([
+            'infographic_status' => self::STATUS_CANCELLED,
+            'infographic_error' => 'Geração de infográfico cancelada pelo usuário.',
         ]);
     }
 }

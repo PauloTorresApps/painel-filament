@@ -3,12 +3,15 @@
 namespace App\Filament\Analises\Resources\ContractAnalysisResource\Pages;
 
 use App\Filament\Analises\Resources\ContractAnalysisResource;
+use App\Jobs\GenerateInfographicJob;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class ViewContractAnalysis extends ViewRecord
 {
@@ -119,9 +122,112 @@ class ViewContractAnalysis extends ViewRecord
                             ->icon('heroicon-o-arrow-down-tray')
                             ->color('primary')
                             ->url(fn ($record) => route('contracts.legal-opinion.download', $record->id)),
+
+                        Action::make('generateInfographic')
+                            ->label(fn ($record) => $record->isInfographicProcessing() ? 'Gerando...' : 'Gerar Infográfico')
+                            ->icon('heroicon-o-chart-bar')
+                            ->color('success')
+                            ->visible(fn ($record) => $record->canGenerateInfographic() && !$record->isInfographicCompleted())
+                            ->disabled(fn ($record) => $record->isInfographicProcessing())
+                            ->action(function ($record) {
+                                GenerateInfographicJob::dispatch($record->id);
+
+                                Notification::make()
+                                    ->title('Gerando Infográfico')
+                                    ->body('O infográfico está sendo gerado. Você será notificado quando concluir.')
+                                    ->success()
+                                    ->send();
+
+                                Log::info('Geração de infográfico iniciada via histórico', [
+                                    'analysis_id' => $record->id,
+                                ]);
+                            }),
                     ])
                     ->visible(fn ($record) => $record->isLegalOpinionCompleted() && $record->legal_opinion_result)
                     ->collapsible()
+                    ->columnSpanFull(),
+
+                // 4. Infográfico Visual Law
+                Section::make('Infográfico Visual Law')
+                    ->icon('heroicon-o-chart-bar')
+                    ->description(fn ($record) => $record->infographic_processing_time_ms
+                        ? 'Tempo de geração: ' . number_format($record->infographic_processing_time_ms / 1000, 1) . ' segundos'
+                        : null)
+                    ->schema([
+                        Grid::make(4)
+                            ->schema([
+                                TextEntry::make('infographic_ai_metadata.totals.total_prompt_tokens')
+                                    ->label('Tokens Entrada')
+                                    ->formatStateUsing(fn ($state) => number_format($state ?? 0)),
+
+                                TextEntry::make('infographic_ai_metadata.totals.total_completion_tokens')
+                                    ->label('Tokens Saída')
+                                    ->formatStateUsing(fn ($state) => number_format($state ?? 0)),
+
+                                TextEntry::make('infographic_ai_metadata.totals.total_tokens')
+                                    ->label('Total Tokens')
+                                    ->formatStateUsing(fn ($state) => number_format($state ?? 0)),
+
+                                TextEntry::make('infographic_ai_metadata.totals.api_calls_count')
+                                    ->label('Chamadas API')
+                                    ->formatStateUsing(fn ($state) => $state ?? '-'),
+                            ])
+                            ->visible(fn ($record) => !empty($record->infographic_ai_metadata)),
+                    ])
+                    ->headerActions([
+                        Action::make('viewInfographic')
+                            ->label('Visualizar Infográfico')
+                            ->icon('heroicon-o-eye')
+                            ->color('success')
+                            ->url(fn ($record) => route('contracts.infographic.view', $record->id))
+                            ->openUrlInNewTab(),
+
+                        Action::make('downloadInfographic')
+                            ->label('Download HTML')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('gray')
+                            ->url(fn ($record) => route('contracts.infographic.download', $record->id)),
+                    ])
+                    ->visible(fn ($record) => $record->isInfographicCompleted() && $record->infographic_html_result)
+                    ->collapsible()
+                    ->columnSpanFull(),
+
+                // 5. Infográfico em processamento
+                Section::make('Infográfico em Processamento')
+                    ->icon('heroicon-o-chart-bar')
+                    ->schema([
+                        TextEntry::make('infographic_status')
+                            ->label('')
+                            ->formatStateUsing(fn () => 'O infográfico está sendo gerado. Atualize a página para verificar o status.')
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn ($record) => $record->isInfographicProcessing())
+                    ->columnSpanFull(),
+
+                // 6. Erro no Infográfico
+                Section::make('Erro no Infográfico')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->schema([
+                        TextEntry::make('infographic_error')
+                            ->label('Mensagem de Erro')
+                            ->columnSpanFull(),
+                    ])
+                    ->headerActions([
+                        Action::make('retryInfographic')
+                            ->label('Tentar Novamente')
+                            ->icon('heroicon-o-arrow-path')
+                            ->color('warning')
+                            ->action(function ($record) {
+                                GenerateInfographicJob::dispatch($record->id);
+
+                                Notification::make()
+                                    ->title('Gerando Infográfico')
+                                    ->body('O infográfico está sendo gerado novamente.')
+                                    ->success()
+                                    ->send();
+                            }),
+                    ])
+                    ->visible(fn ($record) => $record->isInfographicFailed() || $record->isInfographicCancelled())
                     ->columnSpanFull(),
             ]);
     }

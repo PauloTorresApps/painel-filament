@@ -10,6 +10,8 @@ class AiPrompt extends Model
     // Tipos de prompt para sistema de Contratos
     public const TYPE_ANALYSIS = 'analysis';
     public const TYPE_LEGAL_OPINION = 'legal_opinion';
+    public const TYPE_STORYBOARD = 'storyboard';
+    public const TYPE_INFOGRAPHIC = 'infographic';
 
     protected $fillable = [
         'system_id',
@@ -101,6 +103,8 @@ class AiPrompt extends Model
         return [
             self::TYPE_ANALYSIS => 'Análise de Contrato',
             self::TYPE_LEGAL_OPINION => 'Parecer Jurídico',
+            self::TYPE_STORYBOARD => 'Storyboard (JSON)',
+            self::TYPE_INFOGRAPHIC => 'Infográfico (HTML)',
         ];
     }
 

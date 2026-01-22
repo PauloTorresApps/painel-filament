@@ -7,6 +7,7 @@ use App\Http\Controllers\EprocController;
 use App\Http\Controllers\ContractUploadController;
 use App\Http\Controllers\LegalOpinionPdfController;
 use App\Http\Controllers\ContractAnalysisPdfController;
+use App\Http\Controllers\InfographicController;
 
 Route::redirect('/', '/login')->name('home');
 
@@ -47,5 +48,10 @@ Route::middleware(['auth'])->group(function () {
         // Download de Análise Contratual em PDF
         Route::get('contracts/{id}/analysis/download', [ContractAnalysisPdfController::class, 'download'])->name('contracts.analysis.download');
         Route::get('contracts/{id}/analysis/view', [ContractAnalysisPdfController::class, 'view'])->name('contracts.analysis.view');
+
+        // Infográfico Visual Law
+        Route::get('contracts/{id}/infographic/view', [InfographicController::class, 'view'])->name('contracts.infographic.view');
+        Route::get('contracts/{id}/infographic/download', [InfographicController::class, 'download'])->name('contracts.infographic.download');
+        Route::get('contracts/{id}/infographic/storyboard', [InfographicController::class, 'storyboard'])->name('contracts.infographic.storyboard');
 
 });

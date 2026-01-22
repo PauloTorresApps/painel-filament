@@ -72,6 +72,44 @@ class ContractSystemSeeder extends Seeder
         );
 
         $this->command->info("AiPrompt padrão para PARECER JURÍDICO criado/verificado (ID: {$legalOpinionPrompt->id}).");
+
+        // 5. Criar AiPrompt padrão para STORYBOARD (JSON do infográfico)
+        $storyboardPrompt = AiPrompt::firstOrCreate(
+            [
+                'system_id' => $system->id,
+                'prompt_type' => AiPrompt::TYPE_STORYBOARD,
+                'is_default' => true,
+            ],
+            [
+                'title' => 'Storyboard de Infográfico (JSON)',
+                'content' => $this->getStoryboardPrompt(),
+                'ai_provider' => 'deepseek',
+                'deep_thinking_enabled' => false,
+                'analysis_strategy' => 'evolutionary',
+                'is_active' => true,
+            ]
+        );
+
+        $this->command->info("AiPrompt padrão para STORYBOARD criado/verificado (ID: {$storyboardPrompt->id}).");
+
+        // 6. Criar AiPrompt padrão para INFOGRÁFICO (HTML)
+        $infographicPrompt = AiPrompt::firstOrCreate(
+            [
+                'system_id' => $system->id,
+                'prompt_type' => AiPrompt::TYPE_INFOGRAPHIC,
+                'is_default' => true,
+            ],
+            [
+                'title' => 'Infográfico HTML',
+                'content' => $this->getInfographicPrompt(),
+                'ai_provider' => 'deepseek',
+                'deep_thinking_enabled' => false,
+                'analysis_strategy' => 'evolutionary',
+                'is_active' => true,
+            ]
+        );
+
+        $this->command->info("AiPrompt padrão para INFOGRÁFICO HTML criado/verificado (ID: {$infographicPrompt->id}).");
     }
 
     /**
@@ -189,6 +227,72 @@ Mencione limitações da análise e questões que demandam verificação adicion
 - Utilize linguagem técnica jurídica apropriada
 - Fundamente todas as conclusões em dispositivos legais
 - Seja objetivo mas completo na análise
+PROMPT;
+    }
+
+    /**
+     * Retorna o prompt padrão para STORYBOARD (JSON do infográfico)
+     */
+    private function getStoryboardPrompt(): string
+    {
+        return <<<'PROMPT'
+Você é um especialista em Visual Law, Legal Design e Data Visualization. A partir do PARECER JURÍDICO abaixo, gere um JSON ESTRUTURADO para um infográfico em HTML (SPA).
+
+OBJETIVO: Transformar o parecer em elementos VISUAIS e curtos. Sem juridiquês. Compreensível para qualquer pessoa, mesmo que não seja operador do Direito. Não gere HTML ainda.
+
+REGRAS CRÍTICAS:
+- EXTRAIA informações APENAS do parecer jurídico fornecido. NÃO INVENTE dados.
+- O campo "cliente" em meta DEVE ser extraído do parecer (parte interessada, contratante ou contratada mencionada).
+- Se não houver nome de cliente/parte no parecer, use "Parte Interessada" como valor genérico.
+- O "titulo" deve refletir o TIPO REAL de contrato analisado (ex: "Análise de Contrato de Prestação de Serviços").
+- NÃO mencione instituições (como "Ministério Público", "Tribunal", etc.) a menos que estejam EXPLICITAMENTE no parecer.
+
+ESTRUTURA DO JSON:
+- O JSON deve conter:
+  1) meta: {titulo, subtitulo, cliente, ano, paleta:{primary, accent, highlight, danger, bg}}
+  2) scores: {nota_atual, nota_meta, dimensoes:[{nome, atual, meta}]}
+  3) executive_cards: [{titulo, status:positive|warning|critical, texto_curto, icone_unicode}]
+  4) risk_matrix: [{label, x_probabilidade_0a10, y_impacto_0a10, tamanho_10a40, cor}]
+  5) clause_comparisons: [{tema, como_esta, risco, sugestao, beneficio}]
+  6) timeline_cobranca: [{dia, titulo, descricao}]
+  7) checklist: [{texto, prioridade:alta|media|baixa}]
+  8) disclaimers: [strings curtas]
+
+- Todos os textos devem ser curtos (máx. 220 caracteres por item).
+- Se o parecer não trouxer números, estime apenas os NECESSÁRIOS (com bom senso) e marque em meta.assumptions[].
+- Saída: SOMENTE JSON válido.
+PROMPT;
+    }
+
+    /**
+     * Retorna o prompt padrão para INFOGRÁFICO (HTML)
+     */
+    private function getInfographicPrompt(): string
+    {
+        return <<<'PROMPT'
+Gere um ÚNICO ARQUIVO HTML (SPA) a partir do JSON abaixo.
+
+STACK E REGRAS:
+- Tailwind CSS via CDN
+- Chart.js via CDN
+- Plotly.js via CDN (opcional; se usar, force renderer canvas)
+- PROIBIDO: SVG, Mermaid, FontAwesome
+- Ícones: apenas Unicode
+- Layout: responsivo, profissional, legal-tech
+- O HTML deve conter seções:
+  1) Hero
+  2) Nota de Segurança Jurídica
+  3) Diagnóstico Executivo (cards + doughnut score)
+  4) Radar de Dimensões (Chart.js radar)
+  5) Matriz Risco vs Impacto (Plotly scatter/bubble)
+  6) Comparativos de Cláusulas (cards)
+  7) Timeline de Cobrança
+  8) Checklist final
+  9) Rodapé (disclaimer)
+
+RENDER:
+- Entregue SOMENTE o HTML completo.
+- Não inclua explicações fora do HTML.
 PROMPT;
     }
 }
