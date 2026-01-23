@@ -5,6 +5,7 @@ namespace App\Filament\Analises\Pages;
 use App\Jobs\AnalyzeContractJob;
 use App\Jobs\GenerateLegalOpinionJob;
 use App\Jobs\GenerateInfographicJob;
+use App\Models\AiPrompt;
 use App\Models\ContractAnalysis as ContractAnalysisModel;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -440,6 +441,28 @@ class ContractAnalysis extends Page
                 ->body('O parecer jurídico precisa estar concluído e não pode haver outro infográfico em processamento.')
                 ->warning()
                 ->send();
+            return;
+        }
+
+        // Verifica se os prompts necessários existem
+        $promptCheck = AiPrompt::checkInfographicPromptsExist();
+
+        if (!$promptCheck['exists']) {
+            $missingList = implode(', ', $promptCheck['missing']);
+
+            Notification::make()
+                ->title('Configuração Incompleta')
+                ->body("Os seguintes prompts não estão configurados: {$missingList}. Por favor, entre em contato com o administrador do sistema.")
+                ->danger()
+                ->persistent()
+                ->send();
+
+            Log::warning('Tentativa de gerar infográfico sem prompts configurados', [
+                'analysis_id' => $this->latestAnalysis->id,
+                'user_id' => Auth::id(),
+                'missing_prompts' => $promptCheck['missing'],
+            ]);
+
             return;
         }
 

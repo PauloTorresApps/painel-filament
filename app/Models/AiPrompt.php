@@ -119,4 +119,50 @@ class AiPrompt extends Model
 
         return self::getContractPromptTypes()[$this->prompt_type] ?? $this->prompt_type;
     }
+
+    /**
+     * Verifica se os prompts necessários para geração de infográfico existem
+     *
+     * @return array{exists: bool, missing: array<string>}
+     */
+    public static function checkInfographicPromptsExist(): array
+    {
+        $system = \App\Models\System::where('name', 'Contratos')->first();
+
+        if (!$system) {
+            return [
+                'exists' => false,
+                'missing' => ['Sistema "Contratos" não encontrado'],
+            ];
+        }
+
+        $missing = [];
+
+        // Verifica prompt de storyboard
+        $storyboardExists = self::where('system_id', $system->id)
+            ->where('prompt_type', self::TYPE_STORYBOARD)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->exists();
+
+        if (!$storyboardExists) {
+            $missing[] = 'Storyboard (JSON)';
+        }
+
+        // Verifica prompt de infográfico HTML
+        $infographicExists = self::where('system_id', $system->id)
+            ->where('prompt_type', self::TYPE_INFOGRAPHIC)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->exists();
+
+        if (!$infographicExists) {
+            $missing[] = 'Infográfico (HTML)';
+        }
+
+        return [
+            'exists' => empty($missing),
+            'missing' => $missing,
+        ];
+    }
 }

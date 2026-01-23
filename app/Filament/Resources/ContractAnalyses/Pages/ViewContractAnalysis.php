@@ -3,18 +3,18 @@
 namespace App\Filament\Resources\ContractAnalyses\Pages;
 
 use App\Filament\Resources\ContractAnalyses\ContractAnalysisResource;
-use App\Jobs\GenerateInfographicJob;
+use App\Filament\Traits\HasInfographicActions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\Log;
 
 class ViewContractAnalysis extends ViewRecord
 {
+    use HasInfographicActions;
+
     protected static string $resource = ContractAnalysisResource::class;
 
     public function infolist(Schema $schema): Schema
@@ -121,25 +121,7 @@ class ViewContractAnalysis extends ViewRecord
                             ->color('primary')
                             ->url(fn ($record) => route('contracts.legal-opinion.download', $record->id)),
 
-                        Action::make('generateInfographic')
-                            ->label(fn ($record) => $record->isInfographicProcessing() ? 'Gerando...' : 'Gerar Infográfico')
-                            ->icon('heroicon-o-chart-bar')
-                            ->color('success')
-                            ->visible(fn ($record) => $record->canGenerateInfographic() && !$record->isInfographicCompleted())
-                            ->disabled(fn ($record) => $record->isInfographicProcessing())
-                            ->action(function ($record) {
-                                GenerateInfographicJob::dispatch($record->id);
-
-                                Notification::make()
-                                    ->title('Gerando Infográfico')
-                                    ->body('O infográfico está sendo gerado. Você será notificado quando concluir.')
-                                    ->success()
-                                    ->send();
-
-                                Log::info('Geração de infográfico iniciada via histórico', [
-                                    'analysis_id' => $record->id,
-                                ]);
-                            }),
+                        $this->makeGenerateInfographicAction(),
                     ])
                     ->visible(fn ($record) => $record->isLegalOpinionCompleted() && $record->legal_opinion_result)
                     ->collapsible(),
@@ -208,19 +190,7 @@ class ViewContractAnalysis extends ViewRecord
                             ->columnSpanFull(),
                     ])
                     ->headerActions([
-                        Action::make('retryInfographic')
-                            ->label('Tentar Novamente')
-                            ->icon('heroicon-o-arrow-path')
-                            ->color('warning')
-                            ->action(function ($record) {
-                                GenerateInfographicJob::dispatch($record->id);
-
-                                Notification::make()
-                                    ->title('Gerando Infográfico')
-                                    ->body('O infográfico está sendo gerado novamente.')
-                                    ->success()
-                                    ->send();
-                            }),
+                        $this->makeRetryInfographicAction(),
                     ])
                     ->visible(fn ($record) => $record->isInfographicFailed() || $record->isInfographicCancelled()),
             ]);
