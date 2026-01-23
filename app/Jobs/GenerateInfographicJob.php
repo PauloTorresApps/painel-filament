@@ -69,14 +69,10 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            // Verifica se já está gerando infográfico
-            if ($analysis->isInfographicProcessing()) {
-                Log::warning('Infográfico já está sendo gerado', ['id' => $this->contractAnalysisId]);
-                return;
+            // Se não estiver marcado como processing, marca agora (caso o job tenha sido despachado diretamente)
+            if (!$analysis->isInfographicProcessing()) {
+                $analysis->markInfographicAsProcessing();
             }
-
-            // Marca como processando
-            $analysis->markInfographicAsProcessing();
 
             $user = User::find($analysis->user_id);
             if (!$user) {
@@ -95,6 +91,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 'id' => $analysis->id,
                 'file_name' => $analysis->file_name
             ]);
+
+            // Atualiza progresso: Iniciando
+            $analysis->updateInfographicProgress(5, 'Carregando configurações...', null);
 
             // Busca o sistema de Contratos
             $system = System::where('name', 'Contratos')->first();
@@ -130,6 +129,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 'infographic_storyboard_prompt_id' => $storyboardPrompt->id,
                 'infographic_html_prompt_id' => $infographicPrompt->id,
             ]);
+
+            // Atualiza progresso: Prompts carregados
+            $analysis->updateInfographicProgress(10, 'Prompts carregados. Iniciando Fase 1...', ContractAnalysis::INFOGRAPHIC_PHASE_STORYBOARD);
 
             // Verifica novamente se foi cancelado antes da Fase 1
             $analysis->refresh();
@@ -172,6 +174,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 'model' => $storyboardAiService->getModel(),
             ]);
 
+            // Atualiza progresso: Gerando storyboard
+            $analysis->updateInfographicProgress(20, 'Gerando estrutura do infográfico (JSON)...', ContractAnalysis::INFOGRAPHIC_PHASE_STORYBOARD);
+
             // Executa geração do storyboard
             $storyboardResult = $storyboardAiService->analyzeDocuments(
                 $storyboardPrompt->content,
@@ -191,6 +196,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 'id' => $analysis->id,
                 'json_length' => strlen($storyboardJson)
             ]);
+
+            // Atualiza progresso: Fase 1 concluída
+            $analysis->updateInfographicProgress(50, 'Estrutura do infográfico gerada. Iniciando Fase 2...', ContractAnalysis::INFOGRAPHIC_PHASE_HTML);
 
             // Verifica se foi cancelado antes da Fase 2
             $analysis->refresh();
@@ -222,6 +230,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 'model' => $htmlAiService->getModel(),
             ]);
 
+            // Atualiza progresso: Gerando HTML
+            $analysis->updateInfographicProgress(60, 'Gerando visualização HTML do infográfico...', ContractAnalysis::INFOGRAPHIC_PHASE_HTML);
+
             // Executa geração do HTML
             $htmlResult = $htmlAiService->analyzeDocuments(
                 $infographicPrompt->content,
@@ -245,6 +256,9 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             // Extrai o HTML da resposta
             $htmlContent = $this->extractHtml($htmlResult);
 
+            // Atualiza progresso: HTML gerado
+            $analysis->updateInfographicProgress(90, 'Finalizando infográfico...', ContractAnalysis::INFOGRAPHIC_PHASE_HTML);
+
             // Verifica se foi cancelado durante o processamento
             $analysis->refresh();
             if ($analysis->isInfographicCancelled()) {
@@ -255,7 +269,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             // Calcula tempo de processamento
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como concluído com metadados
+            // Marca como concluído com metadados (isso já atualiza o progresso para 100%)
             $analysis->markInfographicAsCompleted($storyboardJson, $htmlContent, $processingTimeMs, $accumulatedMetadata);
 
             Log::info('Infográfico gerado com sucesso', [

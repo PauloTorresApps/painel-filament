@@ -29,6 +29,9 @@ class ContractAnalysis extends Model
         'infographic_storyboard_json',
         'infographic_html_result',
         'infographic_ai_metadata',
+        'infographic_progress_percent',
+        'infographic_progress_message',
+        'infographic_current_phase',
         'error_message',
         'legal_opinion_error',
         'infographic_error',
@@ -42,10 +45,17 @@ class ContractAnalysis extends Model
         'processing_time_ms' => 'integer',
         'legal_opinion_processing_time_ms' => 'integer',
         'infographic_processing_time_ms' => 'integer',
+        'infographic_progress_percent' => 'integer',
         'analysis_ai_metadata' => 'array',
         'legal_opinion_ai_metadata' => 'array',
         'infographic_ai_metadata' => 'array',
     ];
+
+    /**
+     * Constantes para fases do infográfico
+     */
+    public const INFOGRAPHIC_PHASE_STORYBOARD = 'storyboard';
+    public const INFOGRAPHIC_PHASE_HTML = 'html';
 
     /**
      * Status constants
@@ -451,7 +461,29 @@ class ContractAnalysis extends Model
      */
     public function markInfographicAsProcessing(): void
     {
-        $this->update(['infographic_status' => self::STATUS_PROCESSING]);
+        $this->update([
+            'infographic_status' => self::STATUS_PROCESSING,
+            'infographic_progress_percent' => 0,
+            'infographic_progress_message' => 'Iniciando geração do infográfico...',
+            'infographic_current_phase' => null,
+        ]);
+    }
+
+    /**
+     * Atualiza o progresso do infográfico
+     */
+    public function updateInfographicProgress(int $percent, string $message, ?string $phase = null): void
+    {
+        $data = [
+            'infographic_progress_percent' => min(100, max(0, $percent)),
+            'infographic_progress_message' => $message,
+        ];
+
+        if ($phase !== null) {
+            $data['infographic_current_phase'] = $phase;
+        }
+
+        $this->update($data);
     }
 
     /**
@@ -468,6 +500,9 @@ class ContractAnalysis extends Model
             'infographic_storyboard_json' => $storyboardJson,
             'infographic_html_result' => $htmlResult,
             'infographic_processing_time_ms' => $processingTimeMs,
+            'infographic_progress_percent' => 100,
+            'infographic_progress_message' => 'Infográfico gerado com sucesso!',
+            'infographic_current_phase' => null,
         ];
 
         if ($aiMetadata !== null) {
@@ -485,6 +520,9 @@ class ContractAnalysis extends Model
         $this->update([
             'infographic_status' => self::STATUS_FAILED,
             'infographic_error' => $errorMessage,
+            'infographic_progress_percent' => 0,
+            'infographic_progress_message' => null,
+            'infographic_current_phase' => null,
         ]);
     }
 

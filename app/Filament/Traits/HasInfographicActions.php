@@ -26,7 +26,7 @@ trait HasInfographicActions
     }
 
     /**
-     * Cria a action para tentar novamente gerar infográfico
+     * Cria a action para tentar novamente gerar infográfico (após erro)
      */
     protected function makeRetryInfographicAction(): Action
     {
@@ -34,6 +34,22 @@ trait HasInfographicActions
             ->label('Tentar Novamente')
             ->icon('heroicon-o-arrow-path')
             ->color('warning')
+            ->action(fn ($record) => $this->dispatchInfographicJob($record, true));
+    }
+
+    /**
+     * Cria a action para regerar infográfico (quando já existe um concluído)
+     */
+    protected function makeRegenerateInfographicAction(): Action
+    {
+        return Action::make('regenerateInfographic')
+            ->label('Regerar Infográfico')
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Regerar Infográfico')
+            ->modalDescription('Tem certeza que deseja regerar o infográfico? O infográfico atual será substituído.')
+            ->modalSubmitActionLabel('Sim, regerar')
             ->action(fn ($record) => $this->dispatchInfographicJob($record, true));
     }
 
@@ -63,6 +79,9 @@ trait HasInfographicActions
             return;
         }
 
+        // Marca como processando ANTES de disparar o job para mostrar a barra de progresso imediatamente
+        $record->markInfographicAsProcessing();
+
         GenerateInfographicJob::dispatch($record->id);
 
         Notification::make()
@@ -76,5 +95,8 @@ trait HasInfographicActions
                 'analysis_id' => $record->id,
             ]);
         }
+
+        // Recarrega a página para mostrar a barra de progresso
+        $this->js('location.reload()');
     }
 }

@@ -9,6 +9,7 @@ use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
 use Filament\Actions\Action;
 
 class ViewContractAnalysis extends ViewRecord
@@ -166,6 +167,8 @@ class ViewContractAnalysis extends ViewRecord
                             ->icon('heroicon-o-arrow-down-tray')
                             ->color('gray')
                             ->url(fn ($record) => route('contracts.infographic.download', $record->id)),
+
+                        $this->makeRegenerateInfographicAction(),
                     ])
                     ->visible(fn ($record) => $record->isInfographicCompleted() && $record->infographic_html_result)
                     ->collapsible(),
@@ -174,12 +177,13 @@ class ViewContractAnalysis extends ViewRecord
                 Section::make('Infográfico em Processamento')
                     ->icon('heroicon-o-chart-bar')
                     ->schema([
-                        TextEntry::make('infographic_status')
+                        ViewEntry::make('infographic_progress')
                             ->label('')
-                            ->formatStateUsing(fn () => 'O infográfico está sendo gerado. Atualize a página para verificar o status.')
+                            ->view('components.infographic-progress')
                             ->columnSpanFull(),
                     ])
-                    ->visible(fn ($record) => $record->isInfographicProcessing()),
+                    ->visible(fn ($record) => $record->isInfographicProcessing())
+                    ->extraAttributes(['wire:poll.2s' => '']),
 
                 // Erro no Infográfico
                 Section::make('Erro no Infográfico')
