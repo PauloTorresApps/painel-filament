@@ -19,7 +19,6 @@ abstract class AbstractAIService implements AIProviderInterface
 
     /**
      * Define o modelo a ser utilizado
-     * Permite sobrescrever o modelo padrão configurado no .env
      */
     public function setModel(string $model): self
     {
@@ -38,17 +37,16 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
-     * Limites de tokens para pipeline de sumarização
+     * Limites de tokens para processamento
      */
     protected const SINGLE_DOC_CHAR_LIMIT = 30000; // ~7.5k tokens
-    protected const TOTAL_PROMPT_CHAR_LIMIT = 800000; // ~200k tokens
 
     /**
      * Configurações de rate limiting
      */
-    protected const RATE_LIMIT_DELAY_MS = 2000; // 2 segundos entre chamadas
+    protected const RATE_LIMIT_DELAY_MS = 2000;
     protected const MAX_RETRIES_ON_RATE_LIMIT = 5;
-    protected const RATE_LIMIT_BACKOFF_BASE_MS = 5000; // 5 segundos base para backoff
+    protected const RATE_LIMIT_BACKOFF_BASE_MS = 5000;
 
     /**
      * Faz a chamada HTTP para a API do provider
@@ -102,13 +100,11 @@ abstract class AbstractAIService implements AIProviderInterface
         $this->lastAnalysisMetadata['total_completion_tokens'] += $usage['completion_tokens'] ?? 0;
         $this->lastAnalysisMetadata['total_tokens'] += $usage['total_tokens'] ?? 0;
 
-        // Tokens de raciocínio (DeepSeek, OpenAI o1, etc.)
         $reasoningTokens = $usage['completion_tokens_details']['reasoning_tokens']
             ?? $usage['reasoning_tokens']
             ?? 0;
         $this->lastAnalysisMetadata['total_reasoning_tokens'] += $reasoningTokens;
 
-        // Registra o modelo usado (pode mudar durante a análise)
         if ($model) {
             $this->lastAnalysisMetadata['model'] = $model;
         }
@@ -124,7 +120,41 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
+     * Analisa um único documento (usado na fase MAP do map-reduce)
+     */
+    public function analyzeSingleDocument(
+        string $prompt,
+        string $documentText,
+        bool $deepThinkingEnabled = false
+    ): string {
+        $this->resetAnalysisMetadata();
+
+        $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO\n\n" . $documentText;
+
+        // Se o documento for muito grande, sumariza primeiro
+        if (mb_strlen($documentText) > static::SINGLE_DOC_CHAR_LIMIT) {
+            Log::info('AbstractAIService: Documento muito grande, sumarizando', [
+                'original_chars' => mb_strlen($documentText),
+                'limit' => static::SINGLE_DOC_CHAR_LIMIT
+            ]);
+
+            $documentText = $this->summarizeDocument($documentText, 'Documento', $deepThinkingEnabled);
+            $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO (RESUMIDO)\n\n" . $documentText;
+        }
+
+        $result = $this->callAPI($fullPrompt, $deepThinkingEnabled);
+
+        $this->finalizeMetadata(1);
+
+        return $result;
+    }
+
+    /**
      * Analisa documentos do processo com contexto
+     *
+     * NOTA: Este método é mantido para compatibilidade com análise de CONTRATOS.
+     * Para processos judiciais com múltiplos documentos, use o sistema map-reduce
+     * (MapDocumentAnalysisJob + ReduceDocumentAnalysisJob).
      */
     public function analyzeDocuments(
         string $promptTemplate,
@@ -134,23 +164,28 @@ abstract class AbstractAIService implements AIProviderInterface
         ?DocumentAnalysis $documentAnalysis = null
     ): string {
         try {
-            // Inicializa metadados da análise
             $this->resetAnalysisMetadata();
 
-            Log::info('Iniciando análise com estratégia de Resumo Evolutivo', [
+            $isContract = $this->isContractAnalysis($contextoDados);
+
+            Log::info('AbstractAIService: Iniciando análise', [
                 'provider' => $this->getName(),
                 'total_documentos' => \count($documentos),
-                'total_chars_estimate' => array_sum(array_map(fn($d) => mb_strlen($d['texto'] ?? ''), $documentos)),
-                'has_persistence' => $documentAnalysis !== null,
-                'analysis_id' => $documentAnalysis?->id
+                'is_contract' => $isContract,
             ]);
 
-            $result = $this->applyEvolutiveSummarization($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled, $documentAnalysis);
+            if ($isContract) {
+                // Análise de contrato: fluxo simples (documento único)
+                $result = $this->analyzeContract($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled);
+            } else {
+                // Processos judiciais com múltiplos documentos devem usar map-reduce
+                // Este fallback existe apenas para compatibilidade
+                $result = $this->analyzeSimple($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled);
+            }
 
-            // Finaliza metadados
             $this->finalizeMetadata(\count($documentos));
 
-            Log::info('Metadados da análise acumulados', [
+            Log::info('AbstractAIService: Análise concluída', [
                 'provider' => $this->getName(),
                 'metadata' => $this->lastAnalysisMetadata
             ]);
@@ -158,20 +193,18 @@ abstract class AbstractAIService implements AIProviderInterface
             return $result;
 
         } catch (\Exception $e) {
-            // Finaliza metadados mesmo em caso de erro
             $this->finalizeMetadata(\count($documentos));
             $this->lastAnalysisMetadata['error'] = $e->getMessage();
 
-            Log::error('Erro ao chamar ' . $this->getName() . ' API', [
+            Log::error('AbstractAIService: Erro na análise', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
         }
     }
 
     /**
-     * Detecta se é uma análise de contrato ou parecer jurídico baseado no contexto
+     * Detecta se é uma análise de contrato
      */
     protected function isContractAnalysis(array $contextoDados): bool
     {
@@ -183,263 +216,125 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
-     * Aplica estratégia de Resumo Evolutivo para manter contexto completo do processo
-     *
-     * Cada documento é analisado junto com o resumo acumulado dos anteriores,
-     * criando uma narrativa evolutiva que preserva toda a história processual.
+     * Análise de contrato (documento único, fluxo simples)
      */
-    protected function applyEvolutiveSummarization(
+    protected function analyzeContract(
         string $promptTemplate,
         array $documentos,
         array $contextoDados,
-        bool $deepThinkingEnabled,
-        ?DocumentAnalysis $documentAnalysis = null
+        bool $deepThinkingEnabled
     ): string {
-        $isContract = $this->isContractAnalysis($contextoDados);
+        $documento = $documentos[0] ?? null;
 
-        // Extrai informações do contexto baseado no tipo
-        if ($isContract) {
-            $nomeClasse = 'Análise de Contrato';
-            $assuntos = $contextoDados['arquivo'] ?? 'Contrato';
-            $numeroProcesso = 'N/A';
-            $tipoParte = $contextoDados['parte_interessada'] ?? 'Não informada';
-        } else {
-            $nomeClasse = $contextoDados['classeProcessualNome'] ?? $contextoDados['classeProcessual'] ?? 'Não informada';
-            $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-            $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-            $tipoParte = $this->identificarTipoParte($contextoDados);
+        if (!$documento) {
+            throw new \Exception('Nenhum documento fornecido para análise de contrato');
         }
 
-        // Contexto inicial que será mantido em todas as iterações
-        $contextoBase = $this->buildContextoBase($isContract, $nomeClasse, $assuntos, $numeroProcesso, $tipoParte, $contextoDados);
+        $texto = $documento['texto'] ?? '';
+        $arquivo = $contextoDados['arquivo'] ?? 'Contrato';
+        $parteInteressada = $contextoDados['parte_interessada'] ?? '';
 
-        $totalDocumentos = \count($documentos);
+        // Monta contexto
+        $contexto = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+        $contexto .= "**Tipo:** Análise de Contrato\n";
+        $contexto .= "**Arquivo:** {$arquivo}\n";
 
-        // Verifica se pode retomar de onde parou
-        $startIndex = 0;
-        $resumoEvolutivo = '';
+        if (!empty($parteInteressada)) {
+            $contexto .= "**Parte Interessada:** {$parteInteressada}\n";
+        }
 
-        if ($documentAnalysis && $documentAnalysis->canBeResumed()) {
-            $startIndex = $documentAnalysis->getNextDocumentIndex();
-            $resumoEvolutivo = $documentAnalysis->getEvolutionarySummary();
+        $contexto .= "\n---\n\n";
+        $contexto .= "# DOCUMENTO DO CONTRATO\n\n";
+        $contexto .= $texto . "\n\n";
+        $contexto .= "---\n\n";
+        $contexto .= "# TAREFA\n\n";
+        $contexto .= $promptTemplate;
 
-            Log::info('Retomando Resumo Evolutivo de onde parou', [
-                'analysis_id' => $documentAnalysis->id,
-                'start_index' => $startIndex,
-                'total_documentos' => $totalDocumentos,
-                'progresso' => $documentAnalysis->getProgressPercentage() . '%'
-            ]);
-        } else {
-            // Inicializa novo processamento
-            if ($documentAnalysis) {
-                $documentAnalysis->initializeEvolutionaryAnalysis($totalDocumentos);
+        // Se muito grande, sumariza
+        if (mb_strlen($texto) > static::SINGLE_DOC_CHAR_LIMIT) {
+            $texto = $this->summarizeDocument($texto, $arquivo, $deepThinkingEnabled);
+
+            $contexto = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
+            $contexto .= "**Tipo:** Análise de Contrato\n";
+            $contexto .= "**Arquivo:** {$arquivo}\n";
+
+            if (!empty($parteInteressada)) {
+                $contexto .= "**Parte Interessada:** {$parteInteressada}\n";
             }
 
-            Log::info('Iniciando Resumo Evolutivo', [
-                'total_documentos' => $totalDocumentos,
-                'processo' => $numeroProcesso,
-                'analysis_id' => $documentAnalysis?->id
-            ]);
+            $contexto .= "\n---\n\n";
+            $contexto .= "# DOCUMENTO DO CONTRATO (RESUMIDO)\n\n";
+            $contexto .= $texto . "\n\n";
+            $contexto .= "---\n\n";
+            $contexto .= "# TAREFA\n\n";
+            $contexto .= $promptTemplate;
         }
 
-        $documentosProcessados = $startIndex;
+        return $this->callAPI($contexto, $deepThinkingEnabled);
+    }
+
+    /**
+     * Análise simples (fallback para poucos documentos)
+     * Concatena todos os documentos e envia em uma única chamada
+     */
+    protected function analyzeSimple(
+        string $promptTemplate,
+        array $documentos,
+        array $contextoDados,
+        bool $deepThinkingEnabled
+    ): string {
+        $nomeClasse = $contextoDados['classeProcessualNome']
+            ?? $contextoDados['classeProcessual']
+            ?? 'Não informada';
+
+        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
+        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
+
+        // Monta contexto
+        $prompt = "# CONTEXTO DO PROCESSO\n\n";
+        $prompt .= "**Classe Processual:** {$nomeClasse}\n";
+        $prompt .= "**Assuntos:** {$assuntos}\n";
+        $prompt .= "**Número do Processo:** {$numeroProcesso}\n";
+
+        if (!empty($contextoDados['valorCausa'])) {
+            $prompt .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
+        }
+
+        $prompt .= "\n---\n\n";
+        $prompt .= "# DOCUMENTOS DO PROCESSO\n\n";
 
         foreach ($documentos as $index => $doc) {
-            // Pula documentos já processados (retomada)
-            if ($index < $startIndex) {
-                continue;
-            }
-            $documentosProcessados++;
             $docNum = $index + 1;
             $descricao = $doc['descricao'] ?? "Documento {$docNum}";
             $texto = $doc['texto'] ?? '';
-            $charCount = mb_strlen($texto);
 
-            Log::info("Processando documento {$docNum}/{$totalDocumentos}: {$descricao}", [
-                'chars' => $charCount,
-                'has_previous_summary' => !empty($resumoEvolutivo)
-            ]);
-
-            // Sumariza documento individualmente se muito grande
-            if ($charCount > static::SINGLE_DOC_CHAR_LIMIT) {
-                Log::info("Documento {$docNum} excede limite individual. Sumarizando antes de incorporar.");
-
-                // Rate limiting
-                if ($documentosProcessados > 1) {
-                    usleep(static::RATE_LIMIT_DELAY_MS * 1000);
-                }
-
-                $texto = $this->summarizeDocument($texto, $descricao, $deepThinkingEnabled);
-            }
-
-            // Monta prompt evolutivo
-            $promptEvolutivo = $this->buildEvolutionaryPrompt(
-                $promptTemplate,
-                $resumoEvolutivo,
-                $texto,
-                $descricao,
-                $docNum,
-                $totalDocumentos,
-                $contextoBase,
-                $isContract
-            );
-
-            // Rate limiting entre chamadas
-            if ($documentosProcessados > 1) {
-                usleep(static::RATE_LIMIT_DELAY_MS * 1000);
-            }
-
-            // Faz chamada à API
-            try {
-                $response = $this->callAPI($promptEvolutivo, $deepThinkingEnabled);
-
-                if ($docNum < $totalDocumentos) {
-                    // Atualiza resumo evolutivo para próxima iteração
-                    $resumoEvolutivo = $response;
-
-                    // PERSISTE o estado no banco de dados
-                    if ($documentAnalysis) {
-                        $documentAnalysis->updateEvolutionaryState($index, $resumoEvolutivo);
-
-                        Log::info("Estado evolutivo persistido após documento {$docNum}", [
-                            'analysis_id' => $documentAnalysis->id,
-                            'resumo_chars' => mb_strlen($resumoEvolutivo),
-                            'progresso' => $documentAnalysis->getProgressPercentage() . '%'
-                        ]);
-                    } else {
-                        Log::info("Resumo evolutivo atualizado após documento {$docNum}", [
-                            'resumo_chars' => mb_strlen($resumoEvolutivo)
-                        ]);
-                    }
-                } else {
-                    // Último documento: retorna análise final
-                    Log::info('Análise final gerada com sucesso via Resumo Evolutivo', [
-                        'total_documentos_processados' => $documentosProcessados,
-                        'analysis_id' => $documentAnalysis?->id
-                    ]);
-
-                    return $response;
-                }
-
-            } catch (\Exception $e) {
-                Log::error("Erro ao processar documento {$docNum} no Resumo Evolutivo", [
-                    'descricao' => $descricao,
-                    'error' => $e->getMessage()
-                ]);
-                throw new \Exception("Falha no Resumo Evolutivo no documento {$docNum} ({$descricao}): " . $e->getMessage());
-            }
+            $prompt .= "## DOCUMENTO {$docNum}: {$descricao}\n\n";
+            $prompt .= $texto . "\n\n";
+            $prompt .= "---\n\n";
         }
 
-        // Fallback: se chegou aqui sem retornar, algo deu errado
-        throw new \Exception('Erro inesperado no Resumo Evolutivo: nenhuma análise final foi gerada');
+        $prompt .= "# TAREFA\n\n";
+        $prompt .= $promptTemplate;
+
+        return $this->callAPI($prompt, $deepThinkingEnabled);
     }
 
     /**
-     * Constrói o contexto base para análise
-     */
-    protected function buildContextoBase(
-        bool $isContract,
-        string $nomeClasse,
-        string $assuntos,
-        string $numeroProcesso,
-        string $tipoParte,
-        array $contextoDados
-    ): string {
-        if ($isContract) {
-            $contextoBase = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
-            $contextoBase .= "**Tipo:** Análise de Contrato\n";
-            $contextoBase .= "**Arquivo:** {$assuntos}\n";
-            if (!empty($tipoParte) && $tipoParte !== 'Não informada') {
-                $contextoBase .= "**Parte Interessada:** {$tipoParte}\n";
-            }
-        } else {
-            $contextoBase = "# CONTEXTO DO PROCESSO\n\n";
-            $contextoBase .= "**Classe Processual:** {$nomeClasse}\n";
-            $contextoBase .= "**Assuntos:** {$assuntos}\n";
-            $contextoBase .= "**Você está analisando como:** {$tipoParte}\n";
-            $contextoBase .= "**Número do Processo:** {$numeroProcesso}\n";
-
-            if (!empty($contextoDados['valorCausa'])) {
-                $contextoBase .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
-            }
-        }
-
-        $contextoBase .= "\n---\n\n";
-
-        return $contextoBase;
-    }
-
-    /**
-     * Monta o prompt evolutivo para análise de um documento
-     */
-    protected function buildEvolutionaryPrompt(
-        string $promptTemplate,
-        string $resumoAnterior,
-        string $textoDocumento,
-        string $descricaoDocumento,
-        int $docNum,
-        int $totalDocs,
-        string $contextoBase,
-        bool $isContract
-    ): string {
-        $promptEvolutivo = $contextoBase;
-
-        // Se há resumo anterior, inclui como contexto
-        if (!empty($resumoAnterior)) {
-            $promptEvolutivo .= "## RESUMO DOS DOCUMENTOS ANTERIORES\n\n";
-            $promptEvolutivo .= $resumoAnterior . "\n\n";
-            $promptEvolutivo .= "---\n\n";
-        }
-
-        // Adiciona documento atual
-        $promptEvolutivo .= "## NOVO DOCUMENTO PARA INCORPORAR\n\n";
-        $promptEvolutivo .= "### DOCUMENTO {$docNum}: {$descricaoDocumento}\n\n";
-        $promptEvolutivo .= $textoDocumento . "\n\n";
-        $promptEvolutivo .= "---\n\n";
-
-        // Instruções para resumo evolutivo
-        if ($docNum < $totalDocs) {
-            // Ainda há mais documentos: gera resumo evolutivo
-            $promptEvolutivo .= "## TAREFA\n\n";
-            $promptEvolutivo .= "Atualize o resumo do processo incorporando o novo documento acima.\n\n";
-            $promptEvolutivo .= "**IMPORTANTE:**\n";
-            $promptEvolutivo .= "1. Mantenha a ordem cronológica dos eventos\n";
-            $promptEvolutivo .= "2. Destaque conexões causais (ex: 'decisão X baseada na petição Y')\n";
-            $promptEvolutivo .= "3. Preserve informações relevantes dos documentos anteriores\n";
-            $promptEvolutivo .= "4. Adicione informações importantes do novo documento\n";
-            $promptEvolutivo .= "5. Mantenha o resumo conciso mas completo (máximo 4-5 parágrafos)\n";
-            $promptEvolutivo .= "6. Use markdown para estruturar\n\n";
-            $promptEvolutivo .= "**FORMATO:** Retorne apenas o resumo atualizado, sem comentários adicionais.";
-        } else {
-            // Último documento: gera análise final conforme solicitado pelo usuário
-            $promptEvolutivo .= "## TAREFA FINAL\n\n";
-            $promptEvolutivo .= $promptTemplate . "\n\n";
-            $promptEvolutivo .= "**INSTRUÇÕES:**\n";
-            $promptEvolutivo .= "1. Considere TODOS os documentos analisados até agora\n";
-            $promptEvolutivo .= "2. Incorpore o último documento apresentado acima\n";
-            $promptEvolutivo .= "3. Forneça a análise completa conforme solicitado\n";
-            $promptEvolutivo .= "4. Mantenha a perspectiva cronológica e causal dos eventos\n";
-        }
-
-        return $promptEvolutivo;
-    }
-
-    /**
-     * Sumariza um documento individual preservando informações jurídicas essenciais
+     * Sumariza um documento individual
      */
     protected function summarizeDocument(string $documentText, string $descricao, bool $deepThinkingEnabled = false): string
     {
         $promptSumarizacao = <<<PROMPT
 Você é um assistente jurídico especializado. Resuma o documento abaixo em 2-3 parágrafos concisos, destacando:
 
-1. **Tipo de manifestação** (petição inicial, contestação, decisão, despacho, sentença, recurso, etc.)
-2. **Partes envolvidas** (autor, réu, terceiros)
+1. **Tipo de manifestação** (petição, contestação, decisão, despacho, sentença, recurso, contrato, etc.)
+2. **Partes envolvidas**
 3. **Pedidos ou decisões principais**
-4. **Fundamentos legais citados** (artigos de lei, jurisprudência)
-5. **Fatos relevantes** que conectem este documento aos demais do processo
-6. **Datas importantes** mencionadas
+4. **Fundamentos legais citados**
+5. **Fatos relevantes**
+6. **Datas importantes**
 
-**IMPORTANTE:** Preserve informações que ajudem a entender a sequência cronológica e relações com outros documentos do processo.
+**IMPORTANTE:** Preserve informações essenciais para compreensão do documento.
 
 **Descrição do documento:** {$descricao}
 
@@ -450,8 +345,7 @@ PROMPT;
 
         $response = $this->callAPI($promptSumarizacao, $deepThinkingEnabled);
 
-        // Adiciona cabeçalho indicando que é um resumo
-        return "**[RESUMO AUTOMÁTICO - Documento original: " . number_format(mb_strlen($documentText)) . " caracteres]**\n\n" . $response;
+        return "**[RESUMO AUTOMÁTICO - Original: " . number_format(mb_strlen($documentText)) . " caracteres]**\n\n" . $response;
     }
 
     /**
@@ -463,7 +357,7 @@ PROMPT;
             return 'Não informados';
         }
 
-        $nomes = array_map(function($assunto) {
+        $nomes = array_map(function ($assunto) {
             return $assunto['nomeAssunto']
                 ?? $assunto['descricao']
                 ?? $assunto['codigoAssunto']
@@ -475,7 +369,7 @@ PROMPT;
     }
 
     /**
-     * Helper para executar chamadas à API com lógica de retry e backoff centralizada
+     * Helper para executar chamadas à API com lógica de retry e backoff
      */
     protected function withRetry(callable $apiCall, int $maxRetries = self::MAX_RETRIES_ON_RATE_LIMIT): string
     {
@@ -490,25 +384,18 @@ PROMPT;
             } catch (\Exception $e) {
                 $lastException = $e;
 
-                // Se recebeu 429 (rate limit), aplica exponential backoff
                 if ($this->isRateLimitError($e)) {
                     if ($attempt < $maxRetries) {
                         $backoffMs = $this->calculateBackoff($attempt);
-                        Log::warning("Rate limit atingido (429) no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms", [
-                            'attempt' => $attempt,
-                            'backoff_ms' => $backoffMs
-                        ]);
+                        Log::warning("Rate limit atingido no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms");
                         usleep($backoffMs * 1000);
                         continue;
                     }
                 }
 
-                // Se for erro de conexão ou timeout, tenta novamente com backoff simples
                 if ($attempt < 3 && $this->isConnectionError($e)) {
                     $retryDelay = 2000 * $attempt;
-                    Log::warning("Erro de conexão no " . $this->getName() . ". Tentativa {$attempt}/3. Aguardando {$retryDelay}ms", [
-                        'error' => $e->getMessage()
-                    ]);
+                    Log::warning("Erro de conexão no " . $this->getName() . ". Tentativa {$attempt}/3. Aguardando {$retryDelay}ms");
                     usleep($retryDelay * 1000);
                     continue;
                 }
@@ -526,9 +413,9 @@ PROMPT;
     protected function isRateLimitError(\Exception $e): bool
     {
         $msg = strtolower($e->getMessage());
-        return str_contains($msg, '429') || 
-               str_contains($msg, 'rate limit') || 
-               str_contains($msg, 'too many requests');
+        return str_contains($msg, '429') ||
+            str_contains($msg, 'rate limit') ||
+            str_contains($msg, 'too many requests');
     }
 
     /**
@@ -538,59 +425,9 @@ PROMPT;
     {
         $msg = strtolower($e->getMessage());
         return str_contains($msg, 'timeout') ||
-               str_contains($msg, 'connection') ||
-               str_contains($msg, 'curl error') ||
-               str_contains($msg, '504');
-    }
-
-    /**
-     * Identifica o tipo de parte do usuário que está consultando o processo
-     * Retorna uma descrição amigável do polo/tipo de parte
-     *
-     * IMPORTANTE: Esta função é específica para processos judiciais.
-     * Para contratos e pareceres jurídicos, use o campo 'parte_interessada' do contexto.
-     */
-    protected function identificarTipoParte(array $contextoDados): string
-    {
-        // Para contratos e pareceres jurídicos, usa a parte interessada informada
-        if ($this->isContractAnalysis($contextoDados)) {
-            return $contextoDados['parte_interessada'] ?? 'Não informada';
-        }
-
-        // Verifica se há informações de partes disponíveis (processos judiciais)
-        if (empty($contextoDados['parte']) || !\is_array($contextoDados['parte'])) {
-            return 'Órgão do Ministério Público';
-        }
-
-        $partes = $contextoDados['parte'];
-
-        // Procura por partes do MP (Ministério Público)
-        foreach ($partes as $parte) {
-            $polo = strtoupper($parte['polo'] ?? '');
-            $tipoPessoa = strtoupper($parte['tipoPessoa'] ?? '');
-            $nome = strtoupper($parte['nomeCompleto'] ?? $parte['nome'] ?? '');
-
-            // Identifica se é Ministério Público
-            if (str_contains($nome, 'MINISTÉRIO PÚBLICO') ||
-                str_contains($nome, 'MINISTERIO PUBLICO') ||
-                str_contains($nome, 'MP') ||
-                $tipoPessoa === 'MP') {
-
-                // Determina o polo
-                if ($polo === 'AT' || $polo === 'ATIVO') {
-                    return 'Ministério Público (Polo Ativo - Autor)';
-                } elseif ($polo === 'PA' || $polo === 'PASSIVO') {
-                    return 'Ministério Público (Polo Passivo - Réu)';
-                } elseif ($polo === 'TR' || $polo === 'TERCEIRO') {
-                    return 'Ministério Público (Terceiro Interessado)';
-                } else {
-                    return 'Ministério Público';
-                }
-            }
-        }
-
-        // Se não encontrou MP especificamente, retorna genérico (apenas para processos judiciais)
-        return 'Órgão do Ministério Público';
+            str_contains($msg, 'connection') ||
+            str_contains($msg, 'curl error') ||
+            str_contains($msg, '504');
     }
 
     /**

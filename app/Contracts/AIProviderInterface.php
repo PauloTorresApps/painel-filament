@@ -23,6 +23,20 @@ interface AIProviderInterface
     ): string;
 
     /**
+     * Analisa um único documento (usado na fase MAP do map-reduce)
+     *
+     * @param string $prompt Prompt de análise
+     * @param string $documentText Texto do documento
+     * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo
+     * @return string Análise gerada pela IA
+     */
+    public function analyzeSingleDocument(
+        string $prompt,
+        string $documentText,
+        bool $deepThinkingEnabled = false
+    ): string;
+
+    /**
      * Valida se a API está acessível
      */
     public function healthCheck(): bool;

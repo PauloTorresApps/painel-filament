@@ -3,28 +3,32 @@
 namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
+use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use App\Services\EprocService;
 use App\Services\PdfToTextService;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification as FilamentNotification;
 
+/**
+ * Job orquestrador para análise de documentos de processo via map-reduce.
+ *
+ * Responsabilidades:
+ * 1. Baixar documentos do e-Proc
+ * 2. Extrair texto dos PDFs
+ * 3. Criar registros de micro-análises
+ * 4. Disparar jobs de MAP para processamento paralelo
+ */
 class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 0; // Sem timeout - permite análises muito longas
-    public int $tries = 2; // Tenta 2 vezes se falhar
+    public int $timeout = 0; // Sem timeout - permite downloads longos
+    public int $tries = 2;
 
-    /**
-     * Create a new job instance.
-     */
     public function __construct(
         public int $userId,
         public string $numeroProcesso,
@@ -35,24 +39,18 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public bool $deepThinkingEnabled,
         public string $userLogin,
         public string $senha,
-        public int $judicialUserId,
-        public string $analysisStrategy = 'evolutionary' // 'hierarchical' ou 'evolutionary'
+        public int $judicialUserId
     ) {}
 
     /**
-     * A chave única para este job (evita duplicação)
-     * Garante que apenas um job seja processado por vez para cada combinação usuário+processo
+     * Chave única para evitar duplicação
      */
     public function uniqueId(): string
     {
         return "analyze_process_{$this->userId}_{$this->numeroProcesso}";
     }
 
-    /**
-     * Tempo que o lock do unique job deve durar (em segundos)
-     * 10 minutos = tempo máximo de processamento do job
-     */
-    public int $uniqueFor = 600;
+    public int $uniqueFor = 600; // 10 minutos
 
     /**
      * Execute o job.
@@ -60,74 +58,97 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     public function handle(): void
     {
         try {
-            // PROTEÇÃO CONTRA DUPLICAÇÃO: Bloqueia apenas análises duplicadas do MESMO processo
-            // Permite análises simultâneas de processos diferentes
+            // Proteção contra duplicação
             $analiseEmAndamento = DocumentAnalysis::where('user_id', $this->userId)
                 ->where('numero_processo', $this->numeroProcesso)
                 ->where('status', 'processing')
                 ->first();
 
             if ($analiseEmAndamento) {
-                Log::warning('Job bloqueado: análise duplicada do mesmo processo em andamento', [
+                Log::warning('AnalyzeProcessDocuments: Análise duplicada bloqueada', [
                     'user_id' => $this->userId,
                     'numero_processo' => $this->numeroProcesso,
                     'analise_existente_id' => $analiseEmAndamento->id,
-                    'created_at' => $analiseEmAndamento->created_at
                 ]);
-                return; // Aborta para evitar duplicação do mesmo processo
-            }
-
-            $user = User::find($this->userId);
-
-            if (!$user) {
-                Log::error('Usuário não encontrado', ['user_id' => $this->userId]);
                 return;
             }
 
-            $startTime = microtime(true);
+            $user = User::find($this->userId);
+            if (!$user) {
+                Log::error('AnalyzeProcessDocuments: Usuário não encontrado', ['user_id' => $this->userId]);
+                return;
+            }
+
             $pdfService = new PdfToTextService();
             $eprocService = new EprocService($this->userLogin, $this->senha);
 
-            // DEBUG: Log contextoDados para verificar o que está chegando
-            Log::info('📋 AnalyzeProcessDocuments - contextoDados recebidos', [
-                'keys' => array_keys($this->contextoDados),
-                'numeroProcesso' => $this->numeroProcesso,
-                'classe_original' => $this->contextoDados['classeProcessual'] ?? 'NULL',
-                'classe_nome' => $this->contextoDados['classeProcessualNome'] ?? 'NULL',
-                'tem_assunto' => isset($this->contextoDados['assunto']),
-                'assunto_type' => isset($this->contextoDados['assunto']) ? gettype($this->contextoDados['assunto']) : 'NULL',
-                'assunto_count' => isset($this->contextoDados['assunto']) && is_array($this->contextoDados['assunto']) ? count($this->contextoDados['assunto']) : 0,
-                'tem_partes' => isset($this->contextoDados['parte']),
-                'partes_sample' => isset($this->contextoDados['parte']) ? json_encode(array_slice($this->contextoDados['parte'], 0, 2)) : 'NULL'
+            Log::info('AnalyzeProcessDocuments: Iniciando download de documentos', [
+                'numero_processo' => $this->numeroProcesso,
+                'total_documentos' => count($this->documentos),
             ]);
-
-            // Instancia o serviço de IA baseado no provider selecionado
-            $aiService = $this->getAIService($this->aiProvider);
-
-            // Array para armazenar documentos processados
-            $documentosProcessados = [];
-            $totalDocumentos = count($this->documentos);
-            $processados = 0;
 
             // Notifica início do download
             $this->sendNotification(
                 $user,
-                '📥 Baixando Documentos',
-                "Baixando {$totalDocumentos} documento(s) do e-Proc para o processo {$this->numeroProcesso}. Isso pode levar alguns minutos...",
+                'Baixando Documentos',
+                "Baixando " . count($this->documentos) . " documento(s) do e-Proc para o processo {$this->numeroProcesso}.",
                 'info'
             );
 
-            // Processa cada documento
-            foreach ($this->documentos as $documento) {
-                try {
-                    $processados++;
+            // Formata classe e assuntos
+            $classeProcessual = $this->contextoDados['classeProcessualNome']
+                ?? $this->contextoDados['classeProcessual']
+                ?? null;
+            $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
 
+            // Cria registro principal da análise
+            $documentAnalysis = DocumentAnalysis::create([
+                'user_id' => $this->userId,
+                'numero_processo' => $this->numeroProcesso,
+                'classe_processual' => $classeProcessual,
+                'assuntos' => $assuntos,
+                'descricao_documento' => count($this->documentos) . ' documento(s) do processo',
+                'status' => 'processing',
+                'total_documents' => count($this->documentos),
+                'job_parameters' => [
+                    'documentos' => $this->documentos,
+                    'contextoDados' => $this->contextoDados,
+                    'promptTemplate' => $this->promptTemplate,
+                    'aiProvider' => $this->aiProvider,
+                    'deepThinkingEnabled' => $this->deepThinkingEnabled,
+                ],
+            ]);
+
+            // Inicializa para map-reduce
+            $documentAnalysis->initializeMapReduce(count($this->documentos));
+
+            Log::info('AnalyzeProcessDocuments: Registro de análise criado', [
+                'analysis_id' => $documentAnalysis->id,
+            ]);
+
+            // Processa cada documento e cria micro-análises
+            $microAnalysesCreated = 0;
+            $totalCharacters = 0;
+
+            foreach ($this->documentos as $index => $documento) {
+                try {
                     // Busca o conteúdo do documento
                     $documentoCompleto = $this->fetchDocumento($eprocService, $documento['idDocumento']);
 
                     if (!$documentoCompleto || empty($documentoCompleto['conteudo'])) {
-                        Log::warning('Documento sem conteúdo', [
+                        Log::warning('AnalyzeProcessDocuments: Documento sem conteúdo', [
                             'id_documento' => $documento['idDocumento']
+                        ]);
+
+                        // Cria micro-análise com status de falha
+                        DocumentMicroAnalysis::create([
+                            'document_analysis_id' => $documentAnalysis->id,
+                            'document_index' => $index,
+                            'id_documento' => $documento['idDocumento'],
+                            'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                            'status' => 'failed',
+                            'error_message' => 'Documento sem conteúdo',
+                            'reduce_level' => 0,
                         ]);
                         continue;
                     }
@@ -138,45 +159,65 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         "doc_{$documento['idDocumento']}.pdf"
                     );
 
-                    // Armazena informações do documento processado
-                    $docData = [
-                        'descricao' => $documento['descricao'] ?? "Documento {$processados}",
-                        'texto' => $texto,
+                    $totalCharacters += mb_strlen($texto);
+
+                    // Cria registro de micro-análise
+                    $microAnalysis = DocumentMicroAnalysis::create([
+                        'document_analysis_id' => $documentAnalysis->id,
+                        'document_index' => $index,
                         'id_documento' => $documento['idDocumento'],
-                        'dataHora' => $documento['dataHora'] ?? null,
-                    ];
+                        'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                        'extracted_text' => $texto,
+                        'status' => 'pending',
+                        'reduce_level' => 0, // Nível MAP
+                    ]);
 
-                    // Se for Gemini, inclui PDF base64 para usar File API
-                    if ($this->aiProvider === 'gemini') {
-                        $docData['pdf_base64'] = $documentoCompleto['conteudo'];
-                        Log::info('Incluindo PDF base64 para Gemini File API', [
-                            'id_documento' => $documento['idDocumento'],
-                            'pdf_size' => strlen($documentoCompleto['conteudo'])
-                        ]);
-                    }
+                    $microAnalysesCreated++;
 
-                    $documentosProcessados[] = $docData;
-
-                    // Notifica progresso
-                    if ($processados % 5 == 0 || $processados == $totalDocumentos) {
-                        $this->sendNotification(
-                            $user,
-                            'Progresso',
-                            "Processados {$processados} de {$totalDocumentos} documentos",
-                            'info'
-                        );
-                    }
+                    Log::info('AnalyzeProcessDocuments: Micro-análise criada', [
+                        'micro_id' => $microAnalysis->id,
+                        'document_index' => $index,
+                        'chars' => mb_strlen($texto),
+                    ]);
 
                 } catch (\Exception $e) {
-                    Log::error('Erro ao processar documento', [
+                    Log::error('AnalyzeProcessDocuments: Erro ao processar documento', [
                         'id_documento' => $documento['idDocumento'],
                         'error' => $e->getMessage()
                     ]);
-                    continue;
+
+                    // Cria micro-análise com status de falha
+                    DocumentMicroAnalysis::create([
+                        'document_analysis_id' => $documentAnalysis->id,
+                        'document_index' => $index,
+                        'id_documento' => $documento['idDocumento'],
+                        'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                        'status' => 'failed',
+                        'error_message' => $e->getMessage(),
+                        'reduce_level' => 0,
+                    ]);
+                }
+
+                // Notifica progresso a cada 10 documentos
+                if (($index + 1) % 10 === 0) {
+                    $this->sendNotification(
+                        $user,
+                        'Progresso',
+                        "Baixados " . ($index + 1) . " de " . count($this->documentos) . " documentos",
+                        'info'
+                    );
                 }
             }
 
-            if (empty($documentosProcessados)) {
+            // Atualiza total de caracteres
+            $documentAnalysis->update(['total_characters' => $totalCharacters]);
+
+            if ($microAnalysesCreated === 0) {
+                $documentAnalysis->update([
+                    'status' => 'failed',
+                    'error_message' => 'Nenhum documento pôde ser processado'
+                ]);
+
                 $this->sendNotification(
                     $user,
                     'Análise Falhou',
@@ -186,49 +227,14 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            // Formata classe e assuntos
-            $classeProcessual = $this->contextoDados['classeProcessualNome']
-                ?? $this->contextoDados['classeProcessual']
-                ?? null;
-
-            $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
-
-            // Calcula total de caracteres de todos os documentos
-            $totalCharacters = array_reduce($documentosProcessados, function($carry, $doc) {
-                return $carry + mb_strlen($doc['texto'] ?? '');
-            }, 0);
-
-            // Cria UM ÚNICO registro para o processo inteiro
-            $documentAnalysis = DocumentAnalysis::create([
-                'user_id' => $this->userId,
-                'numero_processo' => $this->numeroProcesso,
-                'classe_processual' => $classeProcessual,
-                'assuntos' => $assuntos,
-                'descricao_documento' => count($documentosProcessados) . ' documento(s) do processo',
-                'extracted_text' => '', // Será preenchido depois com a análise
-                'status' => 'processing',
-                'total_characters' => $totalCharacters,
-                'job_parameters' => [
-                    'documentos' => $this->documentos,
-                    'contextoDados' => $this->contextoDados,
-                    'promptTemplate' => $this->promptTemplate,
-                    'aiProvider' => $this->aiProvider,
-                    'deepThinkingEnabled' => $this->deepThinkingEnabled,
-                    'userLogin' => $this->userLogin,
-                    'senha' => $this->senha,
-                    'judicialUserId' => $this->judicialUserId,
-                    'analysisStrategy' => $this->analysisStrategy,
-                ],
-            ]);
-
-            Log::info('Registro de análise criado', [
+            Log::info('AnalyzeProcessDocuments: Download concluído, disparando jobs de MAP', [
                 'analysis_id' => $documentAnalysis->id,
-                'numero_processo' => $this->numeroProcesso,
-                'total_documentos' => count($documentosProcessados)
+                'micro_analyses_created' => $microAnalysesCreated,
+                'total_characters' => $totalCharacters,
             ]);
 
-            // Notifica que download terminou e análise vai começar
-            $providerName = match($this->aiProvider) {
+            // Notifica que a análise vai começar
+            $providerName = match ($this->aiProvider) {
                 'gemini' => 'Google Gemini',
                 'deepseek' => 'DeepSeek',
                 'openai' => 'OpenAI',
@@ -237,55 +243,20 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 
             $this->sendNotification(
                 $user,
-                '🤖 Iniciando Análise por IA',
-                "Download concluído! Agora a {$providerName} está analisando " . count($documentosProcessados) . " documento(s). Aguarde...",
+                'Iniciando Análise por IA',
+                "Download concluído! A {$providerName} está analisando {$microAnalysesCreated} documento(s) em paralelo.",
                 'info'
             );
 
-            // Envia TODOS os documentos juntos com Resumo Evolutivo
-            // O estado será persistido após cada documento processado
-            Log::info('Enviando para análise via ' . $aiService->getName(), [
-                'provider' => $this->aiProvider,
-                'deep_thinking_enabled' => $this->deepThinkingEnabled,
-                'total_documentos' => count($documentosProcessados),
-                'analysis_id' => $documentAnalysis->id
-            ]);
-
-            $analiseCompleta = $aiService->analyzeDocuments(
-                $this->promptTemplate,
-                $documentosProcessados,
-                $this->contextoDados,
-                $this->deepThinkingEnabled,
-                $documentAnalysis, // Passa o DocumentAnalysis para persistência
-                $this->analysisStrategy // Estratégia de análise (hierarchical ou evolutionary)
-            );
-
-            $endTime = microtime(true);
-            $processingTime = (int) (($endTime - $startTime) * 1000);
-
-            // Finaliza análise evolutiva com sucesso
-            $documentAnalysis->finalizeEvolutionaryAnalysis($analiseCompleta, $processingTime);
-
-            Log::info('Análise concluída e registro atualizado', [
-                'analysis_id' => $documentAnalysis->id,
-                'processing_time_ms' => $processingTime
-            ]);
-
-            // Notifica sucesso
-            $this->sendNotification(
-                $user,
-                'Análise Concluída',
-                "Análise de {$processados} documento(s) concluída com sucesso! Tempo: " . round($processingTime / 1000, 2) . "s",
-                'success'
-            );
+            // Dispara jobs de MAP para cada micro-análise pendente
+            $this->dispatchMapJobs($documentAnalysis);
 
         } catch (\Exception $e) {
-            Log::error('Erro geral na análise de documentos', [
+            Log::error('AnalyzeProcessDocuments: Erro geral', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Marca como falho (se o registro foi criado)
             if (isset($documentAnalysis)) {
                 $documentAnalysis->update([
                     'status' => 'failed',
@@ -305,6 +276,43 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     }
 
     /**
+     * Dispara jobs de MAP para as micro-análises pendentes
+     */
+    private function dispatchMapJobs(DocumentAnalysis $documentAnalysis): void
+    {
+        $pendingMicroAnalyses = $documentAnalysis->microAnalyses()
+            ->where('status', 'pending')
+            ->where('reduce_level', 0)
+            ->get();
+
+        $jobs = [];
+
+        foreach ($pendingMicroAnalyses as $microAnalysis) {
+            $jobs[] = new MapDocumentAnalysisJob(
+                $microAnalysis->id,
+                $this->aiProvider,
+                $this->deepThinkingEnabled,
+                $this->contextoDados
+            );
+        }
+
+        if (empty($jobs)) {
+            Log::warning('AnalyzeProcessDocuments: Nenhum job de MAP para disparar');
+            return;
+        }
+
+        // Dispara todos os jobs na fila de análise
+        foreach ($jobs as $job) {
+            dispatch($job)->onQueue('analysis');
+        }
+
+        Log::info('AnalyzeProcessDocuments: Jobs de MAP disparados', [
+            'analysis_id' => $documentAnalysis->id,
+            'total_jobs' => count($jobs),
+        ]);
+    }
+
+    /**
      * Busca o documento completo do webservice
      */
     private function fetchDocumento(EprocService $eprocService, string $idDocumento): ?array
@@ -313,80 +321,35 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $resultado = $eprocService->consultarDocumentosProcesso(
                 $this->numeroProcesso,
                 [$idDocumento],
-                true // incluir conteúdo
+                true
             );
 
-            // Tenta diferentes caminhos dependendo da estrutura do retorno
             $documentos = null;
 
-            // Caminho 1: Body->respostaConsultarDocumentosProcesso->documentos (quando tem conteúdo válido)
             if (isset($resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'])) {
                 $documentos = $resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'];
-                Log::info('Documentos encontrados via Body->respostaConsultarDocumentosProcesso', [
-                    'id_documento' => $idDocumento
-                ]);
-            }
-            // Caminho 2: documento (estrutura antiga/alternativa)
-            elseif (isset($resultado['documento'])) {
+            } elseif (isset($resultado['documento'])) {
                 $documentos = $resultado['documento'];
-                Log::info('Documentos encontrados via documento', [
-                    'id_documento' => $idDocumento
-                ]);
-            }
-            // Caminho 3: Resposta sem conteúdo (HTML)
-            else {
-                Log::warning('Estrutura de retorno não reconhecida', [
-                    'id_documento' => $idDocumento,
-                    'keys_resultado' => array_keys($resultado),
-                    'primeiro_nivel' => json_encode(array_keys($resultado))
-                ]);
+            } else {
                 return null;
             }
 
             if (empty($documentos)) {
-                Log::warning('Array de documentos está vazio', [
-                    'id_documento' => $idDocumento
-                ]);
                 return null;
             }
 
-            // Se retornou um único documento, não está em array
             if (isset($documentos['idDocumento'])) {
                 $documentos = [$documentos];
             }
 
-            Log::info('Documentos extraídos', [
-                'quantidade' => count($documentos),
-                'primeiro_doc_keys' => isset($documentos[0]) ? array_keys($documentos[0]) : []
-            ]);
-
             foreach ($documentos as $doc) {
                 if ($doc['idDocumento'] == $idDocumento) {
-                    // O conteúdo pode vir de duas formas após o EprocService processar:
-                    // 1. $doc['conteudo']['conteudo'] - quando o anexo MTOM foi vinculado
-                    // 2. $doc['conteudo'] - string base64 direta (casos antigos)
                     $conteudoBase64 = null;
 
                     if (is_array($doc['conteudo'] ?? null) && isset($doc['conteudo']['conteudo'])) {
-                        // Anexo MTOM vinculado - base64 está dentro do array
                         $conteudoBase64 = $doc['conteudo']['conteudo'];
-                        Log::info('Conteúdo extraído de doc[conteudo][conteudo]', [
-                            'id' => $idDocumento,
-                            'tamanho' => strlen($conteudoBase64)
-                        ]);
                     } elseif (is_string($doc['conteudo'] ?? null)) {
-                        // String base64 direta
                         $conteudoBase64 = $doc['conteudo'];
-                        Log::info('Conteúdo extraído de doc[conteudo] diretamente', [
-                            'id' => $idDocumento,
-                            'tamanho' => strlen($conteudoBase64)
-                        ]);
-                    } else {
-                        Log::warning('Estrutura de conteúdo não reconhecida', [
-                            'id' => $idDocumento,
-                            'tipo_conteudo' => gettype($doc['conteudo'] ?? null),
-                            'keys_conteudo' => is_array($doc['conteudo'] ?? null) ? array_keys($doc['conteudo']) : 'n/a'
-                        ]);
                     }
 
                     return [
@@ -396,15 +359,10 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 }
             }
 
-            Log::warning('Documento não encontrado no loop', [
-                'id_documento_procurado' => $idDocumento,
-                'ids_encontrados' => array_map(fn($d) => $d['idDocumento'] ?? 'sem_id', $documentos)
-            ]);
-
             return null;
 
         } catch (\Exception $e) {
-            Log::error('Erro ao buscar documento', [
+            Log::error('AnalyzeProcessDocuments: Erro ao buscar documento', [
                 'id_documento' => $idDocumento,
                 'error' => $e->getMessage()
             ]);
@@ -413,7 +371,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * Envia notificação para o usuário via Filament
+     * Envia notificação para o usuário
      */
     private function sendNotification(?User $user, string $title, string $body, string $status = 'info'): void
     {
@@ -421,24 +379,17 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        FilamentNotification::make()
-            ->title($title)
-            ->body($body)
-            ->status($status)
-            ->sendToDatabase($user);
-    }
-
-    /**
-     * Retorna o serviço de IA baseado no provider selecionado
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new \App\Services\OpenAIService(),
-            default => throw new \Exception("Provider de IA '{$provider}' não suportado. Use 'gemini', 'deepseek' ou 'openai'.")
-        };
+        try {
+            FilamentNotification::make()
+                ->title($title)
+                ->body($body)
+                ->status($status)
+                ->sendToDatabase($user);
+        } catch (\Exception $e) {
+            Log::warning('AnalyzeProcessDocuments: Erro ao enviar notificação', [
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 
     /**
@@ -450,7 +401,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             return null;
         }
 
-        $nomes = array_map(function($assunto) {
+        $nomes = array_map(function ($assunto) {
             return $assunto['nomeAssunto']
                 ?? $assunto['descricao']
                 ?? $assunto['codigoAssunto']
@@ -458,7 +409,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 ?? null;
         }, $assuntos);
 
-        $nomes = array_filter($nomes); // Remove nulls
+        $nomes = array_filter($nomes);
 
         return !empty($nomes) ? implode(', ', $nomes) : null;
     }
