@@ -432,6 +432,18 @@
                                                                                     {{ number_format($documento['tamanhoConteudo'] / 1024, 0) }} KB
                                                                                 </span>
                                                                             @endif
+                                                                            @php
+                                                                                // Mimetype está dentro de conteudo
+                                                                                $mimetype = $documento['conteudo']['mimetype'] ?? null;
+                                                                            @endphp
+                                                                            @if(!empty($mimetype))
+                                                                                <span class="flex items-center gap-1" title="{{ $mimetype }}">
+                                                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                                                                    </svg>
+                                                                                    {{ $mimetype }}
+                                                                                </span>
+                                                                            @endif
                                                                         </div>
                                                                     </div>
                                                                     <div class="flex items-center gap-2">
@@ -445,28 +457,6 @@
                                                                             </svg>
                                                                             Visualizar
                                                                         </button>
-
-                                                                        @if(!$isArquivoMedia)
-                                                                            {{-- Documento não é mídia - pode enviar para análise --}}
-                                                                            <button
-                                                                                type="button"
-                                                                                class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 rounded-lg transition shadow-sm hover:shadow border border-indigo-200 dark:border-indigo-800/40"
-                                                                                title="Enviar documento para análise"
-                                                                            >
-                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                                                                                </svg>
-                                                                                Enviar para Análise
-                                                                            </button>
-                                                                        @else
-                                                                            {{-- Arquivo de mídia - não pode ser enviado para análise --}}
-                                                                            <span class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600" title="Arquivos de mídia (imagens e vídeos) não podem ser enviados para análise">
-                                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                                                                </svg>
-                                                                                Arquivo de Mídia
-                                                                            </span>
-                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endforeach

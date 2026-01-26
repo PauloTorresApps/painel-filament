@@ -177,7 +177,7 @@ class ProcessDetails extends Page
                         ->first();
 
                     return $ultimaAnalise
-                        ? route('filament.analises.resources.document-analyses.view', $ultimaAnalise)
+                        ? route('filament.analises.resources.historico-processos.view', $ultimaAnalise)
                         : null;
                 })
                 ->visible(function () {
@@ -272,7 +272,7 @@ class ProcessDetails extends Page
                         'id' => $doc['idDocumento'] ?? 'sem_id',
                         'descricao' => $doc['descricao'] ?? 'sem_descricao',
                         'nivelSigilo' => $doc['nivelSigilo'] ?? 'null',
-                        'mimetype' => $doc['mimetype'] ?? 'null',
+                        'mimetype' => $doc['conteudo']['mimetype'] ?? 'null',
                     ];
                 })->toArray()
             ]);
@@ -280,7 +280,8 @@ class ProcessDetails extends Page
             // Filtra apenas documentos que não sejam vídeos
             $documentosParaAnalise = collect($this->documentos)->filter(function ($doc) {
                 $descricao = strtolower($doc['descricao'] ?? '');
-                $mimeType = strtolower($doc['mimetype'] ?? '');
+                // Mimetype está dentro de conteudo
+                $mimeType = strtolower($doc['conteudo']['mimetype'] ?? '');
 
                 // 1. Rejeita documentos HTML (atos ordinatórios sem conteúdo real)
                 if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) {
