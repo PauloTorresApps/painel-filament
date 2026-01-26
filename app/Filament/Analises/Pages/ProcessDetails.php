@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Pages;
+namespace App\Filament\Analises\Pages;
 
 use BackedEnum;
 use Filament\Pages\Page;
@@ -177,7 +177,7 @@ class ProcessDetails extends Page
                         ->first();
 
                     return $ultimaAnalise
-                        ? route('filament.admin.resources.document-analyses.view', $ultimaAnalise)
+                        ? route('filament.analises.resources.document-analyses.view', $ultimaAnalise)
                         : null;
                 })
                 ->visible(function () {
@@ -210,7 +210,7 @@ class ProcessDetails extends Page
                 ->label('Voltar')
                 ->color('gray')
                 ->icon('heroicon-m-arrow-left')
-                ->url(route('filament.admin.pages.process-analysis')),
+                ->url(route('filament.analises.pages.process-analysis')),
         ];
     }
 
