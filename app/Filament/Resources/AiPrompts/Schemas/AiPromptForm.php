@@ -7,7 +7,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
-use Illuminate\Database\Eloquent\Builder;
+use Filament\Forms\Components\Hidden;
 
 class AiPromptForm
 {
@@ -15,16 +15,9 @@ class AiPromptForm
     {
         return $schema
             ->components([
-                Select::make('system_id')
-                    ->label('Sistema')
-                    ->relationship(
-                        'system',
-                        'name',
-                        fn (Builder $query) => $query->where('is_active', true)->orderBy('name')
-                    )
-                    ->required()
-                    ->searchable()
-                    ->helperText('Selecione o sistema judicial ao qual este prompt se aplica'),
+                // system_id fixo para EPROC (análise de processos)
+                Hidden::make('system_id')
+                    ->default(1),
 
                 TextInput::make('title')
                     ->label('Título')

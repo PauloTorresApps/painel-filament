@@ -223,7 +223,7 @@ class EprocController extends Controller
                 'senha' => $senha
             ], now()->addMinutes(10));
 
-            return redirect()->route('filament.admin.pages.process-details', ['key' => $cacheKey]);
+            return redirect()->route('filament.analises.pages.process-details', ['key' => $cacheKey]);
 
         } catch (Exception $e) {
             return back()

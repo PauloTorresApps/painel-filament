@@ -60,7 +60,9 @@ class AiPromptResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        // Acesso controlado pela Policy - todos os prompts são globais agora
-        return parent::getEloquentQuery();
+        // Filtra apenas prompts do sistema EPROC (análise de processos)
+        // system_id = 1 é o EPROC, conforme definido no banco de dados
+        return parent::getEloquentQuery()
+            ->where('system_id', 1);
     }
 }
