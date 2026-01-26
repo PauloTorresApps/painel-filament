@@ -156,7 +156,13 @@ class ContractPromptResource extends Resource
                     ->label('Tipo')
                     ->badge()
                     ->formatStateUsing(fn ($state) => AiPrompt::getContractPromptTypes()[$state] ?? $state)
-                    ->color(fn ($state) => $state === AiPrompt::TYPE_ANALYSIS ? 'info' : 'warning')
+                    ->color(fn ($state) => match ($state) {
+                        AiPrompt::TYPE_ANALYSIS => 'info',
+                        AiPrompt::TYPE_LEGAL_OPINION => 'warning',
+                        AiPrompt::TYPE_STORYBOARD => 'success',
+                        AiPrompt::TYPE_INFOGRAPHIC => 'danger',
+                        default => 'gray',
+                    })
                     ->sortable(),
 
                 TextColumn::make('title')

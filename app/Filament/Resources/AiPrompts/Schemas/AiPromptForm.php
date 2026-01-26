@@ -16,15 +16,18 @@ class AiPromptForm
         return $schema
             ->components([
                 Select::make('system_id')
-                    ->label('Sistema')
+                    ->label('Sistema Judicial')
                     ->relationship(
                         'system',
                         'name',
-                        fn (Builder $query) => $query->where('is_active', true)->orderBy('name')
+                        fn (Builder $query) => $query
+                            ->where('is_active', true)
+                            ->where('name', '!=', 'Contratos') // Contratos tem resource próprio
+                            ->orderBy('name')
                     )
                     ->required()
                     ->searchable()
-                    ->helperText('Selecione o sistema judicial ao qual este prompt se aplica'),
+                    ->helperText('Selecione o sistema judicial (EPROC, PJE, etc.) ao qual este prompt se aplica'),
 
                 TextInput::make('title')
                     ->label('Título')

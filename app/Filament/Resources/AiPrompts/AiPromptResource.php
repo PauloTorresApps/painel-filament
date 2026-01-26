@@ -8,6 +8,7 @@ use App\Filament\Resources\AiPrompts\Pages\ListAiPrompts;
 use App\Filament\Resources\AiPrompts\Schemas\AiPromptForm;
 use App\Filament\Resources\AiPrompts\Tables\AiPromptsTable;
 use App\Models\AiPrompt;
+use App\Models\System;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -58,9 +59,28 @@ class AiPromptResource extends Resource
         ];
     }
 
+    /**
+     * Obtém o ID do sistema de Contratos para exclusão
+     */
+    public static function getContractSystemId(): ?int
+    {
+        static $systemId = null;
+
+        if ($systemId === null) {
+            $system = System::where('name', 'Contratos')->first();
+            $systemId = $system?->id;
+        }
+
+        return $systemId;
+    }
+
     public static function getEloquentQuery(): Builder
     {
-        // Acesso controlado pela Policy - todos os prompts são globais agora
-        return parent::getEloquentQuery();
+        $contractSystemId = static::getContractSystemId();
+
+        // Filtra prompts que NÃO sejam do sistema de Contratos
+        // Prompts de análise processual pertencem a sistemas judiciais (EPROC, PJE, etc.)
+        return parent::getEloquentQuery()
+            ->when($contractSystemId, fn ($query) => $query->where('system_id', '!=', $contractSystemId));
     }
 }
