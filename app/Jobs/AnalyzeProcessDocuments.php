@@ -6,6 +6,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use App\Services\EprocService;
+use App\Services\OcrService;
 use App\Services\PdfToTextService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -39,7 +40,9 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public bool $deepThinkingEnabled,
         public string $userLogin,
         public string $senha,
-        public int $judicialUserId
+        public int $judicialUserId,
+        public string $analysisStrategy = 'evolutionary',
+        public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
     ) {}
 
     /**
@@ -132,6 +135,10 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 
             foreach ($this->documentos as $index => $documento) {
                 try {
+                    // Obtém o mimetype do documento
+                    $mimetype = strtolower($documento['conteudo']['mimetype'] ?? '');
+                    $isImage = str_starts_with($mimetype, 'image/');
+
                     // Busca o conteúdo do documento
                     $documentoCompleto = $this->fetchDocumento($eprocService, $documento['idDocumento']);
 
@@ -146,6 +153,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                             'document_index' => $index,
                             'id_documento' => $documento['idDocumento'],
                             'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                            'mimetype' => $mimetype,
                             'status' => 'failed',
                             'error_message' => 'Documento sem conteúdo',
                             'reduce_level' => 0,
@@ -153,11 +161,38 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         continue;
                     }
 
-                    // Extrai texto do PDF
-                    $texto = $pdfService->extractText(
-                        $documentoCompleto['conteudo'],
-                        "doc_{$documento['idDocumento']}.pdf"
-                    );
+                    $texto = '';
+
+                    if ($isImage) {
+                        // Para imagens, extrai texto usando OCR (Tesseract)
+                        $ocrService = new OcrService();
+
+                        if (!$ocrService->isAvailable()) {
+                            Log::warning('AnalyzeProcessDocuments: Tesseract OCR não disponível, pulando imagem', [
+                                'id_documento' => $documento['idDocumento'],
+                                'mimetype' => $mimetype,
+                            ]);
+                            throw new \Exception('Tesseract OCR não está disponível para extrair texto da imagem');
+                        }
+
+                        $texto = $ocrService->extractText(
+                            $documentoCompleto['conteudo'],
+                            $mimetype,
+                            "doc_{$documento['idDocumento']}"
+                        );
+
+                        Log::info('AnalyzeProcessDocuments: Texto extraído da imagem via OCR', [
+                            'id_documento' => $documento['idDocumento'],
+                            'mimetype' => $mimetype,
+                            'chars_extracted' => mb_strlen($texto),
+                        ]);
+                    } else {
+                        // Para PDFs e outros documentos, extrai texto
+                        $texto = $pdfService->extractText(
+                            $documentoCompleto['conteudo'],
+                            "doc_{$documento['idDocumento']}.pdf"
+                        );
+                    }
 
                     $totalCharacters += mb_strlen($texto);
 
@@ -167,6 +202,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         'document_index' => $index,
                         'id_documento' => $documento['idDocumento'],
                         'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                        'mimetype' => $mimetype,
                         'extracted_text' => $texto,
                         'status' => 'pending',
                         'reduce_level' => 0, // Nível MAP
@@ -177,6 +213,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                     Log::info('AnalyzeProcessDocuments: Micro-análise criada', [
                         'micro_id' => $microAnalysis->id,
                         'document_index' => $index,
+                        'mimetype' => $mimetype,
+                        'is_image' => $isImage,
                         'chars' => mb_strlen($texto),
                     ]);
 
@@ -192,6 +230,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         'document_index' => $index,
                         'id_documento' => $documento['idDocumento'],
                         'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
+                        'mimetype' => $mimetype ?? null,
                         'status' => 'failed',
                         'error_message' => $e->getMessage(),
                         'reduce_level' => 0,
@@ -292,7 +331,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 $microAnalysis->id,
                 $this->aiProvider,
                 $this->deepThinkingEnabled,
-                $this->contextoDados
+                $this->contextoDados,
+                $this->aiModelId // ID do modelo específico
             );
         }
 

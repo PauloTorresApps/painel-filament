@@ -36,6 +36,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public string $promptTemplate,
+        public ?string $aiModelId = null, // ID do modelo específico (ex: gemini-2.5-flash)
         public int $currentReduceLevel = 1
     ) {}
 
@@ -134,6 +135,12 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
     {
         $batches = $microAnalyses->chunk(self::BATCH_SIZE);
         $aiService = $this->getAIService($this->aiProvider);
+
+        // Define o modelo específico se configurado
+        if ($this->aiModelId) {
+            $aiService->setModel($this->aiModelId);
+        }
+
         $batchIndex = 0;
 
         Log::info('ReduceDocumentAnalysisJob: Executando reduce hierárquico', [
@@ -221,6 +228,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
                 $this->aiProvider,
                 $this->deepThinkingEnabled,
                 $this->promptTemplate,
+                $this->aiModelId,
                 $this->currentReduceLevel + 1
             )->onQueue('analysis');
 
@@ -247,6 +255,11 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         ]);
 
         $aiService = $this->getAIService($this->aiProvider);
+
+        // Define o modelo específico se configurado
+        if ($this->aiModelId) {
+            $aiService->setModel($this->aiModelId);
+        }
 
         // Monta o texto consolidado
         $consolidatedText = $this->buildBatchText($microAnalyses);

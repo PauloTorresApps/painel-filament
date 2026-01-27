@@ -12,6 +12,7 @@ class DocumentMicroAnalysis extends Model
         'document_index',
         'id_documento',
         'descricao',
+        'mimetype',
         'micro_analysis',
         'extracted_text',
         'status',
@@ -36,6 +37,14 @@ class DocumentMicroAnalysis extends Model
     public function documentAnalysis(): BelongsTo
     {
         return $this->belongsTo(DocumentAnalysis::class);
+    }
+
+    /**
+     * Verifica se o documento é uma imagem
+     */
+    public function isImage(): bool
+    {
+        return $this->mimetype && str_starts_with($this->mimetype, 'image/');
     }
 
     /**

@@ -22,10 +22,15 @@ RUN apt-get update && apt-get install -y \
     nginx \
     poppler-utils \
     ghostscript \
+    tesseract-ocr \
+    tesseract-ocr-por \
+    postgresql-client \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Verificar instalação do pdftotext (necessário para spatie/pdf-to-text)
+# Verificar instalação do pdftotext e tesseract
 RUN which pdftotext && pdftotext -v
+RUN which tesseract && tesseract --version
 
 # Configurar extensão GD com suporte a JPEG e FreeType
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg

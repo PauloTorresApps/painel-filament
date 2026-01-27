@@ -150,6 +150,48 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
+     * Analisa uma imagem (usado para documentos de imagem no map-reduce)
+     */
+    public function analyzeImageDocument(
+        string $prompt,
+        string $imageBase64,
+        string $mimetype,
+        bool $deepThinkingEnabled = false
+    ): string {
+        $this->resetAnalysisMetadata();
+
+        Log::info('AbstractAIService: Analisando imagem', [
+            'provider' => $this->getName(),
+            'mimetype' => $mimetype,
+            'base64_length' => strlen($imageBase64)
+        ]);
+
+        // Por padrão, retorna mensagem de que análise de imagem não é suportada
+        // Os providers que suportam devem sobrescrever este método
+        $result = $this->callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled);
+
+        $this->finalizeMetadata(1);
+
+        return $result;
+    }
+
+    /**
+     * Faz chamada à API com uma imagem
+     * Os providers que suportam imagens devem sobrescrever este método
+     */
+    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false): string
+    {
+        // Fallback: analisa a descrição se não suportar imagens
+        Log::warning('AbstractAIService: Provider não suporta análise de imagem, retornando descrição genérica', [
+            'provider' => $this->getName()
+        ]);
+
+        return "**[IMAGEM - análise visual não disponível para este provider]**\n\n" .
+            "O provider {$this->getName()} não suporta análise visual de imagens. " .
+            "Este documento é uma imagem do tipo {$mimetype}.";
+    }
+
+    /**
      * Analisa documentos do processo com contexto
      *
      * NOTA: Este método é mantido para compatibilidade com análise de CONTRATOS.

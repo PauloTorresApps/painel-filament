@@ -193,4 +193,98 @@ class GeminiService extends AbstractAIService
 
         return $inputCost + $outputCost;
     }
+
+    /**
+     * Faz chamada à API com uma imagem (multimodal)
+     */
+    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false): string
+    {
+        return $this->withRetry(function () use ($prompt, $imageBase64, $mimetype) {
+            // Aplica rate limiting antes da chamada
+            RateLimiterService::apply($this->getRateLimiterKey());
+
+            $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
+
+            $response = Http::timeout(300)
+                ->post($url, [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                ['text' => $prompt],
+                                [
+                                    'inline_data' => [
+                                        'mime_type' => $mimetype,
+                                        'data' => $imageBase64
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.4,
+                        'topK' => 32,
+                        'topP' => 0.95,
+                        'maxOutputTokens' => 8192,
+                    ],
+                    'safetySettings' => [
+                        [
+                            'category' => 'HARM_CATEGORY_HARASSMENT',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                            'threshold' => 'BLOCK_NONE'
+                        ],
+                        [
+                            'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                            'threshold' => 'BLOCK_NONE'
+                        ]
+                    ]
+                ]);
+
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $errorBody = $response->json();
+                $errorMessage = $errorBody['error']['message'] ?? 'Erro desconhecido';
+
+                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
+            }
+
+            $data = $response->json();
+
+            $usageMetadata = $data['usageMetadata'] ?? [];
+            Log::info('Gemini API - Resposta de imagem recebida', [
+                'model' => $this->model,
+                'finish_reason' => $data['candidates'][0]['finishReason'] ?? 'unknown',
+                'usage' => [
+                    'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 'N/A',
+                    'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 'N/A',
+                    'total_tokens' => $usageMetadata['totalTokenCount'] ?? 'N/A',
+                ],
+            ]);
+
+            $this->accumulateMetadata([
+                'prompt_tokens' => $usageMetadata['promptTokenCount'] ?? 0,
+                'completion_tokens' => $usageMetadata['candidatesTokenCount'] ?? 0,
+                'total_tokens' => $usageMetadata['totalTokenCount'] ?? 0,
+            ], $this->model);
+
+            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+            if (empty($text)) {
+                Log::error('Gemini retornou resposta vazia para imagem', [
+                    'response_data' => $data,
+                    'status_code' => $response->status(),
+                    'model' => $this->model,
+                ]);
+                throw new \Exception('A API retornou uma resposta vazia para a imagem. Tente novamente.');
+            }
+
+            return $text;
+        });
+    }
 }

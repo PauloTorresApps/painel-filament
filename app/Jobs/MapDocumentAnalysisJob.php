@@ -29,7 +29,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
         public int $microAnalysisId,
         public string $aiProvider,
         public bool $deepThinkingEnabled,
-        public array $contextoDados
+        public array $contextoDados,
+        public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
     ) {}
 
     /**
@@ -72,19 +73,26 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 'micro_id' => $this->microAnalysisId,
                 'document_index' => $microAnalysis->document_index,
                 'descricao' => $microAnalysis->descricao,
-                'provider' => $this->aiProvider
+                'mimetype' => $microAnalysis->mimetype,
+                'provider' => $this->aiProvider,
+                'text_length' => mb_strlen($microAnalysis->extracted_text ?? ''),
             ]);
 
             // Obtém o serviço de IA
             $aiService = $this->getAIService($this->aiProvider);
 
-            // Monta o prompt para micro-análise
+            // Define o modelo específico se configurado
+            if ($this->aiModelId) {
+                $aiService->setModel($this->aiModelId);
+            }
+
+            // Monta o prompt para micro-análise (agora sempre texto, OCR já extraiu das imagens)
             $prompt = $this->buildMapPrompt($microAnalysis);
 
             // Aplica rate limiting
             RateLimiterService::apply($this->aiProvider);
 
-            // Chama a IA
+            // Chama a IA para análise de texto (imagens já tiveram texto extraído via OCR)
             $result = $aiService->analyzeSingleDocument(
                 $prompt,
                 $microAnalysis->extracted_text,
@@ -125,6 +133,9 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
     /**
      * Monta o prompt para micro-análise de um documento
+     *
+     * Nota: Imagens já tiveram seu texto extraído via OCR antes de chegar aqui,
+     * então todos os documentos são tratados como texto.
      */
     private function buildMapPrompt(DocumentMicroAnalysis $microAnalysis): string
     {
@@ -134,6 +145,11 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
         $assuntos = $this->formatAssuntos($this->contextoDados['assunto'] ?? []);
         $numeroProcesso = $this->contextoDados['numeroProcesso'] ?? 'Não informado';
+
+        // Adiciona contexto se o documento original era uma imagem (texto extraído via OCR)
+        $documentContext = $microAnalysis->isImage()
+            ? "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}\n**Tipo original:** {$microAnalysis->mimetype} (texto extraído via OCR)"
+            : "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
 
         $prompt = <<<PROMPT
 # CONTEXTO DO PROCESSO
@@ -146,8 +162,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
 # DOCUMENTO A ANALISAR
 
-**Documento:** {$microAnalysis->descricao}
-**Índice:** {$microAnalysis->document_index}
+{$documentContext}
 
 ---
 
@@ -156,7 +171,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
 Analise o documento acima e extraia as seguintes informações de forma estruturada:
 
 ## 1. TIPO DE MANIFESTAÇÃO
-Identifique o tipo (petição inicial, contestação, decisão, despacho, sentença, recurso, parecer, etc.)
+Identifique o tipo (petição inicial, contestação, decisão, despacho, sentença, recurso, parecer, documento pessoal, comprovante, etc.)
 
 ## 2. PARTES ENVOLVIDAS
 Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, etc.)
@@ -164,6 +179,7 @@ Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, e
 ## 3. PEDIDOS OU DECISÕES
 - Se for petição/recurso: liste os pedidos formulados
 - Se for decisão/sentença: liste o dispositivo (o que foi decidido)
+- Se for documento/comprovante: descreva o conteúdo principal
 
 ## 4. FUNDAMENTOS
 - Fundamentos legais citados (artigos de lei, jurisprudência)
@@ -172,8 +188,8 @@ Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, e
 ## 5. FATOS RELEVANTES
 Fatos narrados que são importantes para entender a narrativa processual
 
-## 6. DATAS IMPORTANTES
-Datas mencionadas no documento (prazos, eventos, etc.)
+## 6. DATAS E VALORES
+Datas mencionadas (prazos, eventos, vencimentos) e valores monetários se houver
 
 ## 7. CONEXÕES
 Referências a outros documentos ou eventos do processo
@@ -229,7 +245,8 @@ PROMPT;
                 $documentAnalysis->id,
                 $this->aiProvider,
                 $this->deepThinkingEnabled,
-                $documentAnalysis->job_parameters['promptTemplate'] ?? ''
+                $documentAnalysis->job_parameters['promptTemplate'] ?? '',
+                $this->aiModelId // ID do modelo específico
             )->onQueue('analysis');
         }
     }

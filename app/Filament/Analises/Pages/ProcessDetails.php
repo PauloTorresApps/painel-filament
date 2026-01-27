@@ -409,23 +409,30 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Dispara o Job com o provider de IA selecionado
+            // Obtém informações do modelo de IA configurado no prompt
+            $aiModel = $promptPadrao->aiModel;
+            $aiModelId = $aiModel?->model_id; // ID do modelo específico (ex: gemini-2.5-flash)
+            $aiProvider = $aiModel?->provider ?? $promptPadrao->ai_provider ?? 'gemini';
+
+            // Dispara o Job com o provider e modelo de IA selecionados
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
                 auth()->user()->id,
                 $this->numeroProcesso,
                 $documentosParaAnalise,
                 $this->dadosBasicos,
                 $promptPadrao->content,
-                $promptPadrao->ai_provider ?? 'gemini', // Provider de IA (gemini ou deepseek)
+                $aiProvider, // Provider de IA (gemini, deepseek, openai)
                 $promptPadrao->deep_thinking_enabled ?? true, // Modo de pensamento profundo (DeepSeek)
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
                 $this->judicialUserId,
-                $promptPadrao->analysis_strategy ?? 'evolutionary' // Estratégia de análise (hierarchical ou evolutionary)
+                $promptPadrao->analysis_strategy ?? 'evolutionary', // Estratégia de análise
+                $aiModelId // ID do modelo específico (ex: gemini-2.5-flash)
             );
 
             $totalDocs = count($documentosParaAnalise);
-            $providerName = match($promptPadrao->ai_provider ?? 'gemini') {
+            $modelName = $aiModel?->name ?? 'IA';
+            $providerName = match($aiProvider) {
                 'gemini' => 'Google Gemini',
                 'deepseek' => 'DeepSeek',
                 'openai' => 'OpenAI',
@@ -434,7 +441,7 @@ class ProcessDetails extends Page
 
             \Filament\Notifications\Notification::make()
                 ->title('🚀 Análise Iniciada')
-                ->body("**Etapa 1/2:** Baixando {$totalDocs} documento(s) do e-Proc...\n\n**Etapa 2/2:** Em seguida, os documentos serão analisados pela {$providerName}.\n\n⏱️ Este processo pode levar alguns minutos. Você será notificado quando concluir.\n\nAcompanhe o progresso no painel acima.")
+                ->body("**Etapa 1/2:** Baixando {$totalDocs} documento(s) do e-Proc...\n\n**Etapa 2/2:** Em seguida, os documentos serão analisados pelo modelo **{$modelName}** ({$providerName}).\n\n⏱️ Este processo pode levar alguns minutos. Você será notificado quando concluir.\n\nAcompanhe o progresso no painel acima.")
                 ->info()
                 ->persistent()
                 ->send();
