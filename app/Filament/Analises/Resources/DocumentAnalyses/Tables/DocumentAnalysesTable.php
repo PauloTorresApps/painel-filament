@@ -56,9 +56,33 @@ class DocumentAnalysesTable
                     })
                     ->sortable(),
 
+                TextColumn::make('current_phase')
+                    ->label('Fase')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state, $record): string => match ($state) {
+                        'download' => 'Download',
+                        'map' => 'Análise Individual',
+                        'reduce' => 'Consolidação',
+                        'completed' => 'Concluído',
+                        default => '-',
+                    })
+                    ->description(fn ($record): ?string => $record->progress_message)
+                    ->color(fn (?string $state): string => match ($state) {
+                        'download' => 'gray',
+                        'map' => 'info',
+                        'reduce' => 'warning',
+                        'completed' => 'success',
+                        default => 'gray',
+                    })
+                    ->toggleable(),
+
                 TextColumn::make('progress')
                     ->label('Progresso')
                     ->state(function ($record): string {
+                        if ($record->status === 'processing' && $record->current_phase) {
+                            $percentage = round($record->getOverallProgressPercentage());
+                            return "{$percentage}%";
+                        }
                         if ($record->total_documents > 0) {
                             $percentage = $record->getProgressPercentage();
                             return "{$record->processed_documents_count}/{$record->total_documents} ({$percentage}%)";
@@ -70,7 +94,9 @@ class DocumentAnalysesTable
                         if ($record->total_documents === 0) {
                             return 'gray';
                         }
-                        $percentage = $record->getProgressPercentage();
+                        $percentage = $record->status === 'processing' && $record->current_phase
+                            ? $record->getOverallProgressPercentage()
+                            : $record->getProgressPercentage();
                         if ($percentage >= 100) {
                             return 'success';
                         } elseif ($percentage >= 50) {

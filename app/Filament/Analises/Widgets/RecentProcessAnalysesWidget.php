@@ -52,6 +52,25 @@ class RecentProcessAnalysesWidget extends TableWidget
                         default => 'gray',
                     }),
 
+                TextColumn::make('current_phase')
+                    ->label('Fase')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state, $record): string => match ($state) {
+                        'download' => 'Download',
+                        'map' => "Análise ({$record->processed_documents_count}/{$record->total_documents})",
+                        'reduce' => "Consolidação (Nv.{$record->reduce_current_level})",
+                        'completed' => 'Concluído',
+                        default => '-',
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'download' => 'gray',
+                        'map' => 'info',
+                        'reduce' => 'warning',
+                        'completed' => 'success',
+                        default => 'gray',
+                    })
+                    ->visible(fn ($record) => $record->status === 'processing'),
+
                 TextColumn::make('total_documents')
                     ->label('Documentos')
                     ->alignCenter(),

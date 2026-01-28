@@ -132,8 +132,8 @@ class EprocService
      */
     public function consultarProcesso(
         string $numeroProcesso,
-        string $dataInicial = null,
-        string $dataFinal = null,
+        ?string $dataInicial = null,
+        ?string $dataFinal = null,
         bool $incluirCabecalho = true,
         bool $incluirPartes = true,
         bool $incluirEnderecos = false,
