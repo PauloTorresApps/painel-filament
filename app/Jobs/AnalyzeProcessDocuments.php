@@ -289,6 +289,9 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 'total_characters' => $totalCharacters,
             ]);
 
+            // Atualiza para fase MAP
+            $documentAnalysis->startMapPhase();
+
             // Notifica que a análise vai começar
             $providerName = match ($this->aiProvider) {
                 'gemini' => 'Google Gemini',
@@ -299,8 +302,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 
             $this->sendNotification(
                 $user,
-                'Iniciando Análise por IA',
-                "Download concluído! A {$providerName} está analisando {$microAnalysesCreated} documento(s) em paralelo.",
+                'Fase 1/2: Análise Individual',
+                "Download concluído! A {$providerName} está analisando {$microAnalysesCreated} documento(s) individualmente.",
                 'info'
             );
 

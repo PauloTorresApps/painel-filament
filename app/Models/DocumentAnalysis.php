@@ -29,6 +29,13 @@ class DocumentAnalysis extends Model
         'total_documents',
         'last_processed_at',
         'is_resumable',
+        // Campos para tracking de fases
+        'current_phase', // download, map, reduce, completed
+        'reduce_current_level',
+        'reduce_total_levels',
+        'reduce_processed_batches',
+        'reduce_total_batches',
+        'progress_message',
     ];
 
     protected $casts = [
@@ -40,7 +47,19 @@ class DocumentAnalysis extends Model
         'total_documents' => 'integer',
         'last_processed_at' => 'datetime',
         'is_resumable' => 'boolean',
+        'reduce_current_level' => 'integer',
+        'reduce_total_levels' => 'integer',
+        'reduce_processed_batches' => 'integer',
+        'reduce_total_batches' => 'integer',
     ];
+
+    /**
+     * Constantes para fases de processamento
+     */
+    public const PHASE_DOWNLOAD = 'download';
+    public const PHASE_MAP = 'map';
+    public const PHASE_REDUCE = 'reduce';
+    public const PHASE_COMPLETED = 'completed';
 
     public function user(): BelongsTo
     {
@@ -125,12 +144,128 @@ class DocumentAnalysis extends Model
     {
         $this->update([
             'status' => 'processing',
+            'current_phase' => self::PHASE_DOWNLOAD,
             'total_documents' => $totalDocuments,
             'current_document_index' => 0,
             'processed_documents_count' => 0,
             'is_resumable' => true,
             'last_processed_at' => now(),
+            'progress_message' => "Baixando {$totalDocuments} documento(s)...",
         ]);
+    }
+
+    /**
+     * Atualiza para fase MAP
+     */
+    public function startMapPhase(): void
+    {
+        $this->update([
+            'current_phase' => self::PHASE_MAP,
+            'progress_message' => "Analisando documentos individualmente (0/{$this->total_documents})...",
+            'last_processed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Atualiza progresso da fase MAP
+     */
+    public function updateMapProgress(int $completed): void
+    {
+        $this->update([
+            'processed_documents_count' => $completed,
+            'progress_message' => "Analisando documentos individualmente ({$completed}/{$this->total_documents})...",
+            'last_processed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Atualiza para fase REDUCE
+     */
+    public function startReducePhase(int $totalLevels, int $totalBatches): void
+    {
+        $this->update([
+            'current_phase' => self::PHASE_REDUCE,
+            'reduce_current_level' => 1,
+            'reduce_total_levels' => $totalLevels,
+            'reduce_processed_batches' => 0,
+            'reduce_total_batches' => $totalBatches,
+            'progress_message' => "Consolidando análises (Nível 1/{$totalLevels})...",
+            'last_processed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Atualiza progresso da fase REDUCE
+     */
+    public function updateReduceProgress(int $level, int $processedBatches, int $totalBatches): void
+    {
+        $this->update([
+            'reduce_current_level' => $level,
+            'reduce_processed_batches' => $processedBatches,
+            'reduce_total_batches' => $totalBatches,
+            'progress_message' => "Consolidando análises (Nível {$level}/{$this->reduce_total_levels}, Lote {$processedBatches}/{$totalBatches})...",
+            'last_processed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Atualiza para análise final
+     */
+    public function startFinalAnalysis(): void
+    {
+        $this->update([
+            'progress_message' => "Gerando análise final consolidada...",
+            'last_processed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Retorna a fase atual formatada para exibição
+     */
+    public function getCurrentPhaseLabel(): string
+    {
+        return match ($this->current_phase) {
+            self::PHASE_DOWNLOAD => 'Download',
+            self::PHASE_MAP => 'Análise Individual',
+            self::PHASE_REDUCE => 'Consolidação',
+            self::PHASE_COMPLETED => 'Concluído',
+            default => 'Processando',
+        };
+    }
+
+    /**
+     * Retorna o progresso geral como porcentagem (0-100)
+     * Download: 0-10%, MAP: 10-70%, REDUCE: 70-100%
+     */
+    public function getOverallProgressPercentage(): float
+    {
+        return match ($this->current_phase) {
+            self::PHASE_DOWNLOAD => min(10, $this->getProgressPercentage() * 0.1),
+            self::PHASE_MAP => 10 + ($this->getProgressPercentage() * 0.6),
+            self::PHASE_REDUCE => 70 + ($this->getReduceProgressPercentage() * 0.3),
+            self::PHASE_COMPLETED => 100,
+            default => 0,
+        };
+    }
+
+    /**
+     * Retorna o progresso da fase REDUCE como porcentagem
+     */
+    public function getReduceProgressPercentage(): float
+    {
+        if ($this->reduce_total_batches === 0) {
+            return 0;
+        }
+
+        return round(($this->reduce_processed_batches / $this->reduce_total_batches) * 100, 2);
+    }
+
+    /**
+     * Verifica se está na fase REDUCE
+     */
+    public function isInReducePhase(): bool
+    {
+        return $this->current_phase === self::PHASE_REDUCE;
     }
 
     /**

@@ -93,10 +93,23 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
 
             $totalMicroAnalyses = $microAnalyses->count();
 
+            // Calcula total de níveis necessários
+            $totalLevels = $this->calculateTotalLevels($totalMicroAnalyses);
+            $totalBatches = (int) ceil($totalMicroAnalyses / self::BATCH_SIZE);
+
+            // Se é o primeiro nível, inicializa a fase REDUCE
+            if ($this->currentReduceLevel === 1) {
+                $documentAnalysis->startReducePhase($totalLevels, $totalBatches);
+
+                // Notifica o início da fase REDUCE
+                $this->notifyReduceStart($documentAnalysis, $totalMicroAnalyses);
+            }
+
             Log::info('ReduceDocumentAnalysisJob: Micro-análises a consolidar', [
                 'analysis_id' => $this->documentAnalysisId,
                 'count' => $totalMicroAnalyses,
-                'previous_level' => $previousLevel
+                'previous_level' => $previousLevel,
+                'total_levels' => $totalLevels
             ]);
 
             // Se há apenas uma micro-análise ou poucas o suficiente, gera análise final
@@ -142,15 +155,23 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         }
 
         $batchIndex = 0;
+        $totalBatches = $batches->count();
 
         Log::info('ReduceDocumentAnalysisJob: Executando reduce hierárquico', [
             'analysis_id' => $documentAnalysis->id,
-            'total_batches' => $batches->count(),
+            'total_batches' => $totalBatches,
             'reduce_level' => $this->currentReduceLevel
         ]);
 
         foreach ($batches as $batch) {
             $batchIndex++;
+
+            // Atualiza progresso
+            $documentAnalysis->updateReduceProgress(
+                $this->currentReduceLevel,
+                $batchIndex,
+                $totalBatches
+            );
 
             // Monta o texto consolidado do batch
             $consolidatedText = $this->buildBatchText($batch);
@@ -249,6 +270,9 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
      */
     private function generateFinalAnalysis(DocumentAnalysis $documentAnalysis, $microAnalyses, float $startTime): void
     {
+        // Atualiza status para análise final
+        $documentAnalysis->startFinalAnalysis();
+
         Log::info('ReduceDocumentAnalysisJob: Gerando análise final', [
             'analysis_id' => $documentAnalysis->id,
             'micro_analyses_count' => $microAnalyses->count()
@@ -288,10 +312,12 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         // Finaliza a análise
         $documentAnalysis->update([
             'status' => 'completed',
+            'current_phase' => DocumentAnalysis::PHASE_COMPLETED,
             'ai_analysis' => $finalAnalysis,
             'processing_time_ms' => $totalProcessingTime,
             'is_resumable' => false,
             'last_processed_at' => now(),
+            'progress_message' => 'Análise concluída com sucesso!',
         ]);
 
         Log::info('ReduceDocumentAnalysisJob: Análise final concluída', [
@@ -451,5 +477,55 @@ PROMPT;
             'openai' => new OpenAIService(),
             default => new GeminiService(),
         };
+    }
+
+    /**
+     * Calcula quantos níveis de REDUCE serão necessários
+     */
+    private function calculateTotalLevels(int $totalItems): int
+    {
+        if ($totalItems <= self::BATCH_SIZE) {
+            return 1;
+        }
+
+        $levels = 1;
+        $items = $totalItems;
+
+        while ($items > self::BATCH_SIZE) {
+            $items = (int) ceil($items / self::BATCH_SIZE);
+            $levels++;
+        }
+
+        return min($levels, self::MAX_REDUCE_LEVELS);
+    }
+
+    /**
+     * Notifica o início da fase REDUCE
+     */
+    private function notifyReduceStart(DocumentAnalysis $documentAnalysis, int $microAnalysesCount): void
+    {
+        $user = User::find($documentAnalysis->user_id);
+        if (!$user) {
+            return;
+        }
+
+        try {
+            $providerName = match ($this->aiProvider) {
+                'gemini' => 'Google Gemini',
+                'deepseek' => 'DeepSeek',
+                'openai' => 'OpenAI',
+                default => 'IA'
+            };
+
+            FilamentNotification::make()
+                ->title('Fase 2/2: Consolidação')
+                ->body("Análise individual concluída! A {$providerName} está consolidando {$microAnalysesCount} análises para gerar a visão completa do processo.")
+                ->status('info')
+                ->sendToDatabase($user);
+        } catch (\Exception $e) {
+            Log::warning('ReduceDocumentAnalysisJob: Erro ao notificar início do REDUCE', [
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

@@ -101,6 +101,70 @@
                                         Erro: {{ Str::limit($analysis->error_message, 100) }}
                                     </p>
                                 @endif
+
+                                {{-- Detalhes de progresso para análises em processamento --}}
+                                @if($analysis->status === 'processing' && $analysis->current_phase)
+                                    <div class="mt-2 p-2 rounded-md bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30">
+                                        {{-- Indicador de fases --}}
+                                        <div class="flex items-center gap-1 mb-2">
+                                            {{-- Download --}}
+                                            <div class="flex items-center gap-1 {{ $analysis->current_phase === 'download' ? 'text-amber-600 dark:text-amber-400' : ($analysis->current_phase !== 'download' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400') }}">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                                </svg>
+                                                <span class="text-xs font-medium">Download</span>
+                                            </div>
+                                            <svg class="w-3 h-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                            </svg>
+
+                                            {{-- MAP --}}
+                                            <div class="flex items-center gap-1 {{ $analysis->current_phase === 'map' ? 'text-amber-600 dark:text-amber-400' : (in_array($analysis->current_phase, ['reduce', 'completed']) ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400') }}">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                                                </svg>
+                                                <span class="text-xs font-medium">Análise Individual</span>
+                                            </div>
+                                            <svg class="w-3 h-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                            </svg>
+
+                                            {{-- REDUCE --}}
+                                            <div class="flex items-center gap-1 {{ $analysis->current_phase === 'reduce' ? 'text-amber-600 dark:text-amber-400' : ($analysis->current_phase === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400') }}">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z"/>
+                                                </svg>
+                                                <span class="text-xs font-medium">Consolidação</span>
+                                            </div>
+                                        </div>
+
+                                        {{-- Barra de progresso --}}
+                                        <div class="relative w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-1.5">
+                                            <div class="absolute left-0 top-0 h-full bg-gradient-to-r from-amber-400 to-amber-500 dark:from-amber-500 dark:to-amber-400 rounded-full transition-all duration-500"
+                                                 style="width: {{ $analysis->getOverallProgressPercentage() }}%"></div>
+                                        </div>
+
+                                        {{-- Mensagem de progresso --}}
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-xs text-amber-700 dark:text-amber-300">
+                                                {{ $analysis->progress_message ?? $analysis->getCurrentPhaseLabel() }}
+                                            </p>
+                                            <span class="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                                {{ round($analysis->getOverallProgressPercentage()) }}%
+                                            </span>
+                                        </div>
+
+                                        {{-- Detalhes adicionais da fase REDUCE --}}
+                                        @if($analysis->current_phase === 'reduce' && $analysis->reduce_total_levels > 0)
+                                            <p class="text-xs text-amber-600/80 dark:text-amber-400/80 mt-1">
+                                                Nível {{ $analysis->reduce_current_level }}/{{ $analysis->reduce_total_levels }}
+                                                @if($analysis->reduce_total_batches > 0)
+                                                    • Lote {{ $analysis->reduce_processed_batches }}/{{ $analysis->reduce_total_batches }}
+                                                @endif
+                                            </p>
+                                        @endif
+                                    </div>
+                                @endif
                             </div>
 
                             @if($analysis->status === 'completed')

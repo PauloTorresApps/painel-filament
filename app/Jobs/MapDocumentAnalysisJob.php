@@ -218,11 +218,8 @@ PROMPT;
             'failed' => $failedMap
         ]);
 
-        // Atualiza progresso
-        $documentAnalysis->update([
-            'processed_documents_count' => $completedMap,
-            'last_processed_at' => now(),
-        ]);
+        // Atualiza progresso da fase MAP
+        $documentAnalysis->updateMapProgress($completedMap);
 
         // Se todos os MAPs foram concluídos (com sucesso ou falha), dispara o REDUCE
         if (($completedMap + $failedMap) >= $totalMap) {
