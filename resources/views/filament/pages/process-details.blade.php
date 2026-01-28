@@ -546,12 +546,41 @@
         // --- 2. VARIÁVEIS GLOBAIS ---
         let currentPdf = null;
         let currentScale = 1.2;
-        let currentBlobUrl = null; // Para revogar URLs criados
+        let currentImageScale = 1.0;
+        let currentBlobUrl = null;
+        let currentDocumentType = null; // 'pdf', 'image', 'html'
 
         // --- 3. AUXILIARES ---
         function escapeHtml(text) {
             if(!text) return '';
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function getDocumentType(mimetype) {
+            if (!mimetype) return 'pdf'; // fallback para PDF
+            const mime = mimetype.toLowerCase();
+
+            if (mime === 'application/pdf') return 'pdf';
+            if (mime.startsWith('image/')) return 'image';
+            if (mime === 'text/html' || mime.includes('html')) return 'html';
+
+            return 'pdf'; // fallback
+        }
+
+        function getFileExtension(mimetype) {
+            const mimeMap = {
+                'application/pdf': 'pdf',
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/png': 'png',
+                'image/gif': 'gif',
+                'image/webp': 'webp',
+                'image/bmp': 'bmp',
+                'image/svg+xml': 'svg',
+                'image/tiff': 'tiff',
+                'text/html': 'html'
+            };
+            return mimeMap[mimetype?.toLowerCase()] || 'bin';
         }
 
         function toggleEmptyMovements(hide) {
@@ -571,9 +600,10 @@
         // Função para fechar o modal (garante que limpa a memória)
         function fecharModal() {
             document.getElementById('documentModal').classList.add('hidden');
-            currentPdf = null; // Limpa referência
+            currentPdf = null;
+            currentDocumentType = null;
+            currentImageScale = 1.0;
 
-            // Revoga URL do blob para liberar memória
             if (currentBlobUrl) {
                 URL.revokeObjectURL(currentBlobUrl);
                 currentBlobUrl = null;
@@ -581,11 +611,11 @@
 
             const container = document.getElementById('pdf-viewer-container');
             if (container) {
-                container.innerHTML = ''; // Limpa DOM
+                container.innerHTML = '';
             }
         }
 
-        // --- RENDERIZAÇÃO ---
+        // --- RENDERIZAÇÃO PDF ---
         async function renderizarPaginas() {
             const container = document.getElementById('pdf-viewer-container');
             if (!container || !currentPdf) return;
@@ -621,20 +651,102 @@
             container.appendChild(fragment);
         }
 
+        // --- RENDERIZAÇÃO IMAGEM ---
+        function renderizarImagem(base64Data, mimetype) {
+            const container = document.getElementById('pdf-viewer-container');
+            if (!container) return;
+
+            const zoomLabel = document.getElementById('zoom-level');
+            if(zoomLabel) zoomLabel.innerText = Math.round(currentImageScale * 100) + '%';
+
+            const dataUrl = `data:${mimetype};base64,${base64Data}`;
+
+            container.innerHTML = `
+                <div class="flex items-center justify-center min-h-full p-4">
+                    <img
+                        id="image-viewer"
+                        src="${dataUrl}"
+                        alt="Documento"
+                        class="max-w-full shadow-lg rounded-lg bg-white transition-transform duration-200"
+                        style="transform: scale(${currentImageScale}); transform-origin: center center;"
+                    />
+                </div>
+            `;
+        }
+
+        // --- RENDERIZAÇÃO HTML ---
+        function renderizarHtml(base64Data) {
+            const container = document.getElementById('pdf-viewer-container');
+            if (!container) return;
+
+            // Decodifica o base64 para string HTML
+            let htmlContent;
+            try {
+                htmlContent = atob(base64Data);
+            } catch (e) {
+                // Tenta decodificar como UTF-8
+                const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+                htmlContent = new TextDecoder('utf-8').decode(bytes);
+            }
+
+            container.innerHTML = `
+                <iframe
+                    id="html-viewer"
+                    class="w-full h-full border-0 rounded-lg bg-white"
+                    style="min-height: 700px;"
+                    sandbox="allow-same-origin"
+                    srcdoc="${escapeHtml(htmlContent).replace(/"/g, '&quot;')}"
+                ></iframe>
+            `;
+
+            // Alternativa: usar blob URL para melhor renderização
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const blobUrl = URL.createObjectURL(blob);
+
+            // Revoga URL anterior de blob HTML se existir
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+            }
+            currentBlobUrl = blobUrl;
+
+            container.innerHTML = `
+                <iframe
+                    id="html-viewer"
+                    class="w-full h-full border-0 rounded-lg bg-white shadow-lg"
+                    style="min-height: 700px;"
+                    src="${blobUrl}"
+                ></iframe>
+            `;
+        }
+
+        // --- ZOOM PARA IMAGENS ---
+        function mudarZoomImagem(delta) {
+            const novoZoom = currentImageScale + delta;
+            if (novoZoom >= 0.25 && novoZoom <= 4.0) {
+                currentImageScale = novoZoom;
+                const img = document.getElementById('image-viewer');
+                const zoomLabel = document.getElementById('zoom-level');
+                if (img) {
+                    img.style.transform = `scale(${currentImageScale})`;
+                }
+                if (zoomLabel) {
+                    zoomLabel.innerText = Math.round(currentImageScale * 100) + '%';
+                }
+            }
+        }
+
         // --- 4. FUNÇÃO PRINCIPAL ---
         async function visualizarDocumento(numeroProcesso, idDocumento) {
             const modal = document.getElementById('documentModal');
             const content = document.getElementById('documentContent');
 
-            if (typeof pdfjsLib === 'undefined') { alert("Erro biblio PDF."); return; }
-            await configurarPdfWorker();
-
             // Reset
             currentPdf = null;
             currentScale = 1.2;
+            currentImageScale = 1.0;
+            currentDocumentType = null;
 
             modal.classList.remove('hidden');
-            // Altura reduzida no loading também
             content.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-[400px]">
                     <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mb-3"></div>
@@ -656,29 +768,64 @@
                 if (data.success && data.conteudoBase64) {
                     const docTitle = escapeHtml(data.documento.descricao || 'Documento');
 
-                    // MUDANÇAS AQUI:
-                    // 1. Altura ajustada para h-[80vh] (deixa espaço para clicar fora)
-                    // 2. Adicionado botão de FECHAR (X) na barra superior
+                    // Tenta obter mimetype de várias fontes possíveis
+                    const mimetype = data.mimetype
+                        || data.documento?.conteudo?.mimetype
+                        || data.documento?.mimetype
+                        || 'application/pdf';
+
+                    console.log('DEBUG - Documento:', data.documento?.descricao);
+                    console.log('DEBUG - Mimetype detectado:', mimetype);
+                    console.log('DEBUG - data.mimetype:', data.mimetype);
+                    console.log('DEBUG - data.documento?.conteudo?.mimetype:', data.documento?.conteudo?.mimetype);
+
+                    currentDocumentType = getDocumentType(mimetype);
+                    console.log('DEBUG - Tipo de documento:', currentDocumentType);
+
+                    const fileExt = getFileExtension(mimetype);
+
+                    // Determina se mostra controles de zoom (apenas para PDF e imagem)
+                    const showZoomControls = currentDocumentType !== 'html';
+                    const zoomControlsHtml = showZoomControls ? `
+                        <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                            <button onclick="${currentDocumentType === 'image' ? 'mudarZoomImagem(-0.25)' : 'mudarZoom(-0.2)'}" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                            </button>
+                            <span id="zoom-level" class="text-xs font-mono w-10 text-center font-bold text-gray-600 dark:text-gray-300">${currentDocumentType === 'image' ? '100%' : '120%'}</span>
+                            <button onclick="${currentDocumentType === 'image' ? 'mudarZoomImagem(0.25)' : 'mudarZoom(0.2)'}" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            </button>
+                        </div>
+                    ` : '';
+
+                    // Ícone baseado no tipo de documento
+                    let typeIcon = '';
+                    let typeBadge = '';
+                    if (currentDocumentType === 'image') {
+                        typeIcon = `<svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>`;
+                        typeBadge = `<span class="px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 rounded">Imagem</span>`;
+                    } else if (currentDocumentType === 'html') {
+                        typeIcon = `<svg class="w-4 h-4 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>`;
+                        typeBadge = `<span class="px-2 py-0.5 text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 rounded">HTML</span>`;
+                    } else {
+                        typeIcon = `<svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>`;
+                        typeBadge = `<span class="px-2 py-0.5 text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 rounded">PDF</span>`;
+                    }
+
                     content.innerHTML = `
                         <div class="flex flex-col h-[80vh] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
-
                             <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm shrink-0">
-
                                  <div class="flex items-center gap-3 overflow-hidden">
-                                     <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                                        <button onclick="mudarZoom(-0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
-                                        </button>
-                                        <span id="zoom-level" class="text-xs font-mono w-10 text-center font-bold text-gray-600 dark:text-gray-300">120%</span>
-                                        <button onclick="mudarZoom(0.2)" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                                        </button>
+                                     ${zoomControlsHtml}
+                                     <div class="flex items-center gap-2">
+                                        ${typeIcon}
+                                        ${typeBadge}
                                      </div>
                                      <span class="font-bold text-gray-700 dark:text-gray-200 truncate text-sm" title="${docTitle}">${docTitle}</span>
                                  </div>
 
                                  <div class="flex items-center gap-2">
-                                     <button id="btn-download-pdf" class="flex items-center gap-1 text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded transition shadow" title="Baixar PDF">
+                                     <button id="btn-download-doc" class="flex items-center gap-1 text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded transition shadow" title="Baixar">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                                         <span class="hidden sm:inline">Baixar</span>
                                      </button>
@@ -691,7 +838,7 @@
                                  </div>
                             </div>
 
-                            <div id="pdf-viewer-container" class="flex-1 overflow-y-auto p-2 text-center bg-gray-300 dark:bg-gray-900 scroll-smooth">
+                            <div id="pdf-viewer-container" class="flex-1 overflow-auto p-2 text-center ${currentDocumentType === 'html' ? 'bg-white dark:bg-gray-100' : 'bg-gray-300 dark:bg-gray-900'} scroll-smooth">
                                 <div class="animate-pulse flex justify-center mt-4">
                                     <div class="h-64 w-full bg-gray-200 dark:bg-gray-700 rounded"></div>
                                 </div>
@@ -699,34 +846,55 @@
                         </div>
                     `;
 
-                    // Processamento
-                    const base64Clean = data.conteudoBase64.replace(/^data:application\/pdf;base64,/, "").replace(/\s/g, '');
+                    // Limpa base64 string
+                    const base64Clean = data.conteudoBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, '');
+
+                    // Configura o download baseado no tipo
                     const binaryString = atob(base64Clean);
                     const bytes = new Uint8Array(binaryString.length);
                     for (let i = 0; i < binaryString.length; i++) { bytes[i] = binaryString.charCodeAt(i); }
 
-                    // Setup Download
-                    const blob = new Blob([bytes], { type: 'application/pdf' });
+                    const blob = new Blob([bytes], { type: mimetype });
 
-                    // Revoga URL anterior se existir
                     if (currentBlobUrl) {
                         URL.revokeObjectURL(currentBlobUrl);
                     }
-
                     currentBlobUrl = URL.createObjectURL(blob);
-                    document.getElementById('btn-download-pdf').onclick = () => {
+
+                    document.getElementById('btn-download-doc').onclick = () => {
                         const link = document.createElement('a');
                         link.href = currentBlobUrl;
-                        link.download = `${docTitle}.pdf`;
+                        link.download = `${docTitle}.${fileExt}`;
                         link.click();
                     };
 
-                    try {
-                        currentPdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-                        await renderizarPaginas();
-                    } catch (renderError) {
-                        console.error(renderError);
-                        document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro: ${renderError.message}</div>`;
+                    // Renderiza baseado no tipo
+                    console.log('DEBUG - Iniciando renderização para tipo:', currentDocumentType);
+
+                    if (currentDocumentType === 'image') {
+                        console.log('DEBUG - Renderizando como IMAGEM');
+                        renderizarImagem(base64Clean, mimetype);
+                    } else if (currentDocumentType === 'html') {
+                        console.log('DEBUG - Renderizando como HTML');
+                        renderizarHtml(base64Clean);
+                    } else if (currentDocumentType === 'pdf') {
+                        console.log('DEBUG - Renderizando como PDF');
+                        if (typeof pdfjsLib === 'undefined') {
+                            document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro: Biblioteca PDF não carregada.</div>`;
+                            return;
+                        }
+                        await configurarPdfWorker();
+
+                        try {
+                            currentPdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+                            await renderizarPaginas();
+                        } catch (renderError) {
+                            console.error(renderError);
+                            document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro ao renderizar PDF: ${renderError.message}</div>`;
+                        }
+                    } else {
+                        console.log('DEBUG - Tipo desconhecido:', currentDocumentType);
+                        document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-amber-600 text-sm">Tipo de arquivo não suportado: ${mimetype}</div>`;
                     }
                 } else {
                     content.innerHTML = '<div class="flex items-center justify-center h-[200px] text-gray-500">Sem conteúdo.</div>';

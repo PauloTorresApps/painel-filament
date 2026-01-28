@@ -324,10 +324,21 @@ class EprocController extends Controller
                 $conteudoBase64 = $documentoEncontrado['content'];
             }
 
+            // Extrai o mimetype de onde quer que esteja
+            $mimetype = null;
+            if (isset($documentoEncontrado['conteudo']['mimetype'])) {
+                $mimetype = $documentoEncontrado['conteudo']['mimetype'];
+            } elseif (isset($documentoEncontrado['mimetype'])) {
+                $mimetype = $documentoEncontrado['mimetype'];
+            } elseif (isset($documentoEncontrado['tipoDocumento'])) {
+                $mimetype = $documentoEncontrado['tipoDocumento'];
+            }
+
             return response()->json([
                 'success' => true,
                 'documento' => $documentoEncontrado,
                 'conteudoBase64' => $conteudoBase64,
+                'mimetype' => $mimetype, // Mimetype direto na raiz para fácil acesso
                 'temConteudo' => !empty($conteudoBase64),
                 'tamanhoBase64' => $conteudoBase64 ? strlen($conteudoBase64) : 0
             ]);
