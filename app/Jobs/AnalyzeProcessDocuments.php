@@ -6,6 +6,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use App\Services\EprocService;
+use App\Services\HtmlToTextService;
 use App\Services\OcrService;
 use App\Services\PdfToTextService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -138,6 +139,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                     // Obtém o mimetype do documento
                     $mimetype = strtolower($documento['conteudo']['mimetype'] ?? '');
                     $isImage = str_starts_with($mimetype, 'image/');
+                    $isHtml = $mimetype === 'text/html' || str_contains($mimetype, 'html');
 
                     // Busca o conteúdo do documento
                     $documentoCompleto = $this->fetchDocumento($eprocService, $documento['idDocumento']);
@@ -186,6 +188,20 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                             'mimetype' => $mimetype,
                             'chars_extracted' => mb_strlen($texto),
                         ]);
+                    } elseif ($isHtml) {
+                        // Para HTML, extrai texto removendo tags e elementos não textuais
+                        $htmlService = new HtmlToTextService();
+
+                        $texto = $htmlService->extractText(
+                            $documentoCompleto['conteudo'],
+                            "doc_{$documento['idDocumento']}"
+                        );
+
+                        Log::info('AnalyzeProcessDocuments: Texto extraído do HTML', [
+                            'id_documento' => $documento['idDocumento'],
+                            'mimetype' => $mimetype,
+                            'chars_extracted' => mb_strlen($texto),
+                        ]);
                     } else {
                         // Para PDFs e outros documentos, extrai texto
                         $texto = $pdfService->extractText(
@@ -215,6 +231,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         'document_index' => $index,
                         'mimetype' => $mimetype,
                         'is_image' => $isImage,
+                        'is_html' => $isHtml,
                         'chars' => mb_strlen($texto),
                     ]);
 

@@ -774,14 +774,7 @@
                         || data.documento?.mimetype
                         || 'application/pdf';
 
-                    console.log('DEBUG - Documento:', data.documento?.descricao);
-                    console.log('DEBUG - Mimetype detectado:', mimetype);
-                    console.log('DEBUG - data.mimetype:', data.mimetype);
-                    console.log('DEBUG - data.documento?.conteudo?.mimetype:', data.documento?.conteudo?.mimetype);
-
                     currentDocumentType = getDocumentType(mimetype);
-                    console.log('DEBUG - Tipo de documento:', currentDocumentType);
-
                     const fileExt = getFileExtension(mimetype);
 
                     // Determina se mostra controles de zoom (apenas para PDF e imagem)
@@ -869,16 +862,11 @@
                     };
 
                     // Renderiza baseado no tipo
-                    console.log('DEBUG - Iniciando renderização para tipo:', currentDocumentType);
-
                     if (currentDocumentType === 'image') {
-                        console.log('DEBUG - Renderizando como IMAGEM');
                         renderizarImagem(base64Clean, mimetype);
                     } else if (currentDocumentType === 'html') {
-                        console.log('DEBUG - Renderizando como HTML');
                         renderizarHtml(base64Clean);
                     } else if (currentDocumentType === 'pdf') {
-                        console.log('DEBUG - Renderizando como PDF');
                         if (typeof pdfjsLib === 'undefined') {
                             document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro: Biblioteca PDF não carregada.</div>`;
                             return;
@@ -893,7 +881,6 @@
                             document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Erro ao renderizar PDF: ${renderError.message}</div>`;
                         }
                     } else {
-                        console.log('DEBUG - Tipo desconhecido:', currentDocumentType);
                         document.getElementById('pdf-viewer-container').innerHTML = `<div class="p-4 text-center text-amber-600 text-sm">Tipo de arquivo não suportado: ${mimetype}</div>`;
                     }
                 } else {
