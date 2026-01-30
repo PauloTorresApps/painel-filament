@@ -3,12 +3,12 @@
 namespace App\Jobs;
 
 use App\Models\DocumentMicroAnalysis;
-use App\Models\DocumentAnalysis;
 use App\Contracts\AIProviderInterface;
 use App\Services\GeminiService;
 use App\Services\DeepSeekService;
 use App\Services\OpenAIService;
 use App\Services\RateLimiterService;
+use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -16,10 +16,13 @@ use Illuminate\Support\Facades\Log;
 /**
  * Job responsável pela fase MAP do map-reduce.
  * Processa um único documento e gera uma micro-análise.
+ *
+ * Utiliza o trait Batchable para processamento paralelo via Bus::batch().
+ * A coordenação do REDUCE é feita pelo DispatchMapPhaseJob através de callbacks.
  */
 class MapDocumentAnalysisJob implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, Batchable;
 
     public int $timeout = 300; // 5 minutos por documento
     public int $tries = 3;
@@ -38,6 +41,14 @@ class MapDocumentAnalysisJob implements ShouldQueue
      */
     public function handle(): void
     {
+        // Verifica se o batch foi cancelado
+        if ($this->batch()?->cancelled()) {
+            Log::info('MapDocumentAnalysisJob: Batch cancelado, pulando', [
+                'micro_id' => $this->microAnalysisId
+            ]);
+            return;
+        }
+
         $startTime = microtime(true);
 
         try {
@@ -113,8 +124,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 'processing_time_ms' => $processingTimeMs
             ]);
 
-            // Verifica se todas as micro-análises MAP foram concluídas
-            $this->checkAndTriggerReduce($documentAnalysis);
+            // Nota: A coordenação do REDUCE é feita pelo Bus::batch() callback
+            // no DispatchMapPhaseJob, não mais aqui
 
         } catch (\Exception $e) {
             Log::error('MapDocumentAnalysisJob: Erro no processamento', [
@@ -200,52 +211,6 @@ Referências a outros documentos ou eventos do processo
 PROMPT;
 
         return $prompt;
-    }
-
-    /**
-     * Verifica se todas as micro-análises MAP foram concluídas e dispara o REDUCE
-     */
-    private function checkAndTriggerReduce(DocumentAnalysis $documentAnalysis): void
-    {
-        $totalMap = $documentAnalysis->microAnalyses()->mapLevel()->count();
-        $completedMap = $documentAnalysis->microAnalyses()->mapLevel()->completed()->count();
-        $failedMap = $documentAnalysis->microAnalyses()->mapLevel()->failed()->count();
-
-        Log::info('MapDocumentAnalysisJob: Verificando progresso MAP', [
-            'analysis_id' => $documentAnalysis->id,
-            'total' => $totalMap,
-            'completed' => $completedMap,
-            'failed' => $failedMap
-        ]);
-
-        // Atualiza progresso da fase MAP
-        $documentAnalysis->updateMapProgress($completedMap);
-
-        // Se todos os MAPs foram concluídos (com sucesso ou falha), dispara o REDUCE
-        if (($completedMap + $failedMap) >= $totalMap) {
-            if ($completedMap === 0) {
-                // Todos falharam
-                $documentAnalysis->update([
-                    'status' => 'failed',
-                    'error_message' => 'Todos os documentos falharam na fase MAP'
-                ]);
-                return;
-            }
-
-            Log::info('MapDocumentAnalysisJob: Fase MAP concluída, disparando REDUCE', [
-                'analysis_id' => $documentAnalysis->id,
-                'completed_maps' => $completedMap
-            ]);
-
-            // Dispara o job de REDUCE
-            ReduceDocumentAnalysisJob::dispatch(
-                $documentAnalysis->id,
-                $this->aiProvider,
-                $this->deepThinkingEnabled,
-                $documentAnalysis->job_parameters['promptTemplate'] ?? '',
-                $this->aiModelId // ID do modelo específico
-            )->onQueue('analysis');
-        }
     }
 
     /**

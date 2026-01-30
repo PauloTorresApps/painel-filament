@@ -3,15 +3,12 @@
 namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
-use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
-use App\Services\EprocService;
-use App\Services\HtmlToTextService;
-use App\Services\OcrService;
-use App\Services\PdfToTextService;
+use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification as FilamentNotification;
 
@@ -19,10 +16,15 @@ use Filament\Notifications\Notification as FilamentNotification;
  * Job orquestrador para análise de documentos de processo via map-reduce.
  *
  * Responsabilidades:
- * 1. Baixar documentos do e-Proc
- * 2. Extrair texto dos PDFs
- * 3. Criar registros de micro-análises
- * 4. Disparar jobs de MAP para processamento paralelo
+ * 1. Criar registro principal de análise
+ * 2. Disparar jobs de DOWNLOAD em paralelo via Bus::batch()
+ * 3. Após downloads, disparar jobs de MAP para processamento paralelo
+ * 4. Coordenar callbacks de conclusão
+ *
+ * Arquitetura de Processamento Paralelo:
+ * - DOWNLOAD: Bus::batch() com DownloadDocumentJob (paralelo)
+ * - MAP: Bus::batch() com MapDocumentAnalysisJob (paralelo)
+ * - REDUCE: Bus::batch() com ReduceBatchJob (paralelo por nível)
  */
 class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
@@ -83,10 +85,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            $pdfService = new PdfToTextService();
-            $eprocService = new EprocService($this->userLogin, $this->senha);
-
-            Log::info('AnalyzeProcessDocuments: Iniciando download de documentos', [
+            Log::info('AnalyzeProcessDocuments: Iniciando processamento paralelo', [
                 'numero_processo' => $this->numeroProcesso,
                 'total_documentos' => count($this->documentos),
             ]);
@@ -95,7 +94,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $this->sendNotification(
                 $user,
                 'Baixando Documentos',
-                "Baixando " . count($this->documentos) . " documento(s) do e-Proc para o processo {$this->numeroProcesso}.",
+                "Iniciando download paralelo de " . count($this->documentos) . " documento(s) do e-Proc para o processo {$this->numeroProcesso}.",
                 'info'
             );
 
@@ -130,185 +129,74 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 'analysis_id' => $documentAnalysis->id,
             ]);
 
-            // Processa cada documento e cria micro-análises
-            $microAnalysesCreated = 0;
-            $totalCharacters = 0;
-
+            // Cria jobs de download para cada documento
+            $downloadJobs = [];
             foreach ($this->documentos as $index => $documento) {
-                try {
-                    // Obtém o mimetype do documento
-                    $mimetype = strtolower($documento['conteudo']['mimetype'] ?? '');
-                    $isImage = str_starts_with($mimetype, 'image/');
-                    $isHtml = $mimetype === 'text/html' || str_contains($mimetype, 'html');
-
-                    // Busca o conteúdo do documento
-                    $documentoCompleto = $this->fetchDocumento($eprocService, $documento['idDocumento']);
-
-                    if (!$documentoCompleto || empty($documentoCompleto['conteudo'])) {
-                        Log::warning('AnalyzeProcessDocuments: Documento sem conteúdo', [
-                            'id_documento' => $documento['idDocumento']
-                        ]);
-
-                        // Cria micro-análise com status de falha
-                        DocumentMicroAnalysis::create([
-                            'document_analysis_id' => $documentAnalysis->id,
-                            'document_index' => $index,
-                            'id_documento' => $documento['idDocumento'],
-                            'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
-                            'mimetype' => $mimetype,
-                            'status' => 'failed',
-                            'error_message' => 'Documento sem conteúdo',
-                            'reduce_level' => 0,
-                        ]);
-                        continue;
-                    }
-
-                    $texto = '';
-
-                    if ($isImage) {
-                        // Para imagens, extrai texto usando OCR (Tesseract)
-                        $ocrService = new OcrService();
-
-                        if (!$ocrService->isAvailable()) {
-                            Log::warning('AnalyzeProcessDocuments: Tesseract OCR não disponível, pulando imagem', [
-                                'id_documento' => $documento['idDocumento'],
-                                'mimetype' => $mimetype,
-                            ]);
-                            throw new \Exception('Tesseract OCR não está disponível para extrair texto da imagem');
-                        }
-
-                        $texto = $ocrService->extractText(
-                            $documentoCompleto['conteudo'],
-                            $mimetype,
-                            "doc_{$documento['idDocumento']}"
-                        );
-
-                        Log::info('AnalyzeProcessDocuments: Texto extraído da imagem via OCR', [
-                            'id_documento' => $documento['idDocumento'],
-                            'mimetype' => $mimetype,
-                            'chars_extracted' => mb_strlen($texto),
-                        ]);
-                    } elseif ($isHtml) {
-                        // Para HTML, extrai texto removendo tags e elementos não textuais
-                        $htmlService = new HtmlToTextService();
-
-                        $texto = $htmlService->extractText(
-                            $documentoCompleto['conteudo'],
-                            "doc_{$documento['idDocumento']}"
-                        );
-
-                        Log::info('AnalyzeProcessDocuments: Texto extraído do HTML', [
-                            'id_documento' => $documento['idDocumento'],
-                            'mimetype' => $mimetype,
-                            'chars_extracted' => mb_strlen($texto),
-                        ]);
-                    } else {
-                        // Para PDFs e outros documentos, extrai texto
-                        $texto = $pdfService->extractText(
-                            $documentoCompleto['conteudo'],
-                            "doc_{$documento['idDocumento']}.pdf"
-                        );
-                    }
-
-                    $totalCharacters += mb_strlen($texto);
-
-                    // Cria registro de micro-análise
-                    $microAnalysis = DocumentMicroAnalysis::create([
-                        'document_analysis_id' => $documentAnalysis->id,
-                        'document_index' => $index,
-                        'id_documento' => $documento['idDocumento'],
-                        'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
-                        'mimetype' => $mimetype,
-                        'extracted_text' => $texto,
-                        'status' => 'pending',
-                        'reduce_level' => 0, // Nível MAP
-                    ]);
-
-                    $microAnalysesCreated++;
-
-                    Log::info('AnalyzeProcessDocuments: Micro-análise criada', [
-                        'micro_id' => $microAnalysis->id,
-                        'document_index' => $index,
-                        'mimetype' => $mimetype,
-                        'is_image' => $isImage,
-                        'is_html' => $isHtml,
-                        'chars' => mb_strlen($texto),
-                    ]);
-
-                } catch (\Exception $e) {
-                    Log::error('AnalyzeProcessDocuments: Erro ao processar documento', [
-                        'id_documento' => $documento['idDocumento'],
-                        'error' => $e->getMessage()
-                    ]);
-
-                    // Cria micro-análise com status de falha
-                    DocumentMicroAnalysis::create([
-                        'document_analysis_id' => $documentAnalysis->id,
-                        'document_index' => $index,
-                        'id_documento' => $documento['idDocumento'],
-                        'descricao' => $documento['descricao'] ?? "Documento " . ($index + 1),
-                        'mimetype' => $mimetype ?? null,
-                        'status' => 'failed',
-                        'error_message' => $e->getMessage(),
-                        'reduce_level' => 0,
-                    ]);
-                }
-
-                // Notifica progresso a cada 10 documentos
-                if (($index + 1) % 10 === 0) {
-                    $this->sendNotification(
-                        $user,
-                        'Progresso',
-                        "Baixados " . ($index + 1) . " de " . count($this->documentos) . " documentos",
-                        'info'
-                    );
-                }
-            }
-
-            // Atualiza total de caracteres
-            $documentAnalysis->update(['total_characters' => $totalCharacters]);
-
-            if ($microAnalysesCreated === 0) {
-                $documentAnalysis->update([
-                    'status' => 'failed',
-                    'error_message' => 'Nenhum documento pôde ser processado'
-                ]);
-
-                $this->sendNotification(
-                    $user,
-                    'Análise Falhou',
-                    'Nenhum documento pôde ser processado',
-                    'danger'
+                $downloadJobs[] = new DownloadDocumentJob(
+                    $documentAnalysis->id,
+                    $index,
+                    $documento,
+                    $this->numeroProcesso,
+                    $this->userLogin,
+                    $this->senha
                 );
-                return;
             }
 
-            Log::info('AnalyzeProcessDocuments: Download concluído, disparando jobs de MAP', [
+            // Armazena dados necessários para callbacks
+            $analysisId = $documentAnalysis->id;
+            $aiProvider = $this->aiProvider;
+            $deepThinkingEnabled = $this->deepThinkingEnabled;
+            $contextoDados = $this->contextoDados;
+            $aiModelId = $this->aiModelId;
+            $userId = $this->userId;
+
+            // Dispara batch de downloads paralelos
+            Bus::batch($downloadJobs)
+                ->name("download_docs_analysis_{$analysisId}")
+                ->onQueue('downloads')
+                ->allowFailures() // Permite que alguns downloads falhem sem cancelar o batch
+                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $contextoDados, $aiModelId, $userId) {
+                    // Callback de sucesso: todos os downloads concluídos
+                    Log::info('AnalyzeProcessDocuments: Batch de downloads concluído', [
+                        'analysis_id' => $analysisId,
+                        'batch_id' => $batch->id,
+                        'total_jobs' => $batch->totalJobs,
+                        'failed_jobs' => $batch->failedJobs,
+                    ]);
+
+                    // Dispara fase MAP após downloads
+                    DispatchMapPhaseJob::dispatch(
+                        $analysisId,
+                        $aiProvider,
+                        $deepThinkingEnabled,
+                        $contextoDados,
+                        $aiModelId,
+                        $userId
+                    )->onQueue('analysis');
+                })
+                ->catch(function (Batch $batch, \Throwable $e) use ($analysisId, $userId) {
+                    // Callback de erro (chamado quando o primeiro job falha)
+                    Log::error('AnalyzeProcessDocuments: Erro no batch de downloads', [
+                        'analysis_id' => $analysisId,
+                        'batch_id' => $batch->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                })
+                ->finally(function (Batch $batch) use ($analysisId) {
+                    // Callback final (sempre executado)
+                    Log::info('AnalyzeProcessDocuments: Batch de downloads finalizado', [
+                        'analysis_id' => $analysisId,
+                        'batch_id' => $batch->id,
+                        'pending_jobs' => $batch->pendingJobs,
+                        'failed_jobs' => $batch->failedJobs,
+                    ]);
+                })
+                ->dispatch();
+
+            Log::info('AnalyzeProcessDocuments: Batch de downloads disparado', [
                 'analysis_id' => $documentAnalysis->id,
-                'micro_analyses_created' => $microAnalysesCreated,
-                'total_characters' => $totalCharacters,
+                'total_jobs' => count($downloadJobs),
             ]);
-
-            // Atualiza para fase MAP
-            $documentAnalysis->startMapPhase();
-
-            // Notifica que a análise vai começar
-            $providerName = match ($this->aiProvider) {
-                'gemini' => 'Google Gemini',
-                'deepseek' => 'DeepSeek',
-                'openai' => 'OpenAI',
-                default => 'IA'
-            };
-
-            $this->sendNotification(
-                $user,
-                'Fase 1/2: Análise Individual',
-                "Download concluído! A {$providerName} está analisando {$microAnalysesCreated} documento(s) individualmente.",
-                'info'
-            );
-
-            // Dispara jobs de MAP para cada micro-análise pendente
-            $this->dispatchMapJobs($documentAnalysis);
 
         } catch (\Exception $e) {
             Log::error('AnalyzeProcessDocuments: Erro geral', [
@@ -331,102 +219,6 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             );
 
             throw $e;
-        }
-    }
-
-    /**
-     * Dispara jobs de MAP para as micro-análises pendentes
-     */
-    private function dispatchMapJobs(DocumentAnalysis $documentAnalysis): void
-    {
-        $pendingMicroAnalyses = $documentAnalysis->microAnalyses()
-            ->where('status', 'pending')
-            ->where('reduce_level', 0)
-            ->get();
-
-        $jobs = [];
-
-        foreach ($pendingMicroAnalyses as $microAnalysis) {
-            $jobs[] = new MapDocumentAnalysisJob(
-                $microAnalysis->id,
-                $this->aiProvider,
-                $this->deepThinkingEnabled,
-                $this->contextoDados,
-                $this->aiModelId // ID do modelo específico
-            );
-        }
-
-        if (empty($jobs)) {
-            Log::warning('AnalyzeProcessDocuments: Nenhum job de MAP para disparar');
-            return;
-        }
-
-        // Dispara todos os jobs na fila de análise
-        foreach ($jobs as $job) {
-            dispatch($job)->onQueue('analysis');
-        }
-
-        Log::info('AnalyzeProcessDocuments: Jobs de MAP disparados', [
-            'analysis_id' => $documentAnalysis->id,
-            'total_jobs' => count($jobs),
-        ]);
-    }
-
-    /**
-     * Busca o documento completo do webservice
-     */
-    private function fetchDocumento(EprocService $eprocService, string $idDocumento): ?array
-    {
-        try {
-            $resultado = $eprocService->consultarDocumentosProcesso(
-                $this->numeroProcesso,
-                [$idDocumento],
-                true
-            );
-
-            $documentos = null;
-
-            if (isset($resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'])) {
-                $documentos = $resultado['Body']['respostaConsultarDocumentosProcesso']['documentos'];
-            } elseif (isset($resultado['documento'])) {
-                $documentos = $resultado['documento'];
-            } else {
-                return null;
-            }
-
-            if (empty($documentos)) {
-                return null;
-            }
-
-            if (isset($documentos['idDocumento'])) {
-                $documentos = [$documentos];
-            }
-
-            foreach ($documentos as $doc) {
-                if ($doc['idDocumento'] == $idDocumento) {
-                    $conteudoBase64 = null;
-
-                    if (is_array($doc['conteudo'] ?? null) && isset($doc['conteudo']['conteudo'])) {
-                        $conteudoBase64 = $doc['conteudo']['conteudo'];
-                    } elseif (is_string($doc['conteudo'] ?? null)) {
-                        $conteudoBase64 = $doc['conteudo'];
-                    }
-
-                    return [
-                        'conteudo' => $conteudoBase64,
-                        'descricao' => $doc['descricao'] ?? null,
-                    ];
-                }
-            }
-
-            return null;
-
-        } catch (\Exception $e) {
-            Log::error('AnalyzeProcessDocuments: Erro ao buscar documento', [
-                'id_documento' => $idDocumento,
-                'error' => $e->getMessage()
-            ]);
-            return null;
         }
     }
 

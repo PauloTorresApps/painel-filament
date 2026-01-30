@@ -10,14 +10,20 @@ use App\Services\GeminiService;
 use App\Services\DeepSeekService;
 use App\Services\OpenAIService;
 use App\Services\RateLimiterService;
+use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification as FilamentNotification;
 
 /**
  * Job responsável pela fase REDUCE do map-reduce.
  * Consolida micro-análises em análises maiores até gerar a análise final.
+ *
+ * Arquitetura de Processamento Paralelo:
+ * - Batches são processados em paralelo via Bus::batch() + ReduceBatchJob
+ * - Após todos os batches de um nível, dispara o próximo nível ou gera análise final
  */
 class ReduceDocumentAnalysisJob implements ShouldQueue
 {
@@ -45,8 +51,6 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $startTime = microtime(true);
-
         try {
             $documentAnalysis = DocumentAnalysis::find($this->documentAnalysisId);
 
@@ -63,6 +67,11 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
                     'id' => $this->documentAnalysisId
                 ]);
                 return;
+            }
+
+            // Obtém promptTemplate dos parâmetros do job se não foi passado
+            if (empty($this->promptTemplate) && !empty($documentAnalysis->job_parameters['promptTemplate'])) {
+                $this->promptTemplate = $documentAnalysis->job_parameters['promptTemplate'];
             }
 
             Log::info('ReduceDocumentAnalysisJob: Iniciando REDUCE', [
@@ -109,17 +118,18 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
                 'analysis_id' => $this->documentAnalysisId,
                 'count' => $totalMicroAnalyses,
                 'previous_level' => $previousLevel,
-                'total_levels' => $totalLevels
+                'total_levels' => $totalLevels,
+                'total_batches' => $totalBatches,
             ]);
 
-            // Se há apenas uma micro-análise ou poucas o suficiente, gera análise final
+            // Se há apenas uma micro-análise ou poucas o suficiente, gera análise final diretamente
             if ($totalMicroAnalyses <= self::BATCH_SIZE) {
-                $this->generateFinalAnalysis($documentAnalysis, $microAnalyses, $startTime);
+                $this->generateFinalAnalysis($documentAnalysis, $microAnalyses);
                 return;
             }
 
-            // Caso contrário, faz reduce hierárquico em batches
-            $this->performHierarchicalReduce($documentAnalysis, $microAnalyses);
+            // Caso contrário, faz reduce hierárquico em batches PARALELOS
+            $this->performParallelReduce($documentAnalysis, $microAnalyses);
 
         } catch (\Exception $e) {
             Log::error('ReduceDocumentAnalysisJob: Erro no processamento', [
@@ -142,134 +152,110 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
     }
 
     /**
-     * Executa reduce hierárquico em batches
+     * Executa reduce hierárquico em batches PARALELOS usando Bus::batch()
      */
-    private function performHierarchicalReduce(DocumentAnalysis $documentAnalysis, $microAnalyses): void
+    private function performParallelReduce(DocumentAnalysis $documentAnalysis, $microAnalyses): void
     {
         $batches = $microAnalyses->chunk(self::BATCH_SIZE);
-        $aiService = $this->getAIService($this->aiProvider);
-
-        // Define o modelo específico se configurado
-        if ($this->aiModelId) {
-            $aiService->setModel($this->aiModelId);
-        }
-
+        $reduceBatchJobs = [];
         $batchIndex = 0;
-        $totalBatches = $batches->count();
 
-        Log::info('ReduceDocumentAnalysisJob: Executando reduce hierárquico', [
+        Log::info('ReduceDocumentAnalysisJob: Preparando batches paralelos', [
             'analysis_id' => $documentAnalysis->id,
-            'total_batches' => $totalBatches,
+            'total_batches' => $batches->count(),
             'reduce_level' => $this->currentReduceLevel
         ]);
 
+        // Cria jobs de ReduceBatch para cada chunk
         foreach ($batches as $batch) {
             $batchIndex++;
+            $microAnalysisIds = $batch->pluck('id')->toArray();
 
-            // Atualiza progresso
-            $documentAnalysis->updateReduceProgress(
-                $this->currentReduceLevel,
-                $batchIndex,
-                $totalBatches
-            );
-
-            // Monta o texto consolidado do batch
-            $consolidatedText = $this->buildBatchText($batch);
-            $parentIds = $batch->pluck('id')->toArray();
-
-            // Cria registro para o resultado do reduce
-            $reduceMicro = DocumentMicroAnalysis::create([
-                'document_analysis_id' => $documentAnalysis->id,
-                'document_index' => $batchIndex,
-                'descricao' => "Consolidação nível {$this->currentReduceLevel} - Batch {$batchIndex}",
-                'reduce_level' => $this->currentReduceLevel,
-                'parent_ids' => $parentIds,
-                'status' => 'processing',
-            ]);
-
-            try {
-                // Aplica rate limiting
-                RateLimiterService::apply($this->aiProvider);
-
-                // Monta prompt de consolidação
-                $prompt = $this->buildReducePrompt($batch->count());
-
-                // Chama a IA para consolidar
-                $result = $aiService->analyzeSingleDocument(
-                    $prompt,
-                    $consolidatedText,
-                    $this->deepThinkingEnabled
-                );
-
-                $reduceMicro->markAsCompleted(
-                    $result,
-                    $this->estimateTokenCount($result)
-                );
-
-                Log::info('ReduceDocumentAnalysisJob: Batch consolidado', [
-                    'analysis_id' => $documentAnalysis->id,
-                    'batch' => $batchIndex,
-                    'reduce_micro_id' => $reduceMicro->id
-                ]);
-
-            } catch (\Exception $e) {
-                $reduceMicro->markAsFailed($e->getMessage());
-                Log::error('ReduceDocumentAnalysisJob: Erro ao consolidar batch', [
-                    'analysis_id' => $documentAnalysis->id,
-                    'batch' => $batchIndex,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        // Verifica se deve continuar com mais um nível de reduce
-        $completedReduces = $documentAnalysis->microAnalyses()
-            ->reduceLevel($this->currentReduceLevel)
-            ->completed()
-            ->count();
-
-        if ($completedReduces === 0) {
-            $documentAnalysis->update([
-                'status' => 'failed',
-                'error_message' => "Falha na consolidação do nível {$this->currentReduceLevel}"
-            ]);
-            return;
-        }
-
-        if ($completedReduces > 1 && $this->currentReduceLevel < self::MAX_REDUCE_LEVELS) {
-            // Precisa de mais um nível de reduce
-            Log::info('ReduceDocumentAnalysisJob: Disparando próximo nível de reduce', [
-                'analysis_id' => $documentAnalysis->id,
-                'next_level' => $this->currentReduceLevel + 1,
-                'micro_analyses_to_reduce' => $completedReduces
-            ]);
-
-            self::dispatch(
+            $reduceBatchJobs[] = new ReduceBatchJob(
                 $documentAnalysis->id,
+                $microAnalysisIds,
+                $batchIndex,
+                $this->currentReduceLevel,
                 $this->aiProvider,
                 $this->deepThinkingEnabled,
-                $this->promptTemplate,
-                $this->aiModelId,
-                $this->currentReduceLevel + 1
-            )->onQueue('analysis');
-
-        } else {
-            // Pode gerar análise final
-            $finalMicroAnalyses = $documentAnalysis->microAnalyses()
-                ->reduceLevel($this->currentReduceLevel)
-                ->completed()
-                ->orderBy('document_index')
-                ->get();
-
-            $this->generateFinalAnalysis($documentAnalysis, $finalMicroAnalyses, microtime(true));
+                $this->aiModelId
+            );
         }
+
+        // Armazena dados para callbacks
+        $analysisId = $documentAnalysis->id;
+        $aiProvider = $this->aiProvider;
+        $deepThinkingEnabled = $this->deepThinkingEnabled;
+        $promptTemplate = $this->promptTemplate;
+        $aiModelId = $this->aiModelId;
+        $currentReduceLevel = $this->currentReduceLevel;
+
+        // Dispara batch de reduces paralelos
+        Bus::batch($reduceBatchJobs)
+            ->name("reduce_level_{$currentReduceLevel}_analysis_{$analysisId}")
+            ->onQueue('analysis')
+            ->allowFailures()
+            ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $promptTemplate, $aiModelId, $currentReduceLevel) {
+                // Callback de sucesso: todos os batches concluídos
+                Log::info('ReduceDocumentAnalysisJob: Batches do nível concluídos', [
+                    'analysis_id' => $analysisId,
+                    'reduce_level' => $currentReduceLevel,
+                    'batch_id' => $batch->id,
+                    'total_jobs' => $batch->totalJobs,
+                    'failed_jobs' => $batch->failedJobs,
+                ]);
+
+                // Dispara job para verificar próximo nível ou finalizar
+                CheckReduceLevelCompletionJob::dispatch(
+                    $analysisId,
+                    $aiProvider,
+                    $deepThinkingEnabled,
+                    $promptTemplate,
+                    $aiModelId,
+                    $currentReduceLevel
+                )->onQueue('analysis');
+            })
+            ->catch(function (Batch $batch, \Throwable $e) use ($analysisId, $currentReduceLevel) {
+                Log::error('ReduceDocumentAnalysisJob: Erro em batch do nível', [
+                    'analysis_id' => $analysisId,
+                    'reduce_level' => $currentReduceLevel,
+                    'batch_id' => $batch->id,
+                    'error' => $e->getMessage(),
+                ]);
+            })
+            ->progress(function (Batch $batch) use ($analysisId, $currentReduceLevel) {
+                // Callback de progresso
+                $documentAnalysis = DocumentAnalysis::find($analysisId);
+                if ($documentAnalysis) {
+                    $completed = $batch->totalJobs - $batch->pendingJobs - $batch->failedJobs;
+                    $documentAnalysis->updateReduceProgress($currentReduceLevel, $completed, $batch->totalJobs);
+                }
+            })
+            ->finally(function (Batch $batch) use ($analysisId, $currentReduceLevel) {
+                Log::info('ReduceDocumentAnalysisJob: Batch de reduces finalizado', [
+                    'analysis_id' => $analysisId,
+                    'reduce_level' => $currentReduceLevel,
+                    'batch_id' => $batch->id,
+                    'pending_jobs' => $batch->pendingJobs,
+                    'failed_jobs' => $batch->failedJobs,
+                ]);
+            })
+            ->dispatch();
+
+        Log::info('ReduceDocumentAnalysisJob: Batch de reduces disparado', [
+            'analysis_id' => $documentAnalysis->id,
+            'reduce_level' => $this->currentReduceLevel,
+            'total_jobs' => count($reduceBatchJobs),
+        ]);
     }
 
     /**
      * Gera a análise final consolidando todas as micro-análises restantes
      */
-    private function generateFinalAnalysis(DocumentAnalysis $documentAnalysis, $microAnalyses, float $startTime): void
+    private function generateFinalAnalysis(DocumentAnalysis $documentAnalysis, $microAnalyses): void
     {
+        $startTime = microtime(true);
+
         // Atualiza status para análise final
         $documentAnalysis->startFinalAnalysis();
 
@@ -347,52 +333,6 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
     }
 
     /**
-     * Monta prompt para consolidação intermediária
-     */
-    private function buildReducePrompt(int $documentCount): string
-    {
-        return <<<PROMPT
-# TAREFA DE CONSOLIDAÇÃO
-
-Você recebeu as análises de {$documentCount} documentos de um processo judicial.
-
-Sua tarefa é consolidar essas análises em um resumo estruturado que:
-
-1. **Preserve a ordem cronológica** dos eventos do processo
-2. **Identifique conexões** entre os documentos (causa e efeito)
-3. **Destaque informações críticas** (pedidos, decisões, prazos)
-4. **Mantenha referências** a documentos específicos quando relevante
-5. **Seja conciso** mas não perca informações importantes
-
-## FORMATO DE SAÍDA
-
-Organize a consolidação nas seguintes seções:
-
-### CRONOLOGIA DO PROCESSO
-[Sequência temporal dos principais eventos]
-
-### PARTES E REPRESENTANTES
-[Quem são as partes e seus advogados/procuradores]
-
-### PEDIDOS E PRETENSÕES
-[O que cada parte está pedindo]
-
-### DECISÕES E DESPACHOS
-[O que já foi decidido até agora]
-
-### FUNDAMENTOS JURÍDICOS
-[Base legal utilizada pelas partes e pelo juízo]
-
-### SITUAÇÃO ATUAL
-[Estado atual do processo baseado nos documentos analisados]
-
----
-
-Responda apenas com a consolidação, sem comentários adicionais.
-PROMPT;
-    }
-
-    /**
      * Monta prompt para análise final
      */
     private function buildFinalPrompt(): string
@@ -422,14 +362,6 @@ Com base nessas informações, forneça a análise solicitada pelo usuário:
 
 Responda com a análise completa conforme solicitado.
 PROMPT;
-    }
-
-    /**
-     * Estima contagem de tokens
-     */
-    private function estimateTokenCount(string $text): int
-    {
-        return (int) ceil(mb_strlen($text) / 4);
     }
 
     /**
@@ -519,7 +451,7 @@ PROMPT;
 
             FilamentNotification::make()
                 ->title('Fase 2/2: Consolidação')
-                ->body("Análise individual concluída! A {$providerName} está consolidando {$microAnalysesCount} análises para gerar a visão completa do processo.")
+                ->body("Análise individual concluída! A {$providerName} está consolidando {$microAnalysesCount} análises em paralelo para gerar a visão completa do processo.")
                 ->status('info')
                 ->sendToDatabase($user);
         } catch (\Exception $e) {
