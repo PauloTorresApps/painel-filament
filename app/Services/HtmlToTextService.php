@@ -104,6 +104,55 @@ class HtmlToTextService
     }
 
     /**
+     * Extrai imagens embutidas em base64 do conteúdo HTML.
+     *
+     * Detecta tags <img> com src="data:image/...;base64,..." e retorna
+     * um array com o mimetype e o conteúdo base64 de cada imagem.
+     *
+     * @param string $base64Content Conteúdo HTML codificado em base64
+     * @return array Lista de imagens: [['mimetype' => '...', 'content' => '...(base64)...']]
+     */
+    public function extractEmbeddedImages(string $base64Content): array
+    {
+        try {
+            $htmlContent = base64_decode($base64Content);
+
+            if ($htmlContent === false) {
+                return [];
+            }
+
+            $images = [];
+
+            // Busca tags <img> com src em data URI base64
+            if (preg_match_all(
+                '/<img[^>]+src=["\']data:(image\/[^;]+);base64,([^"\']+)["\']/i',
+                $htmlContent,
+                $matches,
+                PREG_SET_ORDER
+            )) {
+                foreach ($matches as $match) {
+                    $images[] = [
+                        'mimetype' => $match[1],
+                        'content' => $match[2],
+                    ];
+                }
+            }
+
+            Log::info('HtmlToTextService: Imagens embutidas encontradas', [
+                'total' => count($images),
+            ]);
+
+            return $images;
+
+        } catch (\Exception $e) {
+            Log::error('HtmlToTextService: Erro ao extrair imagens embutidas', [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
      * Normaliza o encoding do HTML para UTF-8
      */
     private function normalizeEncoding(string $content): string

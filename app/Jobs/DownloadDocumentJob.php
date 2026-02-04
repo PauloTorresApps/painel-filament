@@ -128,6 +128,52 @@ class DownloadDocumentJob implements ShouldQueue
                     'id_documento' => $this->documento['idDocumento'],
                     'chars_extracted' => mb_strlen($texto),
                 ]);
+
+                // Verifica se o HTML contém imagens embutidas (ex: documentos escaneados)
+                $embeddedImages = $htmlService->extractEmbeddedImages($documentoCompleto['conteudo']);
+
+                if (!empty($embeddedImages)) {
+                    $ocrService = new OcrService();
+
+                    if ($ocrService->isAvailable()) {
+                        $textoOcr = '';
+
+                        foreach ($embeddedImages as $index => $image) {
+                            try {
+                                $imageText = $ocrService->extractText(
+                                    $image['content'],
+                                    $image['mimetype'],
+                                    "doc_{$this->documento['idDocumento']}_img_{$index}"
+                                );
+
+                                if (!empty($imageText)) {
+                                    $textoOcr .= "\n\n--- Imagem " . ($index + 1) . " ---\n" . $imageText;
+                                }
+                            } catch (\Exception $e) {
+                                Log::warning('DownloadDocumentJob: Falha OCR em imagem embutida do HTML', [
+                                    'id_documento' => $this->documento['idDocumento'],
+                                    'image_index' => $index,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+
+                        if (!empty($textoOcr)) {
+                            $texto = trim($texto . "\n" . $textoOcr);
+
+                            Log::info('DownloadDocumentJob: OCR aplicado em imagens do HTML', [
+                                'id_documento' => $this->documento['idDocumento'],
+                                'images_count' => count($embeddedImages),
+                                'total_chars' => mb_strlen($texto),
+                            ]);
+                        }
+                    } else {
+                        Log::warning('DownloadDocumentJob: Tesseract não disponível para OCR de imagens do HTML', [
+                            'id_documento' => $this->documento['idDocumento'],
+                            'images_count' => count($embeddedImages),
+                        ]);
+                    }
+                }
             } else {
                 // Para PDFs e outros documentos, extrai texto
                 $texto = $pdfService->extractText(

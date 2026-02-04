@@ -283,17 +283,7 @@ class ProcessDetails extends Page
                 // Mimetype está dentro de conteudo
                 $mimeType = strtolower($doc['conteudo']['mimetype'] ?? '');
 
-                // 1. Rejeita documentos HTML (atos ordinatórios sem conteúdo real)
-                if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) {
-                    Log::debug('Documento rejeitado: HTML/sem conteúdo', [
-                        'id' => $doc['idDocumento'] ?? 'sem_id',
-                        'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                        'mimeType' => $mimeType
-                    ]);
-                    return false;
-                }
-
-                // 2. Rejeita APENAS vídeos (mantém imagens e outros formatos)
+                // Rejeita APENAS vídeos (mantém PDFs, imagens, HTML, documentos Office, etc.)
                 $extensoesVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'm4v'];
 
                 // Rejeita por mimetype de vídeo
