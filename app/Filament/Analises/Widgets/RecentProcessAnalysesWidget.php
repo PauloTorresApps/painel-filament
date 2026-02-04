@@ -69,7 +69,7 @@ class RecentProcessAnalysesWidget extends TableWidget
                         'completed' => 'success',
                         default => 'gray',
                     })
-                    ->visible(fn ($record) => $record->status === 'processing'),
+                    ->visible(fn ($record) => $record?->status === 'processing'),
 
                 TextColumn::make('total_documents')
                     ->label('Documentos')
