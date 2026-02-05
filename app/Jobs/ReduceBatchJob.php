@@ -162,14 +162,81 @@ class ReduceBatchJob implements ShouldQueue
     {
         $text = "# ANÁLISES DOS DOCUMENTOS DO PROCESSO\n\n";
 
+        // Coleta e ordena eventos da timeline de todas as micro-análises
+        $timelineText = $this->buildOrderedTimeline($microAnalyses);
+        if ($timelineText) {
+            $text .= "## LINHA DO TEMPO CONSOLIDADA (ordenada por data)\n\n";
+            $text .= $timelineText . "\n\n";
+            $text .= "---\n\n";
+        }
+
+        $text .= "## ANÁLISES INDIVIDUAIS\n\n";
+
         foreach ($microAnalyses as $index => $micro) {
             $docNum = $index + 1;
             $text .= "---\n\n";
-            $text .= "## DOCUMENTO {$docNum}: {$micro->descricao}\n\n";
-            $text .= $micro->micro_analysis . "\n\n";
+            $text .= "### DOCUMENTO {$docNum}: {$micro->descricao}\n\n";
+            // Remove o bloco JSON da timeline para não duplicar informação
+            $analysisText = $this->removeTimelineJson($micro->micro_analysis);
+            $text .= $analysisText . "\n\n";
         }
 
         return $text;
+    }
+
+    /**
+     * Constrói uma linha do tempo ordenada a partir de todas as micro-análises
+     */
+    private function buildOrderedTimeline($microAnalyses): ?string
+    {
+        $allEvents = [];
+
+        foreach ($microAnalyses as $micro) {
+            $events = $micro->timeline_events['eventos'] ?? [];
+            $documentType = $micro->timeline_events['documento_tipo'] ?? $micro->descricao;
+
+            foreach ($events as $event) {
+                $event['fonte'] = $documentType;
+                $event['documento_index'] = $micro->document_index;
+                $allEvents[] = $event;
+            }
+        }
+
+        if (empty($allEvents)) {
+            return null;
+        }
+
+        // Ordena por data (eventos sem data vão para o final)
+        usort($allEvents, function ($a, $b) {
+            $dateA = $a['data'] ?? '9999-99-99';
+            $dateB = $b['data'] ?? '9999-99-99';
+            return strcmp($dateA, $dateB);
+        });
+
+        // Formata a timeline como texto estruturado
+        $timeline = "";
+        foreach ($allEvents as $event) {
+            $data = $event['data'] ?? $event['data_original'] ?? 'Data não identificada';
+            $tipo = $event['tipo'] ?? 'Evento';
+            $descricao = $event['descricao'] ?? '';
+            $fonte = $event['fonte'] ?? '';
+            $relevancia = $event['relevancia'] ?? 'media';
+            $valores = !empty($event['valores']) ? ' | Valores: ' . implode(', ', $event['valores']) : '';
+
+            $marker = $relevancia === 'alta' ? '**[IMPORTANTE]**' : '';
+            $timeline .= "- **{$data}** | {$tipo}: {$descricao}{$valores} {$marker}\n";
+            $timeline .= "  _Fonte: {$fonte}_\n";
+        }
+
+        return $timeline;
+    }
+
+    /**
+     * Remove o bloco JSON da timeline da análise para evitar duplicação
+     */
+    private function removeTimelineJson(string $analysis): string
+    {
+        return preg_replace('/<timeline_json>[\s\S]*?<\/timeline_json>/i', '', $analysis);
     }
 
     /**

@@ -197,15 +197,44 @@ Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, e
 ## 5. FATOS RELEVANTES
 Fatos narrados que são importantes para entender a narrativa processual
 
-## 6. DATAS E VALORES
-Datas mencionadas (prazos, eventos, vencimentos) e valores monetários se houver
-
-## 7. CONEXÕES
+## 6. CONEXÕES
 Referências a outros documentos ou eventos do processo
 
 ---
 
-**FORMATO:** Responda de forma estruturada usando markdown. Seja conciso mas completo.
+## 7. LINHA DO TEMPO (JSON)
+
+**OBRIGATÓRIO:** Ao final da análise, inclua um bloco JSON com todos os eventos e datas encontrados no documento.
+O JSON deve estar entre as tags `<timeline_json>` e `</timeline_json>`.
+
+Formato do JSON:
+```json
+{
+  "eventos": [
+    {
+      "data": "YYYY-MM-DD",
+      "data_original": "texto original da data no documento",
+      "tipo": "tipo do evento (petição, decisão, prazo, fato, pagamento, etc.)",
+      "descricao": "descrição curta do evento",
+      "valores": ["R$ X.XXX,XX"],
+      "relevancia": "alta|media|baixa"
+    }
+  ],
+  "documento_data": "YYYY-MM-DD ou null",
+  "documento_tipo": "tipo identificado do documento"
+}
+```
+
+Regras para o JSON:
+- Use formato ISO para datas (YYYY-MM-DD)
+- Se a data tiver apenas mês/ano, use o dia 01 (ex: "2024-03-01")
+- Se não conseguir determinar a data exata, use `null` no campo `data` mas mantenha `data_original`
+- Liste TODOS os eventos com datas encontrados, mesmo os menos relevantes
+- O campo `documento_data` é a data principal do documento (data de protocolo, assinatura, etc.)
+
+---
+
+**FORMATO:** Responda de forma estruturada usando markdown. Seja conciso mas completo. Não esqueça do bloco JSON ao final.
 PROMPT;
 
         return $prompt;

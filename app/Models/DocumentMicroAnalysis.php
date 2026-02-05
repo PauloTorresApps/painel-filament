@@ -21,6 +21,7 @@ class DocumentMicroAnalysis extends Model
         'parent_ids',
         'token_count',
         'processing_time_ms',
+        'timeline_events',
     ];
 
     protected $casts = [
@@ -29,6 +30,7 @@ class DocumentMicroAnalysis extends Model
         'parent_ids' => 'array',
         'token_count' => 'integer',
         'processing_time_ms' => 'integer',
+        'timeline_events' => 'array',
     ];
 
     /**
@@ -108,12 +110,65 @@ class DocumentMicroAnalysis extends Model
      */
     public function markAsCompleted(string $microAnalysis, ?int $tokenCount = null, ?int $processingTimeMs = null): void
     {
+        // Extrai eventos da timeline do JSON embutido na resposta
+        $timelineEvents = $this->extractTimelineEvents($microAnalysis);
+
         $this->update([
             'status' => 'completed',
             'micro_analysis' => $microAnalysis,
             'token_count' => $tokenCount,
             'processing_time_ms' => $processingTimeMs,
+            'timeline_events' => $timelineEvents,
         ]);
+    }
+
+    /**
+     * Extrai eventos da timeline do JSON embutido na resposta da IA
+     */
+    public function extractTimelineEvents(string $analysis): ?array
+    {
+        // Procura o bloco JSON entre as tags <timeline_json> e </timeline_json>
+        if (preg_match('/<timeline_json>\s*([\s\S]*?)\s*<\/timeline_json>/i', $analysis, $matches)) {
+            $jsonString = trim($matches[1]);
+
+            // Remove possíveis blocos de código markdown
+            $jsonString = preg_replace('/^```json?\s*/i', '', $jsonString);
+            $jsonString = preg_replace('/\s*```$/', '', $jsonString);
+
+            try {
+                $data = json_decode($jsonString, true, 512, JSON_THROW_ON_ERROR);
+
+                // Valida estrutura básica
+                if (is_array($data)) {
+                    return $data;
+                }
+            } catch (\JsonException $e) {
+                // Log silencioso - não queremos falhar a análise por causa do JSON
+                \Illuminate\Support\Facades\Log::warning('DocumentMicroAnalysis: Falha ao parsear timeline JSON', [
+                    'micro_id' => $this->id,
+                    'error' => $e->getMessage(),
+                    'json_preview' => substr($jsonString, 0, 500),
+                ]);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Retorna os eventos da timeline ordenados por data
+     */
+    public function getOrderedTimelineEvents(): array
+    {
+        $events = $this->timeline_events['eventos'] ?? [];
+
+        usort($events, function ($a, $b) {
+            $dateA = $a['data'] ?? '9999-99-99';
+            $dateB = $b['data'] ?? '9999-99-99';
+            return strcmp($dateA, $dateB);
+        });
+
+        return $events;
     }
 
     /**
