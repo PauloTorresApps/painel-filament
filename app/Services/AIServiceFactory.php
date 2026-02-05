@@ -15,7 +15,7 @@ class AIServiceFactory
     /**
      * Cria uma instância do serviço de IA apropriado
      *
-     * @param string $provider Nome do provider (gemini, openai, deepseek)
+     * @param string $provider Nome do provider (gemini, openai, deepseek, openrouter)
      * @return AIProviderInterface
      */
     public static function make(string $provider): AIProviderInterface
@@ -24,6 +24,7 @@ class AIServiceFactory
             'gemini' => new GeminiService(),
             'openai' => new OpenAIService(),
             'deepseek' => new DeepSeekService(),
+            'openrouter' => new OpenRouterService(),
             default => new GeminiService(),
         };
     }

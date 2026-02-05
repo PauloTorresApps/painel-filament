@@ -80,4 +80,12 @@ return [
         'rate_limit_per_minute' => env('OPENAI_RATE_LIMIT_PER_MINUTE', 3),
     ],
 
+    'openrouter' => [
+        'api_key' => env('OPENROUTER_API_KEY'),
+        'api_url' => config('laravel-openrouter.api_endpoint', 'https://openrouter.ai/api/v1/'),
+        'model' => env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-4'),
+        'timeout' => env('OPENROUTER_TIMEOUT', 300),
+        'rate_limit_per_minute' => env('OPENROUTER_RATE_LIMIT_PER_MINUTE', 30),
+    ],
+
 ];

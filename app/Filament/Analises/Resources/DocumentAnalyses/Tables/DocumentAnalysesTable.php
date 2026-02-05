@@ -2,9 +2,12 @@
 
 namespace App\Filament\Analises\Resources\DocumentAnalyses\Tables;
 
+use App\Jobs\DispatchMapPhaseJob;
 use App\Jobs\ResumeAnalysisJob;
+use App\Models\DocumentMicroAnalysis;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
@@ -143,32 +146,68 @@ class DocumentAnalysesTable
             ])
             ->recordActions([
                 ViewAction::make(),
-                Action::make('resume')
-                    ->label('Retomar')
+                Action::make('reprocess')
+                    ->label('Reprocessar')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->modalHeading('Retomar Análise')
-                    ->modalDescription(fn ($record) => "Deseja retomar a análise do processo {$record->numero_processo} de onde parou? Progresso atual: {$record->getProgressPercentage()}%")
+                    ->modalHeading('Reprocessar Análise')
+                    ->modalDescription(fn ($record) => "Isso irá reiniciar completamente a análise do processo {$record->numero_processo}. Deseja continuar?")
+                    ->modalSubmitActionLabel('Sim, reprocessar')
                     ->action(function ($record) {
-                        if (!$record->canBeResumed()) {
-                            Notification::make()
-                                ->title('Não é Possível Retomar')
-                                ->body('Esta análise não pode ser retomada. Status: ' . $record->status)
-                                ->warning()
-                                ->send();
-                            return;
-                        }
+                        // Reset micro analyses to pending
+                        DocumentMicroAnalysis::where('document_analysis_id', $record->id)
+                            ->update([
+                                'status' => 'pending',
+                                'error_message' => null,
+                            ]);
 
-                        ResumeAnalysisJob::dispatch($record->id);
+                        // Reset analysis status
+                        $record->update([
+                            'status' => 'processing',
+                            'error_message' => null,
+                            'ai_analysis' => null,
+                            'current_phase' => 'map',
+                            'processed_documents_count' => 0,
+                            'progress_message' => 'Reiniciando processamento...',
+                        ]);
+
+                        // Get job parameters
+                        $jobParams = $record->job_parameters ?? [];
+
+                        // Dispatch the job
+                        DispatchMapPhaseJob::dispatch(
+                            $record->id,
+                            $jobParams['ai_provider'] ?? 'openrouter',
+                            $jobParams['deep_thinking_enabled'] ?? true,
+                            [
+                                'numero_processo' => $record->numero_processo,
+                                'classe_processual' => $record->classe_processual ?? 'Não informada',
+                                'assuntos' => $record->assuntos ?? 'Não informados',
+                            ],
+                            $jobParams['ai_model_id'] ?? null,
+                            $record->user_id,
+                            'auto'
+                        );
 
                         Notification::make()
-                            ->title('Retomada Iniciada')
-                            ->body("A análise será retomada de onde parou ({$record->getProgressPercentage()}%)")
+                            ->title('Processamento reiniciado')
+                            ->body('A análise foi colocada na fila para reprocessamento.')
                             ->success()
                             ->send();
                     })
-                    ->visible(fn ($record) => $record->status === 'failed' && $record->is_resumable && $record->processed_documents_count < $record->total_documents),
+                    ->visible(fn ($record) => in_array($record->status, ['failed', 'processing', 'cancelled'])),
+                DeleteAction::make()
+                    ->label('Excluir')
+                    ->icon('heroicon-o-trash')
+                    ->requiresConfirmation()
+                    ->modalHeading('Excluir Análise')
+                    ->modalDescription(fn ($record) => "Esta ação é irreversível. A análise do processo {$record->numero_processo} será permanentemente excluída. Deseja continuar?")
+                    ->modalSubmitActionLabel('Sim, excluir')
+                    ->before(function ($record) {
+                        // Delete related micro analyses first
+                        DocumentMicroAnalysis::where('document_analysis_id', $record->id)->delete();
+                    }),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

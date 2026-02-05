@@ -277,7 +277,10 @@ class DocumentAnalysis extends Model
             return 0;
         }
 
-        return round(($this->processed_documents_count / $this->total_documents) * 100, 2);
+        // Garante que o valor nunca seja negativo
+        $processed = max(0, $this->processed_documents_count ?? 0);
+
+        return min(100, round(($processed / $this->total_documents) * 100, 2));
     }
 
     /**

@@ -36,6 +36,7 @@ class AiModel extends Model
             'gemini' => 'Google Gemini',
             'openai' => 'OpenAI (ChatGPT)',
             'deepseek' => 'DeepSeek',
+            'openrouter' => 'OpenRouter',
         ];
     }
 

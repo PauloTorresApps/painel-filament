@@ -75,32 +75,29 @@ class AiPromptForm
                         if ($state) {
                             $model = \App\Models\AiModel::find($state);
                             if ($model) {
-                                // Atualiza o deep_thinking baseado no provider
-                                if ($model->provider === 'deepseek') {
-                                    $set('deep_thinking_enabled', true);
-                                } else {
-                                    $set('deep_thinking_enabled', false);
-                                }
+                                // Atualiza o deep_thinking baseado no provider e modelo
+                                $supportsReasoning = self::modelSupportsReasoning($model->provider, $model->model_id);
+                                $set('deep_thinking_enabled', $supportsReasoning);
                             }
                         }
                     })
                     ->helperText('Selecione qual modelo de IA será utilizado para processar este prompt'),
 
                 Toggle::make('deep_thinking_enabled')
-                    ->label('Modo de Pensamento Profundo (DeepSeek)')
+                    ->label('Modo de Pensamento Profundo')
                     ->default(true)
-                    ->helperText('Ativa o modo de reasoning da DeepSeek para análises mais detalhadas. Recomendado para tarefas complexas.')
+                    ->helperText('Ativa o modo de reasoning para análises mais detalhadas. Disponível para DeepSeek e modelos OpenRouter com suporte a reasoning (Claude, o1, DeepSeek R1, etc.).')
                     ->visible(function ($get) {
                         $modelId = $get('ai_model_id');
                         if (!$modelId) return false;
                         $model = \App\Models\AiModel::find($modelId);
-                        return $model && $model->provider === 'deepseek';
+                        return $model && self::modelSupportsReasoning($model->provider, $model->model_id);
                     })
                     ->dehydrated(function ($get) {
                         $modelId = $get('ai_model_id');
                         if (!$modelId) return false;
                         $model = \App\Models\AiModel::find($modelId);
-                        return $model && $model->provider === 'deepseek';
+                        return $model && self::modelSupportsReasoning($model->provider, $model->model_id);
                     }),
 
                 Textarea::make('content')
@@ -129,5 +126,54 @@ class AiPromptForm
                     })
                     ->helperText('Define este prompt como padrão para o sistema e finalidade selecionados. Pode haver um prompt padrão para cada finalidade (Análise de Documentos + Parecer Final).'),
             ]);
+    }
+
+    /**
+     * Verifica se o modelo suporta reasoning/deep thinking
+     */
+    private static function modelSupportsReasoning(string $provider, string $modelId): bool
+    {
+        // DeepSeek sempre suporta
+        if ($provider === 'deepseek') {
+            return true;
+        }
+
+        // OpenRouter - modelos específicos que suportam reasoning
+        if ($provider === 'openrouter') {
+            $reasoningModels = [
+                // DeepSeek
+                'deepseek/deepseek-r1',
+                'deepseek/deepseek-reasoner',
+                // OpenAI
+                'openai/o1',
+                'openai/o1-mini',
+                'openai/o1-preview',
+                'openai/o3-mini',
+                // Google
+                'google/gemini-2.0-flash-thinking-exp',
+                'google/gemini-2.5-flash-preview',
+                'google/gemini-2.5-pro-preview',
+                // Anthropic
+                'anthropic/claude-sonnet-4',
+                'anthropic/claude-3.7-sonnet',
+                // xAI Grok (suportam reasoning via parâmetro)
+                'x-ai/grok-3',
+                'x-ai/grok-3-fast',
+                'x-ai/grok-3-mini',
+                'x-ai/grok-3-mini-fast',
+                'x-ai/grok-4.1',
+                'x-ai/grok-4.1-fast',
+                'x-ai/grok-4.1-mini',
+                'x-ai/grok-4.1-mini-fast',
+            ];
+
+            foreach ($reasoningModels as $reasoningModel) {
+                if (str_contains($modelId, $reasoningModel) || $modelId === $reasoningModel) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

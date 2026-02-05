@@ -90,6 +90,7 @@ class AiModelResource extends Resource
                         'gemini' => 'info',
                         'openai' => 'success',
                         'deepseek' => 'warning',
+                        'openrouter' => 'primary',
                         default => 'gray',
                     })
                     ->sortable(),
