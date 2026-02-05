@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\User;
@@ -332,12 +333,14 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         $text .= "## ANÁLISES INDIVIDUAIS\n\n";
 
         foreach ($microAnalyses as $index => $micro) {
-            $docNum = $index + 1;
-            $text .= "---\n\n";
-            $text .= "### DOCUMENTO {$docNum}: {$micro->descricao}\n\n";
+            $docNum = str_pad($index + 1, 2, '0', STR_PAD_LEFT);
+            $fileName = mb_strtoupper($micro->descricao);
+
+            $text .= "### INÍCIO DA ANÁLISE {$docNum} - ARQUIVO {$fileName} ###\n\n";
             // Remove o bloco JSON da timeline para não duplicar informação
             $analysisText = $this->removeTimelineJson($micro->micro_analysis);
             $text .= $analysisText . "\n\n";
+            $text .= "### FIM DA ANÁLISE {$docNum} ###\n\n";
         }
 
         return $text;
@@ -400,10 +403,16 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
 
     /**
      * Monta prompt para análise final
+     * Busca o prompt padrão ativo de "Parecer Final" do banco para garantir consistência
      */
     private function buildFinalPrompt(): string
     {
-        $basePrompt = $this->promptTemplate;
+        // Busca o prompt padrão ativo de "Parecer Final" do banco
+        // Isso garante que sempre use o prompt mais atual configurado
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
+        $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
 
         return <<<PROMPT
 # ANÁLISE FINAL DO PROCESSO

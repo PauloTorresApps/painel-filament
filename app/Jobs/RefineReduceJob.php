@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
@@ -364,12 +365,20 @@ CONTENT;
 
     /**
      * Gera a análise final usando o prompt do usuário
+     * Busca o prompt padrão ativo de "Parecer Final" do banco para garantir consistência
      */
     private function generateFinalAnalysis(
         \App\Contracts\AIProviderInterface $aiService,
         DocumentAnalysis $documentAnalysis,
         string $evolutiveSummary
     ): string {
+        // Busca o prompt padrão ativo de "Parecer Final" do banco
+        // Isso garante que sempre use o prompt mais atual configurado
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
+        $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
+
         $prompt = <<<PROMPT
 # ANÁLISE FINAL DO PROCESSO
 
@@ -379,7 +388,7 @@ Com base nessa narrativa consolidada, responda à solicitação do usuário:
 
 ---
 
-{$this->promptTemplate}
+{$basePrompt}
 
 ---
 

@@ -173,12 +173,14 @@ class ReduceBatchJob implements ShouldQueue
         $text .= "## ANÁLISES INDIVIDUAIS\n\n";
 
         foreach ($microAnalyses as $index => $micro) {
-            $docNum = $index + 1;
-            $text .= "---\n\n";
-            $text .= "### DOCUMENTO {$docNum}: {$micro->descricao}\n\n";
+            $docNum = str_pad($index + 1, 2, '0', STR_PAD_LEFT);
+            $fileName = mb_strtoupper($micro->descricao);
+
+            $text .= "### INÍCIO DA ANÁLISE {$docNum} - ARQUIVO {$fileName} ###\n\n";
             // Remove o bloco JSON da timeline para não duplicar informação
             $analysisText = $this->removeTimelineJson($micro->micro_analysis);
             $text .= $analysisText . "\n\n";
+            $text .= "### FIM DA ANÁLISE {$docNum} ###\n\n";
         }
 
         return $text;

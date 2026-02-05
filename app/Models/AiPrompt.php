@@ -13,6 +13,10 @@ class AiPrompt extends Model
     public const TYPE_STORYBOARD = 'storyboard';
     public const TYPE_INFOGRAPHIC = 'infographic';
 
+    // Tipos de prompt para Processos Judiciais (Map-Reduce)
+    public const TYPE_DOCUMENT_ANALYSIS = 'document_analysis';  // Análise individual de documentos (fase MAP)
+    public const TYPE_FINAL_OPINION = 'final_opinion';          // Parecer final consolidado (fase REDUCE)
+
     protected $fillable = [
         'system_id',
         'prompt_type',
@@ -50,6 +54,29 @@ class AiPrompt extends Model
                 if ($model) {
                     $prompt->ai_provider = $model->provider;
                 }
+            }
+
+            // Se este prompt está sendo definido como padrão,
+            // remove o padrão dos outros prompts do mesmo sistema E tipo
+            if ($prompt->is_default && $prompt->isDirty('is_default')) {
+                $query = self::where('system_id', $prompt->system_id)
+                    ->where('is_default', true);
+
+                // Se tem prompt_type, restringe por tipo também
+                // Isso permite ter um default por tipo (document_analysis + final_opinion)
+                if ($prompt->prompt_type) {
+                    $query->where('prompt_type', $prompt->prompt_type);
+                } else {
+                    // Se não tem tipo, só remove default dos que também não tem tipo
+                    $query->whereNull('prompt_type');
+                }
+
+                // Exclui o próprio prompt da atualização
+                if ($prompt->exists) {
+                    $query->where('id', '!=', $prompt->id);
+                }
+
+                $query->update(['is_default' => false]);
             }
         });
     }
@@ -109,6 +136,28 @@ class AiPrompt extends Model
     }
 
     /**
+     * Retorna os tipos de prompt disponíveis para processos judiciais
+     */
+    public static function getJudicialPromptTypes(): array
+    {
+        return [
+            self::TYPE_DOCUMENT_ANALYSIS => 'Análise de Documentos (MAP)',
+            self::TYPE_FINAL_OPINION => 'Parecer Final (REDUCE)',
+        ];
+    }
+
+    /**
+     * Retorna todos os tipos de prompt disponíveis
+     */
+    public static function getAllPromptTypes(): array
+    {
+        return array_merge(
+            self::getContractPromptTypes(),
+            self::getJudicialPromptTypes()
+        );
+    }
+
+    /**
      * Retorna o label do tipo de prompt
      */
     public function getPromptTypeLabelAttribute(): ?string
@@ -117,7 +166,30 @@ class AiPrompt extends Model
             return null;
         }
 
-        return self::getContractPromptTypes()[$this->prompt_type] ?? $this->prompt_type;
+        return self::getAllPromptTypes()[$this->prompt_type] ?? $this->prompt_type;
+    }
+
+    /**
+     * Busca o prompt padrão para um sistema e tipo específico
+     */
+    public static function getDefaultForSystemAndType(int $systemId, string $promptType): ?self
+    {
+        return self::where('system_id', $systemId)
+            ->where('prompt_type', $promptType)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    /**
+     * Busca o prompt padrão para um sistema (qualquer tipo, para compatibilidade)
+     */
+    public static function getDefaultForSystem(int $systemId): ?self
+    {
+        return self::where('system_id', $systemId)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->first();
     }
 
     /**

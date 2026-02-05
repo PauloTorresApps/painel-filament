@@ -36,6 +36,13 @@ class AiPromptForm
                     ->maxLength(255)
                     ->helperText('Dê um nome descritivo para identificar este prompt'),
 
+                Select::make('prompt_type')
+                    ->label('Finalidade do Prompt')
+                    ->options(\App\Models\AiPrompt::getJudicialPromptTypes())
+                    ->required()
+                    ->native(false)
+                    ->helperText('Análise de Documentos: usado na fase MAP para analisar cada documento individualmente. Parecer Final: usado na fase REDUCE para gerar a consolidação final.'),
+
                 Select::make('ai_model_id')
                     ->label('Modelo de IA')
                     ->options(function (): array {
@@ -120,7 +127,7 @@ class AiPromptForm
                             $set('is_active', true);
                         }
                     })
-                    ->helperText('Define este prompt como padrão para o sistema selecionado. Só pode haver um prompt padrão por sistema.'),
+                    ->helperText('Define este prompt como padrão para o sistema e finalidade selecionados. Pode haver um prompt padrão para cada finalidade (Análise de Documentos + Parecer Final).'),
             ]);
     }
 }

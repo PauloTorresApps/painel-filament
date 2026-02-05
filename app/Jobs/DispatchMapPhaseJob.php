@@ -147,6 +147,9 @@ class DispatchMapPhaseJob implements ShouldQueue
                 'info'
             );
 
+            // Busca o prompt customizado de análise de documentos (se configurado)
+            $customAnalysisPrompt = $documentAnalysis->job_parameters['documentAnalysisPrompt'] ?? null;
+
             // Cria jobs de MAP - diferentes tipos baseado no tamanho
             $mapJobs = [];
 
@@ -157,7 +160,8 @@ class DispatchMapPhaseJob implements ShouldQueue
                     $this->aiProvider,
                     $this->deepThinkingEnabled,
                     $this->contextoDados,
-                    $this->aiModelId
+                    $this->aiModelId,
+                    $customAnalysisPrompt  // Prompt customizado para análise de documentos
                 );
             }
 
@@ -169,6 +173,7 @@ class DispatchMapPhaseJob implements ShouldQueue
                     $this->deepThinkingEnabled,
                     $this->contextoDados,
                     $this->aiModelId
+                    // TODO: Adicionar customAnalysisPrompt ao ChunkLargeDocumentJob se necessário
                 );
             }
 

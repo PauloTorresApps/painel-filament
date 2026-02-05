@@ -27,6 +27,16 @@ class AiPromptsTable
                     ->sortable()
                     ->limit(50),
 
+                TextColumn::make('prompt_type_label')
+                    ->label('Finalidade')
+                    ->badge()
+                    ->color(fn ($record) => match ($record->prompt_type) {
+                        'document_analysis' => 'info',
+                        'final_opinion' => 'success',
+                        default => 'gray',
+                    })
+                    ->sortable(query: fn ($query, string $direction) => $query->orderBy('prompt_type', $direction)),
+
                 TextColumn::make('ai_provider')
                     ->label('IA')
                     ->badge()

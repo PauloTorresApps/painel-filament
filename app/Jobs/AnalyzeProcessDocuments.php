@@ -39,14 +39,15 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public string $numeroProcesso,
         public array $documentos,
         public array $contextoDados,
-        public string $promptTemplate,
+        public string $promptTemplate,              // Prompt para parecer final (REDUCE)
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public string $userLogin,
         public string $senha,
         public int $judicialUserId,
         public string $analysisStrategy = 'evolutionary',
-        public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $aiModelId = null,           // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $documentAnalysisPrompt = null // Prompt customizado para análise de documentos (MAP)
     ) {
     }
 
@@ -118,7 +119,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 'job_parameters' => [
                     'documentos' => $this->documentos,
                     'contextoDados' => $this->contextoDados,
-                    'promptTemplate' => $this->promptTemplate,
+                    'promptTemplate' => $this->promptTemplate,                    // Para parecer final (REDUCE)
+                    'documentAnalysisPrompt' => $this->documentAnalysisPrompt,    // Para análise de documentos (MAP)
                     'aiProvider' => $this->aiProvider,
                     'deepThinkingEnabled' => $this->deepThinkingEnabled,
                 ],

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
 use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
@@ -30,7 +31,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public array $contextoDados,
-        public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $aiModelId = null,             // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $customAnalysisPrompt = null   // Prompt customizado para análise de documentos
     ) {
     }
 
@@ -160,6 +162,19 @@ class MapDocumentAnalysisJob implements ShouldQueue
             ? "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}\n**Tipo original:** {$microAnalysis->mimetype} (texto extraído via OCR)"
             : "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
 
+        // Busca o prompt padrão ativo de "Análise de Documentos" do banco
+        // Isso garante que sempre use o prompt mais atual configurado
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_DOCUMENT_ANALYSIS);
+
+        // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro, 3º prompt padrão hardcoded
+        if ($promptFromDb) {
+            $tarefaPrompt = $this->buildCustomTaskPrompt($promptFromDb->content);
+        } elseif ($this->customAnalysisPrompt) {
+            $tarefaPrompt = $this->buildCustomTaskPrompt($this->customAnalysisPrompt);
+        } else {
+            $tarefaPrompt = $this->buildDefaultTaskPrompt();
+        }
+
         $prompt = <<<PROMPT
 # CONTEXTO DO PROCESSO
 
@@ -175,36 +190,13 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
 ---
 
-# TAREFA
-
-Analise o documento acima e extraia as seguintes informações de forma estruturada:
-
-## 1. TIPO DE MANIFESTAÇÃO
-Identifique o tipo (petição inicial, contestação, decisão, despacho, sentença, recurso, parecer, documento pessoal, comprovante, etc.)
-
-## 2. PARTES ENVOLVIDAS
-Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, etc.)
-
-## 3. PEDIDOS OU DECISÕES
-- Se for petição/recurso: liste os pedidos formulados
-- Se for decisão/sentença: liste o dispositivo (o que foi decidido)
-- Se for documento/comprovante: descreva o conteúdo principal
-
-## 4. FUNDAMENTOS
-- Fundamentos legais citados (artigos de lei, jurisprudência)
-- Argumentos principais utilizados
-
-## 5. FATOS RELEVANTES
-Fatos narrados que são importantes para entender a narrativa processual
-
-## 6. CONEXÕES
-Referências a outros documentos ou eventos do processo
+{$tarefaPrompt}
 
 ---
 
-## 7. LINHA DO TEMPO (JSON)
+## LINHA DO TEMPO (JSON) - OBRIGATÓRIO
 
-**OBRIGATÓRIO:** Ao final da análise, inclua um bloco JSON com todos os eventos e datas encontrados no documento.
+Ao final da análise, inclua um bloco JSON com todos os eventos e datas encontrados no documento.
 O JSON deve estar entre as tags `<timeline_json>` e `</timeline_json>`.
 
 Formato do JSON:
@@ -238,6 +230,51 @@ Regras para o JSON:
 PROMPT;
 
         return $prompt;
+    }
+
+    /**
+     * Constrói o prompt de tarefa customizado (definido pelo usuário ou do banco)
+     */
+    private function buildCustomTaskPrompt(string $promptContent): string
+    {
+        return <<<PROMPT
+# TAREFA DE ANÁLISE
+
+{$promptContent}
+PROMPT;
+    }
+
+    /**
+     * Constrói o prompt de tarefa padrão do sistema
+     */
+    private function buildDefaultTaskPrompt(): string
+    {
+        return <<<PROMPT
+# TAREFA
+
+Analise o documento acima e extraia as seguintes informações de forma estruturada:
+
+## 1. TIPO DE MANIFESTAÇÃO
+Identifique o tipo (petição inicial, contestação, decisão, despacho, sentença, recurso, parecer, documento pessoal, comprovante, etc.)
+
+## 2. PARTES ENVOLVIDAS
+Liste as partes mencionadas e seus papéis (autor, réu, terceiros, advogados, etc.)
+
+## 3. PEDIDOS OU DECISÕES
+- Se for petição/recurso: liste os pedidos formulados
+- Se for decisão/sentença: liste o dispositivo (o que foi decidido)
+- Se for documento/comprovante: descreva o conteúdo principal
+
+## 4. FUNDAMENTOS
+- Fundamentos legais citados (artigos de lei, jurisprudência)
+- Argumentos principais utilizados
+
+## 5. FATOS RELEVANTES
+Fatos narrados que são importantes para entender a narrativa processual
+
+## 6. CONEXÕES
+Referências a outros documentos ou eventos do processo
+PROMPT;
     }
 
     /**

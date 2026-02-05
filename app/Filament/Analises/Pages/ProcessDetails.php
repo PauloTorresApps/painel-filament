@@ -242,21 +242,40 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Busca o prompt padrão do sistema (global)
-            $promptPadrao = \App\Models\AiPrompt::where('system_id', 1) // system_id 1 para análise de processos
-                ->where('is_default', true)
-                ->where('is_active', true)
-                ->first();
+            // Busca os prompts padrão do sistema por finalidade
+            // Prompt para análise individual de documentos (fase MAP) - opcional
+            $promptAnaliseDocumentos = \App\Models\AiPrompt::getDefaultForSystemAndType(
+                1, // system_id 1 para análise de processos
+                \App\Models\AiPrompt::TYPE_DOCUMENT_ANALYSIS
+            );
+
+            // Prompt para parecer final (fase REDUCE) - obrigatório
+            $promptParecerFinal = \App\Models\AiPrompt::getDefaultForSystemAndType(
+                1,
+                \App\Models\AiPrompt::TYPE_FINAL_OPINION
+            );
+
+            // Fallback: busca prompt antigo sem tipo específico (compatibilidade)
+            if (!$promptParecerFinal) {
+                $promptParecerFinal = \App\Models\AiPrompt::where('system_id', 1)
+                    ->whereNull('prompt_type')
+                    ->where('is_default', true)
+                    ->where('is_active', true)
+                    ->first();
+            }
+
+            // Usa o prompt de parecer final como referência para configurações de IA
+            $promptPadrao = $promptParecerFinal;
 
             if (!$promptPadrao) {
                 \Filament\Notifications\Notification::make()
                     ->title('⚠️ Prompt Não Configurado')
-                    ->body('O sistema não possui um prompt padrão configurado para análise de processos. Entre em contato com o administrador do sistema.')
+                    ->body('O sistema não possui um prompt padrão configurado para Parecer Final. Configure pelo menos um prompt com finalidade "Parecer Final (REDUCE)" e marque como padrão.')
                     ->danger()
                     ->persistent()
                     ->send();
 
-                Log::warning('Tentativa de análise sem prompt padrão configurado no sistema', [
+                Log::warning('Tentativa de análise sem prompt de parecer final configurado', [
                     'user_id' => auth()->user()->id,
                     'numero_processo' => $this->numeroProcesso
                 ]);
@@ -410,14 +429,15 @@ class ProcessDetails extends Page
                 $this->numeroProcesso,
                 $documentosParaAnalise,
                 $this->dadosBasicos,
-                $promptPadrao->content,
-                $aiProvider, // Provider de IA (gemini, deepseek, openai)
-                $promptPadrao->deep_thinking_enabled ?? true, // Modo de pensamento profundo (DeepSeek)
+                $promptPadrao->content,                              // Prompt para parecer final (REDUCE)
+                $aiProvider,                                         // Provider de IA (gemini, deepseek, openai)
+                $promptPadrao->deep_thinking_enabled ?? true,        // Modo de pensamento profundo (DeepSeek)
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
                 $this->judicialUserId,
-                $promptPadrao->analysis_strategy ?? 'evolutionary', // Estratégia de análise
-                $aiModelId // ID do modelo específico (ex: gemini-2.5-flash)
+                $promptPadrao->analysis_strategy ?? 'evolutionary',  // Estratégia de análise
+                $aiModelId,                                          // ID do modelo específico (ex: gemini-2.5-flash)
+                $promptAnaliseDocumentos?->content                   // Prompt customizado para análise de documentos (MAP)
             );
 
             $totalDocs = count($documentosParaAnalise);
