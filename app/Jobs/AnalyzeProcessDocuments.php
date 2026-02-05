@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -46,7 +47,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public int $judicialUserId,
         public string $analysisStrategy = 'evolutionary',
         public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
-    ) {}
+    ) {
+    }
 
     /**
      * Chave única para evitar duplicação
@@ -232,11 +234,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         }
 
         try {
-            FilamentNotification::make()
-                ->title($title)
-                ->body($body)
-                ->status($status)
-                ->sendToDatabase($user);
+            NotificationService::send($user, $title, $body, $status);
         } catch (\Exception $e) {
             Log::warning('AnalyzeProcessDocuments: Erro ao enviar notificação', [
                 'error' => $e->getMessage()

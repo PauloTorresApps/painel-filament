@@ -6,9 +6,8 @@ use App\Models\AiPrompt;
 use App\Models\ContractAnalysis;
 use App\Models\System;
 use App\Models\User;
-use App\Services\DeepSeekService;
-use App\Services\GeminiService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -28,7 +27,8 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
      */
     public function __construct(
         public int $contractAnalysisId
-    ) {}
+    ) {
+    }
 
     /**
      * Chave única para evitar duplicação
@@ -80,7 +80,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Notifica início do processamento
-            $this->sendNotification(
+            NotificationService::send(
                 $user,
                 'Gerando Infográfico',
                 "O infográfico para o contrato '{$analysis->file_name}' está sendo gerado.",
@@ -143,7 +143,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             // ========== FASE 1: Gerar Storyboard JSON ==========
             Log::info('Fase 1: Gerando storyboard JSON', ['id' => $analysis->id]);
 
-            $storyboardAiService = $this->getAIService($storyboardPrompt->ai_provider);
+            $storyboardAiService = AIServiceFactory::make($storyboardPrompt->ai_provider);
 
             if ($storyboardPrompt->aiModel && !empty($storyboardPrompt->aiModel->model_id)) {
                 $storyboardAiService->setModel($storyboardPrompt->aiModel->model_id);
@@ -210,7 +210,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             // ========== FASE 2: Gerar HTML do Infográfico ==========
             Log::info('Fase 2: Gerando HTML do infográfico', ['id' => $analysis->id]);
 
-            $htmlAiService = $this->getAIService($infographicPrompt->ai_provider);
+            $htmlAiService = AIServiceFactory::make($infographicPrompt->ai_provider);
 
             if ($infographicPrompt->aiModel && !empty($infographicPrompt->aiModel->model_id)) {
                 $htmlAiService->setModel($infographicPrompt->aiModel->model_id);
@@ -278,7 +278,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Notifica o usuário
-            $this->sendNotification(
+            NotificationService::send(
                 $user,
                 'Infográfico Concluído',
                 "O infográfico para o contrato '{$analysis->file_name}' foi gerado com sucesso.",
@@ -297,7 +297,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 $analysis->markInfographicAsFailed($e->getMessage());
 
                 if (isset($user)) {
-                    $this->sendNotification(
+                    NotificationService::send(
                         $user,
                         'Erro ao Gerar Infográfico',
                         "Ocorreu um erro ao gerar o infográfico: {$e->getMessage()}",
@@ -306,19 +306,6 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
                 }
             }
         }
-    }
-
-    /**
-     * Obtém o serviço de IA apropriado
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            'deepseek' => new DeepSeekService(),
-            default => new GeminiService(),
-        };
     }
 
     /**
@@ -362,21 +349,4 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
         return $trimmed;
     }
 
-    /**
-     * Envia notificação para o usuário
-     */
-    private function sendNotification(User $user, string $title, string $body, string $status): void
-    {
-        try {
-            FilamentNotification::make()
-                ->title($title)
-                ->body($body)
-                ->status($status)
-                ->sendToDatabase($user);
-        } catch (\Exception $e) {
-            Log::warning('Erro ao enviar notificação', [
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
 }

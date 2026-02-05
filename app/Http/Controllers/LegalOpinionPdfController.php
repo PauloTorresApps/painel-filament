@@ -3,9 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContractAnalysis;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\PdfService;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
 
 class LegalOpinionPdfController extends Controller
 {
@@ -16,39 +15,11 @@ class LegalOpinionPdfController extends Controller
     {
         $analysis = ContractAnalysis::findOrFail($id);
 
-        // Verifica permissão de acesso
-        $user = Auth::user();
-        if (!$user->hasRole(['Admin', 'Manager']) && $analysis->user_id !== $user->id) {
-            abort(403, 'Você não tem permissão para acessar este parecer.');
-        }
+        // Autoriza usando Policy
+        $this->authorize('downloadLegalOpinion', $analysis);
 
-        // Verifica se o parecer está concluído
-        if (!$analysis->isLegalOpinionCompleted()) {
-            abort(404, 'Parecer jurídico não encontrado ou ainda não foi gerado.');
-        }
-
-        // Prepara os dados para o PDF
-        $data = [
-            'analysis' => $analysis,
-            'content' => $analysis->legal_opinion_result,
-            'generatedAt' => $analysis->updated_at->format('d/m/Y H:i'),
-            'interestedParty' => $analysis->interested_party_name,
-            'fileName' => $analysis->file_name,
-        ];
-
-        // Gera o PDF
-        $pdf = Pdf::loadView('pdf.legal-opinion', $data);
-
-        // Configura o PDF com margens ABNT
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOption('isRemoteEnabled', true);
-        $pdf->setOption('isPhpEnabled', true);
-        $pdf->setOption('defaultFont', 'DejaVu Serif');
-        $pdf->setOption('isFontSubsettingEnabled', true);
-        $pdf->setOption('margin_top', 25);
-        $pdf->setOption('margin_bottom', 20);
-        $pdf->setOption('margin_left', 25);
-        $pdf->setOption('margin_right', 20);
+        // Gera PDF usando o serviço
+        $pdf = PdfService::generateLegalOpinionPdf($analysis);
 
         // Nome do arquivo
         $fileName = 'parecer-juridico-' . $analysis->id . '-' . now()->format('Y-m-d-His') . '.pdf';
@@ -63,39 +34,11 @@ class LegalOpinionPdfController extends Controller
     {
         $analysis = ContractAnalysis::findOrFail($id);
 
-        // Verifica permissão de acesso
-        $user = Auth::user();
-        if (!$user->hasRole(['Admin', 'Manager']) && $analysis->user_id !== $user->id) {
-            abort(403, 'Você não tem permissão para acessar este parecer.');
-        }
+        // Autoriza usando Policy
+        $this->authorize('downloadLegalOpinion', $analysis);
 
-        // Verifica se o parecer está concluído
-        if (!$analysis->isLegalOpinionCompleted()) {
-            abort(404, 'Parecer jurídico não encontrado ou ainda não foi gerado.');
-        }
-
-        // Prepara os dados para o PDF
-        $data = [
-            'analysis' => $analysis,
-            'content' => $analysis->legal_opinion_result,
-            'generatedAt' => $analysis->updated_at->format('d/m/Y H:i'),
-            'interestedParty' => $analysis->interested_party_name,
-            'fileName' => $analysis->file_name,
-        ];
-
-        // Gera o PDF
-        $pdf = Pdf::loadView('pdf.legal-opinion', $data);
-
-        // Configura o PDF com margens ABNT
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOption('isRemoteEnabled', true);
-        $pdf->setOption('isPhpEnabled', true);
-        $pdf->setOption('defaultFont', 'DejaVu Serif');
-        $pdf->setOption('isFontSubsettingEnabled', true);
-        $pdf->setOption('margin_top', 25);
-        $pdf->setOption('margin_bottom', 20);
-        $pdf->setOption('margin_left', 25);
-        $pdf->setOption('margin_right', 20);
+        // Gera PDF usando o serviço
+        $pdf = PdfService::generateLegalOpinionPdf($analysis);
 
         return $pdf->stream('parecer-juridico-' . $analysis->id . '.pdf');
     }

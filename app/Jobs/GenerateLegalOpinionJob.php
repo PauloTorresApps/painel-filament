@@ -6,9 +6,8 @@ use App\Models\AiPrompt;
 use App\Models\ContractAnalysis;
 use App\Models\System;
 use App\Models\User;
-use App\Services\DeepSeekService;
-use App\Services\GeminiService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -28,7 +27,8 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
      */
     public function __construct(
         public int $contractAnalysisId
-    ) {}
+    ) {
+    }
 
     /**
      * Chave única para evitar duplicação
@@ -83,7 +83,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Notifica início do processamento
-            $this->sendNotification(
+            NotificationService::send(
                 $user,
                 'Gerando Parecer Jurídico',
                 "O parecer jurídico para o contrato '{$analysis->file_name}' está sendo gerado.",
@@ -139,7 +139,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Obtém o serviço de IA apropriado
-            $aiService = $this->getAIService($prompt->ai_provider);
+            $aiService = AIServiceFactory::make($prompt->ai_provider);
 
             // Define o modelo específico do prompt (se houver)
             if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
@@ -190,7 +190,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Notifica o usuário
-            $this->sendNotification(
+            NotificationService::send(
                 $user,
                 'Parecer Jurídico Concluído',
                 "O parecer jurídico para o contrato '{$analysis->file_name}' foi gerado com sucesso.",
@@ -209,7 +209,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
                 $analysis->markLegalOpinionAsFailed($e->getMessage());
 
                 if (isset($user)) {
-                    $this->sendNotification(
+                    NotificationService::send(
                         $user,
                         'Erro ao Gerar Parecer Jurídico',
                         "Ocorreu um erro ao gerar o parecer: {$e->getMessage()}",
@@ -220,34 +220,4 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
         }
     }
 
-    /**
-     * Obtém o serviço de IA apropriado
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            'deepseek' => new DeepSeekService(),
-            default => new GeminiService(),
-        };
-    }
-
-    /**
-     * Envia notificação para o usuário
-     */
-    private function sendNotification(User $user, string $title, string $body, string $status): void
-    {
-        try {
-            FilamentNotification::make()
-                ->title($title)
-                ->body($body)
-                ->status($status)
-                ->sendToDatabase($user);
-        } catch (\Exception $e) {
-            Log::warning('Erro ao enviar notificação', [
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
 }

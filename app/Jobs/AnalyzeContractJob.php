@@ -9,7 +9,10 @@ use App\Models\User;
 use App\Services\DeepSeekService;
 use App\Services\GeminiService;
 use App\Services\OpenAIService;
-use App\Services\PdfToTextService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
+use App\Services\DocumentTextExtractor;
+use App\Services\ContractFileManager;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -30,7 +33,8 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
      */
     public function __construct(
         public int $contractAnalysisId
-    ) {}
+    ) {
+    }
 
     /**
      * Chave única para evitar duplicação
@@ -79,27 +83,25 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Notifica início do processamento
-            $this->sendNotification(
+            NotificationService::info(
                 $user,
                 'Análise de Contrato Iniciada',
-                "O contrato '{$analysis->file_name}' está sendo analisado pela IA.",
-                'info'
+                "O contrato '{$analysis->file_name}' está sendo analisado pela IA."
             );
 
-            // Extrai texto do PDF
+            // Extrai texto do contrato usando o extrator
             Log::info('Extraindo texto do contrato', [
                 'id' => $analysis->id,
                 'file_path' => $analysis->file_path
             ]);
 
-            $pdfService = new PdfToTextService();
-            $fullPath = Storage::path($analysis->file_path);
+            $extractor = new DocumentTextExtractor();
+            $contractText = $extractor->extractFromStorage($analysis->file_path);
 
-            if (!file_exists($fullPath)) {
-                throw new \Exception("Arquivo não encontrado: {$analysis->file_path}");
-            }
-
-            $contractText = $pdfService->extractTextFromPath($fullPath);
+            Log::info('Texto extraído com sucesso', [
+                'id' => $analysis->id,
+                'text_length' => mb_strlen($contractText)
+            ]);
 
             if (empty(trim($contractText))) {
                 throw new \Exception('Não foi possível extrair texto do PDF. O arquivo pode estar protegido ou ser uma imagem.');
@@ -154,7 +156,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Obtém o serviço de IA apropriado
-            $aiService = $this->getAIService($prompt->ai_provider);
+            $aiService = AIServiceFactory::make($prompt->ai_provider);
 
             // Define o modelo específico do prompt (se houver)
             if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
@@ -196,11 +198,12 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Calcula tempo de processamento
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como concluída com metadados
+            // Salva resultado e tempo de processamento
             $analysis->markAsCompleted($result, $processingTimeMs, $aiMetadata);
 
-            // Remove o arquivo do storage após análise concluída
-            $this->deleteContractFile($analysis);
+            // Remove o arquivo do storage após análise bem-sucedida
+            $fileManager = new ContractFileManager();
+            $fileManager->deleteFile($analysis);
 
             Log::info('Análise de contrato concluída', [
                 'id' => $analysis->id,
@@ -208,11 +211,10 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Notifica o usuário
-            $this->sendNotification(
+            NotificationService::success(
                 $user,
                 'Análise de Contrato Concluída',
-                "A análise do contrato '{$analysis->file_name}' foi concluída com sucesso.",
-                'success'
+                "A análise do contrato '{$analysis->file_name}' foi concluída com sucesso."
             );
 
         } catch (\Exception $e) {
@@ -226,74 +228,18 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             if (isset($analysis)) {
                 $analysis->markAsFailed($e->getMessage());
 
-                // Remove o arquivo mesmo em caso de falha
-                $this->deleteContractFile($analysis);
+                // Em caso de erro, deleta o arquivo via FileManager
+                $fileManager = new ContractFileManager();
+                $fileManager->deleteFile($analysis);
 
                 if (isset($user)) {
-                    $this->sendNotification(
+                    NotificationService::error(
                         $user,
                         'Erro na Análise de Contrato',
-                        "Ocorreu um erro ao analisar o contrato: {$e->getMessage()}",
-                        'danger'
+                        "Ocorreu um erro ao analisar o contrato: {$e->getMessage()}"
                     );
                 }
             }
-        }
-    }
-
-    /**
-     * Remove o arquivo de contrato do storage
-     */
-    private function deleteContractFile(ContractAnalysis $analysis): void
-    {
-        try {
-            if ($analysis->file_path && Storage::exists($analysis->file_path)) {
-                Storage::delete($analysis->file_path);
-
-                // Limpa o path no registro
-                $analysis->update(['file_path' => null]);
-
-                Log::info('Arquivo de contrato removido do storage', [
-                    'analysis_id' => $analysis->id,
-                    'file_name' => $analysis->file_name
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::warning('Erro ao remover arquivo de contrato', [
-                'analysis_id' => $analysis->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Obtém o serviço de IA apropriado
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            'deepseek' => new DeepSeekService(),
-            default => new GeminiService(),
-        };
-    }
-
-    /**
-     * Envia notificação para o usuário
-     */
-    private function sendNotification(User $user, string $title, string $body, string $status): void
-    {
-        try {
-            FilamentNotification::make()
-                ->title($title)
-                ->body($body)
-                ->status($status)
-                ->sendToDatabase($user);
-        } catch (\Exception $e) {
-            Log::warning('Erro ao enviar notificação', [
-                'error' => $e->getMessage()
-            ]);
         }
     }
 }

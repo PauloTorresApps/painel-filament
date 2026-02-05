@@ -5,13 +5,18 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Services\EprocService;
 use App\Services\CnjService;
+use App\Services\EprocDataNormalizer;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
 class EprocController extends Controller
 {
-    // Removido a injeção de dependência do EprocService
-    // Agora será instanciado dentro de cada método com as credenciais do usuário
+    private EprocDataNormalizer $normalizer;
+
+    public function __construct()
+    {
+        $this->normalizer = new EprocDataNormalizer();
+    }
 
 
 
@@ -56,13 +61,8 @@ class EprocController extends Controller
             // Extrai os dados do processo da resposta
             $processoData = $resultado['processo'] ?? [];
 
-            // Normaliza os dados básicos
+            // Normaliza os dados básicos usando o Normalizer
             $dadosBasicos = $processoData['dadosBasicos'] ?? [];
-
-            // Normaliza os polos para garantir que o atributo 'polo' seja uma string
-            if (isset($dadosBasicos['polo'])) {
-                $dadosBasicos['polo'] = $this->normalizarPolos($dadosBasicos['polo']);
-            }
 
             // Busca descrições de classe e assuntos do CNJ
             $cnjService = new CnjService();
@@ -73,151 +73,33 @@ class EprocController extends Controller
                 $dadosBasicos['classeProcessualNome'] = $cnjService->getClasseDescricao($codigoClasse);
             }
 
-            // Busca descrições dos assuntos
+            // Trata assuntos
             if (isset($dadosBasicos['assunto'])) {
-                $assuntos = is_array($dadosBasicos['assunto']) ? $dadosBasicos['assunto'] : [$dadosBasicos['assunto']];
-
-                // Normaliza: se é um único assunto (tem codigoNacional ou codigoAssunto diretamente), encapsula em array
-                if (isset($assuntos['codigoNacional']) || isset($assuntos['codigoAssunto'])) {
-                    $assuntos = [$assuntos];
-                }
-
-                // Extrai códigos de assuntos (pode ser codigoAssunto ou codigoNacional)
-                $codigosAssuntos = [];
-                foreach ($assuntos as $assunto) {
-                    if (is_array($assunto)) {
-                        $codigo = $assunto['codigoAssunto'] ?? $assunto['codigoNacional'] ?? null;
-                        if ($codigo) {
-                            $codigosAssuntos[] = (int) $codigo;
-                        }
-                    }
-                }
+                $assuntos = $this->normalizer->normalizeAssuntos($dadosBasicos['assunto']);
+                $codigosAssuntos = $this->normalizer->extractAssuntoCodes($assuntos);
 
                 // Busca descrições apenas se houver códigos
                 if (!empty($codigosAssuntos)) {
                     $descricoesAssuntos = $cnjService->getMultiplosAssuntosDescricoes($codigosAssuntos);
-
-                    // Adiciona as descrições aos assuntos
-                    foreach ($assuntos as &$assunto) {
-                        if (is_array($assunto)) {
-                            $codigo = (int) ($assunto['codigoAssunto'] ?? $assunto['codigoNacional'] ?? 0);
-                            if ($codigo > 0 && isset($descricoesAssuntos[$codigo])) {
-                                $assunto['nomeAssunto'] = $descricoesAssuntos[$codigo];
-                                // Garante que codigoAssunto está definido para a view
-                                if (!isset($assunto['codigoAssunto'])) {
-                                    $assunto['codigoAssunto'] = $codigo;
-                                }
-                            }
-                        }
-                    }
+                    $assuntos = $this->normalizer->addAssuntoDescriptions($assuntos, $descricoesAssuntos);
                 }
 
                 $dadosBasicos['assunto'] = $assuntos;
             }
 
-            // Associa documentos aos movimentos
-            // Garante que sempre serão arrays, mesmo quando vazio
-            $movimentos = $processoData['movimento'] ?? [];
-            $documentos = $processoData['documento'] ?? [];
-
-            // Garante que são arrays (proteção adicional)
-            if (!is_array($movimentos)) {
-                $movimentos = [$movimentos];
-            }
-            if (!is_array($documentos)) {
-                $documentos = [$documentos];
-            }
-
-            // === CALCULA SEQUÊNCIA GLOBAL DE ANÁLISE ===
-            // Baseado na ordem dos eventos (idMovimento) e dos documentos vinculados (idDocumentoVinculado)
-
-            // 1. Ordena movimentos por ID (ordem cronológica dos eventos)
-            usort($movimentos, function($a, $b) {
-                $idA = (int) ($a['idMovimento'] ?? 999999);
-                $idB = (int) ($b['idMovimento'] ?? 999999);
-                return $idA <=> $idB;
-            });
-
-            // 2. Cria mapa de sequência global para cada documento
-            $sequenciaGlobal = []; // idDocumento => sequencia_analise
-            $sequenciaAtual = 1;
-
-            Log::info('🔢 Calculando sequência global de análise', [
-                'total_movimentos' => count($movimentos),
-                'total_documentos' => count($documentos)
+            // Normaliza dados completos do processo
+            $dadosNormalizados = $this->normalizer->normalizeProcessData([
+                'dadosBasicos' => $dadosBasicos,
+                'movimento' => $processoData['movimento'] ?? [],
+                'documento' => $processoData['documento'] ?? [],
             ]);
-
-            foreach ($movimentos as $movimento) {
-                $idMov = $movimento['idMovimento'] ?? null;
-
-                // Pega a lista de IDs de documentos vinculados a este movimento (na ordem correta)
-                $idsDocumentosVinculados = $movimento['idDocumentoVinculado'] ?? [];
-
-                // Normaliza para array se for um único documento
-                if (!is_array($idsDocumentosVinculados)) {
-                    $idsDocumentosVinculados = [$idsDocumentosVinculados];
-                }
-
-                $descricaoMovimento = $movimento['movimentoLocal']['descricao'] ?? 'Sem descrição';
-
-                Log::info("Movimento {$idMov}: {$descricaoMovimento}", [
-                    'id_movimento' => $idMov,
-                    'documentos_vinculados' => $idsDocumentosVinculados,
-                    'total_docs_vinculados' => count($idsDocumentosVinculados),
-                    'sequencia_inicial' => $sequenciaAtual,
-                    'sequencia_final' => $sequenciaAtual + count($idsDocumentosVinculados) - 1
-                ]);
-
-                // Para cada documento vinculado ao movimento, atribui sequência global
-                foreach ($idsDocumentosVinculados as $idDoc) {
-                    $sequenciaGlobal[$idDoc] = $sequenciaAtual;
-                    $sequenciaAtual++;
-                }
-            }
-
-            Log::info('✅ Sequência global calculada', [
-                'total_documentos_sequenciados' => count($sequenciaGlobal),
-                'sequencia_maxima' => $sequenciaAtual - 1,
-                'mapa_sequencial' => $sequenciaGlobal
-            ]);
-
-            // 3. Adiciona o campo sequencia_analise em cada documento
-            foreach ($documentos as &$doc) {
-                $idDoc = $doc['idDocumento'] ?? null;
-                $doc['sequencia_analise'] = $sequenciaGlobal[$idDoc] ?? 999999;
-
-                Log::debug("Documento {$idDoc} recebeu sequencia_analise = " . $doc['sequencia_analise'], [
-                    'id_documento' => $idDoc,
-                    'sequencia_atribuida' => $doc['sequencia_analise'],
-                    'existe_no_mapa' => isset($sequenciaGlobal[$idDoc])
-                ]);
-            }
-            unset($doc); // Libera referência
-
-            // Agrupa documentos por idMovimento
-            $documentosPorMovimento = [];
-            foreach ($documentos as $doc) {
-                $idMov = $doc['idMovimento'] ?? null;
-                if ($idMov) {
-                    if (!isset($documentosPorMovimento[$idMov])) {
-                        $documentosPorMovimento[$idMov] = [];
-                    }
-                    $documentosPorMovimento[$idMov][] = $doc;
-                }
-            }
-
-            // Adiciona documentos aos movimentos (já com sequencia_analise calculada)
-            foreach ($movimentos as &$movimento) {
-                $idMov = $movimento['idMovimento'] ?? null;
-                $movimento['documentos'] = $documentosPorMovimento[$idMov] ?? [];
-            }
 
             // Armazena os dados no cache por 10 minutos
             $cacheKey = 'processo_' . md5($numeroProcesso . auth()->id());
             cache()->put($cacheKey, [
-                'dadosBasicos' => $dadosBasicos,
-                'movimentos' => $movimentos,
-                'documentos' => $documentos,
+                'dadosBasicos' => $dadosNormalizados['dadosBasicos'],
+                'movimentos' => $dadosNormalizados['movimentos'],
+                'documentos' => $dadosNormalizados['documentos'],
                 'numeroProcesso' => $numeroProcesso,
                 'judicial_user_id' => $request->user_ws,
                 'senha' => $senha
@@ -351,52 +233,4 @@ class EprocController extends Controller
         }
     }
 
-    /**
-     * Normaliza os polos para garantir que o atributo 'polo' seja sempre uma string
-     * O SOAP pode retornar o atributo XML 'polo' de formas diferentes
-     */
-    protected function normalizarPolos(array $polos): array
-    {
-        // Garante que seja um array de polos
-        if (!is_array($polos)) {
-            return [];
-        }
-
-        // Se for um único polo (array associativo), transforma em array de polos
-        if (isset($polos['parte']) || isset($polos['polo'])) {
-            $polos = [$polos];
-        }
-
-        // Normaliza cada polo
-        foreach ($polos as &$polo) {
-            if (!is_array($polo)) {
-                continue;
-            }
-
-            // Extrai o atributo 'polo' se estiver em diferentes formatos
-            if (isset($polo['@attributes']['polo'])) {
-                // Caso 1: Atributo está em @attributes
-                $polo['polo'] = $polo['@attributes']['polo'];
-            } elseif (isset($polo['polo']) && is_array($polo['polo'])) {
-                // Caso 2: 'polo' é um array (pode ter @attributes dentro)
-                if (isset($polo['polo']['@attributes']['polo'])) {
-                    $polo['polo'] = $polo['polo']['@attributes']['polo'];
-                } elseif (isset($polo['polo'][0])) {
-                    // Caso 3: 'polo' é array numérico, pega o primeiro
-                    $polo['polo'] = $polo['polo'][0];
-                } else {
-                    // Caso 4: Usa a primeira chave do array
-                    $polo['polo'] = array_values($polo['polo'])[0] ?? 'N/A';
-                }
-            }
-            // Se 'polo' já é string, deixa como está
-
-            // Garante que 'polo' seja sempre string
-            if (!isset($polo['polo']) || !is_string($polo['polo'])) {
-                $polo['polo'] = 'N/A';
-            }
-        }
-
-        return $polos;
-    }
 }

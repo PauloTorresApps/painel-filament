@@ -3,10 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\DocumentMicroAnalysis;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -34,7 +31,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
         public bool $deepThinkingEnabled,
         public array $contextoDados,
         public ?string $aiModelId = null // ID do modelo específico (ex: gemini-2.5-flash)
-    ) {}
+    ) {
+    }
 
     /**
      * Execute the job.
@@ -90,7 +88,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             ]);
 
             // Obtém o serviço de IA
-            $aiService = $this->getAIService($this->aiProvider);
+            $aiService = AIServiceFactory::make($this->aiProvider);
 
             // Define o modelo específico se configurado
             if ($this->aiModelId) {
@@ -241,16 +239,4 @@ PROMPT;
         return implode(', ', $nomes);
     }
 
-    /**
-     * Retorna o serviço de IA baseado no provider
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
-    }
 }

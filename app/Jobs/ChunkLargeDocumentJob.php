@@ -4,10 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,7 +38,8 @@ class ChunkLargeDocumentJob implements ShouldQueue
         public bool $deepThinkingEnabled,
         public array $contextoDados,
         public ?string $aiModelId = null
-    ) {}
+    ) {
+    }
 
     /**
      * Execute the job.
@@ -94,7 +92,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
             ]);
 
             // Obtém o serviço de IA
-            $aiService = $this->getAIService($this->aiProvider);
+            $aiService = AIServiceFactory::make($this->aiProvider);
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
             }
@@ -305,19 +303,6 @@ PROMPT;
     private function estimateTokenCount(string $text): int
     {
         return (int) ceil(mb_strlen($text) / 4);
-    }
-
-    /**
-     * Retorna o serviço de IA
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
     }
 
     /**

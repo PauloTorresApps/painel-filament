@@ -5,10 +5,8 @@ namespace App\Jobs;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -49,7 +47,8 @@ class RefineReduceJob implements ShouldQueue
         public string $promptTemplate,
         public ?string $aiModelId = null,
         public int $startFromIndex = 0 // Permite retomada
-    ) {}
+    ) {
+    }
 
     /**
      * Define os dados de contexto
@@ -110,12 +109,14 @@ class RefineReduceJob implements ShouldQueue
                 'progress_message' => "Refinando análise: documento 1/{$totalDocs}...",
             ]);
 
-            $this->notifyUser($documentAnalysis, 'info',
+            $this->notifyUser(
+                $documentAnalysis,
+                'info',
                 'Fase 2/2: Refinamento',
                 "Construindo narrativa processual a partir de {$totalDocs} documento(s)..."
             );
 
-            $aiService = $this->getAIService($this->aiProvider);
+            $aiService = AIServiceFactory::make($this->aiProvider);
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
             }
@@ -225,7 +226,9 @@ class RefineReduceJob implements ShouldQueue
                 'total_processing_time_ms' => $totalProcessingTime,
             ]);
 
-            $this->notifyUser($documentAnalysis, 'success',
+            $this->notifyUser(
+                $documentAnalysis,
+                'success',
                 'Análise Concluída',
                 "Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída!"
             );
@@ -245,7 +248,9 @@ class RefineReduceJob implements ShouldQueue
                     'is_resumable' => true, // Permite retomada
                 ]);
 
-                $this->notifyUser($documentAnalysis, 'danger',
+                $this->notifyUser(
+                    $documentAnalysis,
+                    'danger',
                     'Análise Falhou',
                     'Erro: ' . $e->getMessage()
                 );
@@ -361,7 +366,7 @@ CONTENT;
      * Gera a análise final usando o prompt do usuário
      */
     private function generateFinalAnalysis(
-        AIProviderInterface $aiService,
+        \App\Contracts\AIProviderInterface $aiService,
         DocumentAnalysis $documentAnalysis,
         string $evolutiveSummary
     ): string {
@@ -425,26 +430,10 @@ PROMPT;
         }
 
         try {
-            FilamentNotification::make()
-                ->title($title)
-                ->body($body)
-                ->status($status)
-                ->sendToDatabase($user);
+            NotificationService::send($user, $title, $body, $status);
         } catch (\Exception $e) {
             Log::warning('RefineReduceJob: Erro ao notificar', ['error' => $e->getMessage()]);
         }
     }
 
-    /**
-     * Retorna o serviço de IA
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
-    }
 }

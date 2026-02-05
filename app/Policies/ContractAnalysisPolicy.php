@@ -83,4 +83,28 @@ class ContractAnalysisPolicy
     {
         return $user->hasRole(['Admin', 'Manager']);
     }
+
+    /**
+     * Determina se o usuário pode baixar o PDF da análise
+     */
+    public function downloadPdf(User $user, ContractAnalysis $contractAnalysis): bool
+    {
+        return $this->view($user, $contractAnalysis) && $contractAnalysis->isCompleted();
+    }
+
+    /**
+     * Determina se o usuário pode baixar o infográfico
+     */
+    public function downloadInfographic(User $user, ContractAnalysis $contractAnalysis): bool
+    {
+        return $this->view($user, $contractAnalysis) && $contractAnalysis->isInfographicCompleted();
+    }
+
+    /**
+     * Determina se o usuário pode baixar o parecer jurídico
+     */
+    public function downloadLegalOpinion(User $user, ContractAnalysis $contractAnalysis): bool
+    {
+        return $this->view($user, $contractAnalysis) && $contractAnalysis->isLegalOpinionCompleted();
+    }
 }

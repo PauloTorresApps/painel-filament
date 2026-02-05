@@ -5,10 +5,8 @@ namespace App\Jobs;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\User;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -44,7 +42,8 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         public string $promptTemplate,
         public ?string $aiModelId = null, // ID do modelo específico (ex: gemini-2.5-flash)
         public int $currentReduceLevel = 1
-    ) {}
+    ) {
+    }
 
     /**
      * Execute the job.
@@ -264,7 +263,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
             'micro_analyses_count' => $microAnalyses->count()
         ]);
 
-        $aiService = $this->getAIService($this->aiProvider);
+        $aiService = AIServiceFactory::make($this->aiProvider);
 
         // Define o modelo específico se configurado
         if ($this->aiModelId) {
@@ -399,19 +398,6 @@ PROMPT;
     }
 
     /**
-     * Retorna o serviço de IA
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
-    }
-
-    /**
      * Calcula quantos níveis de REDUCE serão necessários
      */
     private function calculateTotalLevels(int $totalItems): int
@@ -449,11 +435,11 @@ PROMPT;
                 default => 'IA'
             };
 
-            FilamentNotification::make()
-                ->title('Fase 2/2: Consolidação')
-                ->body("Análise individual concluída! A {$providerName} está consolidando {$microAnalysesCount} análises em paralelo para gerar a visão completa do processo.")
-                ->status('info')
-                ->sendToDatabase($user);
+            NotificationService::info(
+                $user,
+                'Fase 2/2: Consolidação',
+                "Análise individual concluída! A {$providerName} está consolidando {$microAnalysesCount} análises em paralelo para gerar a visão completa do processo."
+            );
         } catch (\Exception $e) {
             Log::warning('ReduceDocumentAnalysisJob: Erro ao notificar início do REDUCE', [
                 'error' => $e->getMessage()

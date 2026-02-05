@@ -4,10 +4,8 @@ namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
 use App\Models\User;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -36,7 +34,8 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         public string $promptTemplate,
         public ?string $aiModelId,
         public int $completedReduceLevel
-    ) {}
+    ) {
+    }
 
     /**
      * Execute the job.
@@ -145,7 +144,7 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         // Atualiza status para análise final
         $documentAnalysis->startFinalAnalysis();
 
-        $aiService = $this->getAIService($this->aiProvider);
+        $aiService = AIServiceFactory::make($this->aiProvider);
 
         // Define o modelo específico se configurado
         if ($this->aiModelId) {
@@ -260,17 +259,17 @@ PROMPT;
                 $totalDocs = $documentAnalysis->total_documents ?? 0;
                 $timeSeconds = round(($documentAnalysis->processing_time_ms ?? 0) / 1000, 2);
 
-                FilamentNotification::make()
-                    ->title('Análise Concluída')
-                    ->body("Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída com sucesso! Tempo total: {$timeSeconds}s")
-                    ->status('success')
-                    ->sendToDatabase($user);
+                NotificationService::success(
+                    $user,
+                    'Análise Concluída',
+                    "Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída com sucesso! Tempo total: {$timeSeconds}s"
+                );
             } else {
-                FilamentNotification::make()
-                    ->title('Análise Falhou')
-                    ->body("Erro na análise do processo {$documentAnalysis->numero_processo}: " . ($errorMessage ?? 'Erro desconhecido'))
-                    ->status('danger')
-                    ->sendToDatabase($user);
+                NotificationService::error(
+                    $user,
+                    'Análise Falhou',
+                    "Erro na análise do processo {$documentAnalysis->numero_processo}: " . ($errorMessage ?? 'Erro desconhecido')
+                );
             }
         } catch (\Exception $e) {
             Log::warning('CheckReduceLevelCompletionJob: Erro ao notificar usuário', [
@@ -279,16 +278,4 @@ PROMPT;
         }
     }
 
-    /**
-     * Retorna o serviço de IA
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
-    }
 }

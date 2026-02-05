@@ -4,10 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
-use App\Contracts\AIProviderInterface;
-use App\Services\GeminiService;
-use App\Services\DeepSeekService;
-use App\Services\OpenAIService;
+use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -34,7 +31,8 @@ class ReduceBatchJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public ?string $aiModelId = null
-    ) {}
+    ) {
+    }
 
     /**
      * Execute the job.
@@ -103,7 +101,7 @@ class ReduceBatchJob implements ShouldQueue
             ]);
 
             // Obtém o serviço de IA
-            $aiService = $this->getAIService($this->aiProvider);
+            $aiService = AIServiceFactory::make($this->aiProvider);
 
             // Define o modelo específico se configurado
             if ($this->aiModelId) {
@@ -228,16 +226,4 @@ PROMPT;
         return (int) ceil(mb_strlen($text) / 4);
     }
 
-    /**
-     * Retorna o serviço de IA
-     */
-    private function getAIService(string $provider): AIProviderInterface
-    {
-        return match ($provider) {
-            'deepseek' => new DeepSeekService(),
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            default => new GeminiService(),
-        };
-    }
 }
