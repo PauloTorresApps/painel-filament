@@ -8,6 +8,7 @@ use Filament\Actions\EditAction;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\ToggleColumn;
 
 class AiPromptsTable
 {
@@ -57,15 +58,29 @@ class AiPromptsTable
                     ->limit(100)
                     ->wrap(),
 
-                IconColumn::make('is_active')
+                ToggleColumn::make('is_active')
                     ->label('Ativo')
-                    ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->afterStateUpdated(function ($record, $state) {
+                        // Se desativando um prompt padrão, avisa
+                        if (!$state && $record->is_default) {
+                            \Filament\Notifications\Notification::make()
+                                ->warning()
+                                ->title('Atenção')
+                                ->body('Você desativou um prompt que era padrão.')
+                                ->send();
+                        }
+                    }),
 
-                IconColumn::make('is_default')
+                ToggleColumn::make('is_default')
                     ->label('Padrão')
-                    ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->beforeStateUpdated(function ($record, $state) {
+                        // Se ativando como padrão, garante que o prompt esteja ativo
+                        if ($state && !$record->is_active) {
+                            $record->update(['is_active' => true]);
+                        }
+                    }),
 
                 TextColumn::make('created_at')
                     ->label('Criado em')

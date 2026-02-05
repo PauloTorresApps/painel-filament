@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class AiPrompt extends Model
 {
@@ -57,24 +58,42 @@ class AiPrompt extends Model
             }
 
             // Se este prompt está sendo definido como padrão,
-            // remove o padrão dos outros prompts do mesmo sistema E tipo
+            // remove o padrão APENAS dos outros prompts do mesmo sistema E MESMO tipo
             if ($prompt->is_default && $prompt->isDirty('is_default')) {
-                $query = self::where('system_id', $prompt->system_id)
-                    ->where('is_default', true);
+                $promptType = $prompt->prompt_type;
+                $systemId = $prompt->system_id;
+                $promptId = $prompt->exists ? $prompt->id : 0;
 
-                // Se tem prompt_type, restringe por tipo também
-                // Isso permite ter um default por tipo (document_analysis + final_opinion)
-                if ($prompt->prompt_type) {
-                    $query->where('prompt_type', $prompt->prompt_type);
+                Log::info('AiPrompt: Definindo prompt como padrão', [
+                    'prompt_id' => $promptId,
+                    'system_id' => $systemId,
+                    'prompt_type' => $promptType,
+                ]);
+
+                // Constrói query base
+                $query = self::where('system_id', $systemId)
+                    ->where('is_default', true)
+                    ->where('id', '!=', $promptId);
+
+                // IMPORTANTE: Filtra SEMPRE por prompt_type para permitir
+                // múltiplos defaults (um por tipo)
+                if (!empty($promptType)) {
+                    // Só remove default de prompts com o MESMO tipo
+                    $query->where('prompt_type', $promptType);
                 } else {
-                    // Se não tem tipo, só remove default dos que também não tem tipo
-                    $query->whereNull('prompt_type');
+                    // Se não tem tipo, só afeta prompts sem tipo
+                    $query->where(function ($q) {
+                        $q->whereNull('prompt_type')
+                          ->orWhere('prompt_type', '');
+                    });
                 }
 
-                // Exclui o próprio prompt da atualização
-                if ($prompt->exists) {
-                    $query->where('id', '!=', $prompt->id);
-                }
+                // Log da query para debug
+                $affectedCount = $query->count();
+                Log::info('AiPrompt: Removendo default de outros prompts', [
+                    'affected_count' => $affectedCount,
+                    'query_sql' => $query->toRawSql(),
+                ]);
 
                 $query->update(['is_default' => false]);
             }
