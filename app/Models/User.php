@@ -29,6 +29,9 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'default_dashboard_tab',
+        'email_notifications_enabled',
+        'email_notify_process_analysis',
+        'email_notify_contract_analysis',
     ];
 
     /**
@@ -53,6 +56,9 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'email_notifications_enabled' => 'boolean',
+            'email_notify_process_analysis' => 'boolean',
+            'email_notify_contract_analysis' => 'boolean',
         ];
     }
 
@@ -81,6 +87,19 @@ class User extends Authenticatable implements FilamentUser
         }
 
         return false;
+    }
+
+    public function wantsEmailFor(string $type): bool
+    {
+        if (!$this->email_notifications_enabled) {
+            return false;
+        }
+
+        return match ($type) {
+            'process_analysis' => $this->email_notify_process_analysis,
+            'contract_analysis' => $this->email_notify_contract_analysis,
+            default => false,
+        };
     }
 
     public function judicialUsers(): HasMany

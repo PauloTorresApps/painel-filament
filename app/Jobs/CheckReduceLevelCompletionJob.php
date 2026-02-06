@@ -6,12 +6,14 @@ use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Models\User;
+use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -344,6 +346,22 @@ PROMPT;
                     'Análise Concluída',
                     "Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída com sucesso! Tempo total: {$timeSeconds}s"
                 );
+
+                // Envia e-mail com PDF se o usuário habilitou
+                if ($user->wantsEmailFor('process_analysis')) {
+                    try {
+                        Mail::to($user)->queue(new ProcessAnalysisCompleted($documentAnalysis, $user));
+                        Log::info('CheckReduceLevelCompletionJob: E-mail de análise enfileirado', [
+                            'user_id' => $user->id,
+                            'analysis_id' => $documentAnalysis->id,
+                        ]);
+                    } catch (\Exception $emailException) {
+                        Log::warning('CheckReduceLevelCompletionJob: Falha ao enfileirar e-mail', [
+                            'user_id' => $user->id,
+                            'error' => $emailException->getMessage(),
+                        ]);
+                    }
+                }
             } else {
                 NotificationService::error(
                     $user,

@@ -21,6 +21,7 @@ Route::middleware(['auth'])->group(function () {
     Volt::route('settings/profile', 'settings.profile')->name('profile.edit');
     Volt::route('settings/password', 'settings.password')->name('user-password.edit');
     Volt::route('settings/appearance', 'settings.appearance')->name('appearance.edit');
+    Volt::route('settings/notifications', 'settings.notifications')->name('notifications.edit');
 
     Volt::route('settings/two-factor', 'settings.two-factor')
         ->middleware(

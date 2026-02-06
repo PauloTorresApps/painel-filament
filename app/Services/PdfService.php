@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ContractAnalysis;
+use App\Models\DocumentAnalysis;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
@@ -89,6 +90,18 @@ class PdfService
         ];
 
         return self::generate('pdf.legal-opinion', $data, 'DejaVu Serif');
+    }
+
+    /**
+     * Gera PDF específico para análise de processos (DocumentAnalysis)
+     */
+    public static function generateDocumentAnalysisPdf(DocumentAnalysis $analysis)
+    {
+        $data = [
+            'analysis' => $analysis,
+        ];
+
+        return self::generate('pdf.document-analysis', $data, 'DejaVu Sans');
     }
 
     /**

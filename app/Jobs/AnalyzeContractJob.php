@@ -14,10 +14,12 @@ use App\Services\NotificationService;
 use App\Services\DocumentTextExtractor;
 use App\Services\ContractFileManager;
 use App\Contracts\AIProviderInterface;
+use App\Mail\ContractAnalysisCompleted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Filament\Notifications\Notification as FilamentNotification;
 
@@ -216,6 +218,22 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 'Análise de Contrato Concluída',
                 "A análise do contrato '{$analysis->file_name}' foi concluída com sucesso."
             );
+
+            // Envia e-mail com PDF se o usuário habilitou
+            if ($user->wantsEmailFor('contract_analysis')) {
+                try {
+                    Mail::to($user)->queue(new ContractAnalysisCompleted($analysis, $user));
+                    Log::info('AnalyzeContractJob: E-mail de análise enfileirado', [
+                        'user_id' => $user->id,
+                        'analysis_id' => $analysis->id,
+                    ]);
+                } catch (\Exception $emailException) {
+                    Log::warning('AnalyzeContractJob: Falha ao enfileirar e-mail', [
+                        'user_id' => $user->id,
+                        'error' => $emailException->getMessage(),
+                    ]);
+                }
+            }
 
         } catch (\Exception $e) {
             Log::error('Erro na análise de contrato', [

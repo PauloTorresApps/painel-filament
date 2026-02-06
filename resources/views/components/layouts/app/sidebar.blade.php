@@ -43,6 +43,12 @@
                 </flux:navlist>
             @endif
 
+            <flux:navlist variant="outline">
+                <flux:navlist.group :heading="__('Conta')" class="grid">
+                    <flux:navlist.item icon="cog-6-tooth" :href="route('notifications.edit')" :current="request()->routeIs('notifications.edit')" wire:navigate>{{ __('Configurações') }}</flux:navlist.item>
+                </flux:navlist.group>
+            </flux:navlist>
+
             <flux:spacer />
 
             <!-- Desktop User Menu -->
