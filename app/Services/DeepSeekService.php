@@ -65,9 +65,9 @@ class DeepSeekService extends AbstractAIService
      * Faz a chamada HTTP para a API do DeepSeek com exponential backoff para rate limiting
      * DeepSeek usa a mesma interface da OpenAI (chat completions)
      */
-    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
+    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt, $deepThinkingEnabled) {
+        return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
             // Aplica rate limiting antes da chamada
             RateLimiterService::apply($this->getRateLimiterKey());
 
@@ -101,13 +101,17 @@ class DeepSeekService extends AbstractAIService
                 ]);
             }
 
+            // Determina o conteúdo do system prompt
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
+
             // Monta o corpo da requisição
             $requestBody = [
                 'model' => $modelToUse,
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.'
+                        'content' => $systemContent
                     ],
                     [
                         'role' => 'user',

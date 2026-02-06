@@ -50,8 +50,12 @@ abstract class AbstractAIService implements AIProviderInterface
 
     /**
      * Faz a chamada HTTP para a API do provider
+     *
+     * @param string $prompt Prompt do usuário
+     * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo
+     * @param string|null $systemPrompt System prompt customizado (para prompt caching)
      */
-    abstract protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string;
+    abstract protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string;
 
     /**
      * Traduz erros técnicos da API para mensagens amigáveis
@@ -121,11 +125,17 @@ abstract class AbstractAIService implements AIProviderInterface
 
     /**
      * Analisa um único documento (usado na fase MAP do map-reduce)
+     *
+     * @param string $prompt Prompt de análise (conteúdo variável por documento)
+     * @param string $documentText Texto do documento
+     * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo
+     * @param string|null $systemPrompt System prompt customizado com contexto fixo (para prompt caching entre chamadas)
      */
     public function analyzeSingleDocument(
         string $prompt,
         string $documentText,
-        bool $deepThinkingEnabled = false
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
     ): string {
         $this->resetAnalysisMetadata();
 
@@ -142,7 +152,7 @@ abstract class AbstractAIService implements AIProviderInterface
             $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO (RESUMIDO)\n\n" . $documentText;
         }
 
-        $result = $this->callAPI($fullPrompt, $deepThinkingEnabled);
+        $result = $this->callAPI($fullPrompt, $deepThinkingEnabled, $systemPrompt);
 
         $this->finalizeMetadata(1);
 

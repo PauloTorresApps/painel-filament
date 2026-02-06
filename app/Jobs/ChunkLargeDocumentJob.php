@@ -107,6 +107,9 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 $aiService->setModel($this->aiModelId);
             }
 
+            // Monta system prompt fixo para os chunks (cacheável entre chamadas)
+            $chunkSystemPrompt = $this->buildChunkSystemPrompt($microAnalysis, $chunkCount);
+
             // Processa cada chunk e acumula os resumos
             $chunkSummaries = [];
 
@@ -122,14 +125,15 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 // Aplica rate limiting
                 RateLimiterService::apply($this->aiProvider);
 
-                // Monta prompt para análise do chunk
-                $prompt = $this->buildChunkPrompt($microAnalysis, $chunkNum, $chunkCount);
+                // Monta prompt variável para este chunk específico
+                $prompt = $this->buildChunkPrompt($chunkNum, $chunkCount);
 
-                // Analisa o chunk
+                // Analisa o chunk com system prompt cacheável
                 $chunkResult = $aiService->analyzeSingleDocument(
                     $prompt,
                     $chunk,
-                    false // Não usa deep thinking para chunks individuais
+                    false, // Não usa deep thinking para chunks individuais
+                    $chunkSystemPrompt
                 );
 
                 $chunkSummaries[] = "### Parte {$chunkNum}/{$chunkCount}\n\n{$chunkResult}";
@@ -144,12 +148,14 @@ class ChunkLargeDocumentJob implements ShouldQueue
             RateLimiterService::apply($this->aiProvider);
 
             $consolidatedText = implode("\n\n---\n\n", $chunkSummaries);
-            $consolidationPrompt = $this->buildConsolidationPrompt($microAnalysis, $chunkCount);
+            $consolidationSystemPrompt = $this->buildConsolidationSystemPrompt($microAnalysis, $chunkCount);
+            $consolidationPrompt = "Consolide as análises das {$chunkCount} partes do documento abaixo em uma análise única e coesa.";
 
             $finalResult = $aiService->analyzeSingleDocument(
                 $consolidationPrompt,
                 $consolidatedText,
-                $this->deepThinkingEnabled
+                $this->deepThinkingEnabled,
+                $consolidationSystemPrompt
             );
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
@@ -234,21 +240,25 @@ class ChunkLargeDocumentJob implements ShouldQueue
     }
 
     /**
-     * Prompt para análise de um chunk individual
+     * System prompt fixo para análise de chunks (cacheável entre chamadas).
+     * Contém o contexto do documento e as instruções de extração.
      */
-    private function buildChunkPrompt(DocumentMicroAnalysis $microAnalysis, int $chunkNum, int $totalChunks): string
+    private function buildChunkSystemPrompt(DocumentMicroAnalysis $microAnalysis, int $totalChunks): string
     {
         $nomeClasse = $this->contextoDados['classeProcessualNome']
             ?? $this->contextoDados['classeProcessual']
             ?? 'Não informada';
 
         return <<<PROMPT
-# ANÁLISE DE DOCUMENTO EXTENSO - PARTE {$chunkNum}/{$totalChunks}
+Você é um assistente jurídico especializado em análise de documentos processuais extensos.
+
+# CONTEXTO
 
 **Documento:** {$microAnalysis->descricao}
 **Classe Processual:** {$nomeClasse}
+**Total de partes:** {$totalChunks}
 
-Você está analisando a PARTE {$chunkNum} de {$totalChunks} de um documento extenso.
+Você está analisando partes individuais de um documento extenso dividido em {$totalChunks} partes.
 
 ## TAREFA
 
@@ -271,15 +281,25 @@ PROMPT;
     }
 
     /**
-     * Prompt para consolidar os chunks em um resumo único
+     * Prompt variável por chunk (apenas identifica qual parte está sendo analisada).
      */
-    private function buildConsolidationPrompt(DocumentMicroAnalysis $microAnalysis, int $chunkCount): string
+    private function buildChunkPrompt(int $chunkNum, int $totalChunks): string
+    {
+        return "# PARTE {$chunkNum}/{$totalChunks}";
+    }
+
+    /**
+     * System prompt para consolidação dos chunks (contém todas as instruções fixas).
+     */
+    private function buildConsolidationSystemPrompt(DocumentMicroAnalysis $microAnalysis, int $chunkCount): string
     {
         $nomeClasse = $this->contextoDados['classeProcessualNome']
             ?? $this->contextoDados['classeProcessual']
             ?? 'Não informada';
 
         return <<<PROMPT
+Você é um assistente jurídico especializado em análise de documentos processuais.
+
 # CONSOLIDAÇÃO DE DOCUMENTO EXTENSO
 
 **Documento:** {$microAnalysis->descricao}

@@ -50,48 +50,60 @@ class GeminiService extends AbstractAIService
     /**
      * Faz a chamada HTTP para a API do Gemini com exponential backoff para rate limiting
      */
-    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
+    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt) {
+        return $this->withRetry(function () use ($prompt, $systemPrompt) {
             // Aplica rate limiting antes da chamada
             RateLimiterService::apply($this->getRateLimiterKey());
 
             $url = "{$this->apiUrl}/{$this->model}:generateContent?key={$this->apiKey}";
 
-            $response = Http::timeout(300) // 5 minutos de timeout para análises jurídicas longas
-                ->post($url, [
-                    'contents' => [
-                        [
-                            'parts' => [
-                                ['text' => $prompt]
-                            ]
-                        ]
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.4, // Mais determinístico para análises jurídicas
-                        'topK' => 32,
-                        'topP' => 0.95,
-                        'maxOutputTokens' => 8192, // Permite respostas longas
-                    ],
-                    'safetySettings' => [
-                        [
-                            'category' => 'HARM_CATEGORY_HARASSMENT',
-                            'threshold' => 'BLOCK_NONE'
-                        ],
-                        [
-                            'category' => 'HARM_CATEGORY_HATE_SPEECH',
-                            'threshold' => 'BLOCK_NONE'
-                        ],
-                        [
-                            'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                            'threshold' => 'BLOCK_NONE'
-                        ],
-                        [
-                            'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                            'threshold' => 'BLOCK_NONE'
+            $payload = [
+                'contents' => [
+                    [
+                        'parts' => [
+                            ['text' => $prompt]
                         ]
                     ]
-                ]);
+                ],
+                'generationConfig' => [
+                    'temperature' => 0.4, // Mais determinístico para análises jurídicas
+                    'topK' => 32,
+                    'topP' => 0.95,
+                    'maxOutputTokens' => 8192, // Permite respostas longas
+                ],
+                'safetySettings' => [
+                    [
+                        'category' => 'HARM_CATEGORY_HARASSMENT',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        'threshold' => 'BLOCK_NONE'
+                    ],
+                    [
+                        'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                        'threshold' => 'BLOCK_NONE'
+                    ]
+                ]
+            ];
+
+            // Adiciona systemInstruction quando system prompt customizado é fornecido
+            // O Gemini usa systemInstruction como campo separado (cacheado entre chamadas)
+            if ($systemPrompt) {
+                $payload['systemInstruction'] = [
+                    'parts' => [
+                        ['text' => $systemPrompt]
+                    ]
+                ];
+            }
+
+            $response = Http::timeout(300) // 5 minutos de timeout para análises jurídicas longas
+                ->post($url, $payload);
 
             if (!$response->successful()) {
                 $statusCode = $response->status();

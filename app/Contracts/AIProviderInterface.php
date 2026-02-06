@@ -28,12 +28,14 @@ interface AIProviderInterface
      * @param string $prompt Prompt de análise
      * @param string $documentText Texto do documento
      * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo
+     * @param string|null $systemPrompt System prompt customizado (para prompt caching entre chamadas)
      * @return string Análise gerada pela IA
      */
     public function analyzeSingleDocument(
         string $prompt,
         string $documentText,
-        bool $deepThinkingEnabled = false
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
     ): string;
 
     /**

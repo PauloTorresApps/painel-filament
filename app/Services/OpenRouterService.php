@@ -127,9 +127,9 @@ class OpenRouterService extends AbstractAIService
      * Faz a chamada HTTP para a API do OpenRouter
      * Usa chamadas HTTP diretas para evitar problemas de parsing do pacote com respostas de reasoning
      */
-    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
+    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt, $deepThinkingEnabled) {
+        return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
             // Aplica rate limiting antes da chamada
             RateLimiterService::apply($this->getRateLimiterKey());
 
@@ -140,16 +140,18 @@ class OpenRouterService extends AbstractAIService
                 'deep_thinking_requested' => $deepThinkingEnabled,
                 'reasoning_enabled' => $useReasoning,
                 'prompt_length' => mb_strlen($prompt),
+                'has_custom_system_prompt' => $systemPrompt !== null,
             ]);
+
+            // Determina o conteúdo do system prompt
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
 
             // Monta o payload da requisição
             $payload = [
                 'model' => $this->model,
                 'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.',
-                    ],
+                    $this->buildSystemMessage($systemContent),
                     [
                         'role' => 'user',
                         'content' => $prompt,
@@ -407,6 +409,43 @@ class OpenRouterService extends AbstractAIService
 
             return $text;
         });
+    }
+
+    /**
+     * Monta a mensagem system para o payload da API.
+     * Para modelos Anthropic, usa content blocks com cache_control para habilitar prompt caching.
+     * Para outros modelos, usa formato padrão (auto-caching pelo provider).
+     */
+    private function buildSystemMessage(string $content): array
+    {
+        // Para modelos Anthropic via OpenRouter, formata com cache_control
+        // Isso habilita prompt caching explícito: tokens cacheados custam 10% do preço normal
+        if ($this->isAnthropicModel()) {
+            return [
+                'role' => 'system',
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content,
+                        'cache_control' => ['type' => 'ephemeral'],
+                    ],
+                ],
+            ];
+        }
+
+        // Para outros modelos, formato padrão (OpenAI, DeepSeek, etc. usam auto-caching)
+        return [
+            'role' => 'system',
+            'content' => $content,
+        ];
+    }
+
+    /**
+     * Verifica se o modelo atual é um modelo Anthropic
+     */
+    private function isAnthropicModel(): bool
+    {
+        return str_starts_with($this->model, 'anthropic/');
     }
 
     /**

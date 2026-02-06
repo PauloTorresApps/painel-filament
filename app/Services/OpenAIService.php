@@ -62,20 +62,24 @@ class OpenAIService extends AbstractAIService
     /**
      * Faz a chamada HTTP para a API do OpenAI com exponential backoff para rate limiting
      */
-    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false): string
+    protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt) {
+        return $this->withRetry(function () use ($prompt, $systemPrompt) {
             // Aplica rate limiting antes da chamada
             RateLimiterService::apply($this->getRateLimiterKey());
 
             $url = "{$this->apiUrl}/chat/completions";
+
+            // Determina o conteúdo do system prompt
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de processos judiciais. Forneça análises objetivas, estruturadas e fundamentadas em linguagem clara.';
 
             $requestBody = [
                 'model' => $this->model,
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Você é um assistente jurídico especializado em análise de processos judiciais. Forneça análises objetivas, estruturadas e fundamentadas em linguagem clara.'
+                        'content' => $systemContent
                     ],
                     [
                         'role' => 'user',

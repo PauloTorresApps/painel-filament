@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\Storage;
  *
  * Utiliza o trait Batchable para processamento paralelo via Bus::batch().
  * A coordenação do REDUCE é feita pelo DispatchMapPhaseJob através de callbacks.
+ *
+ * O prompt é separado em system prompt (fixo, cacheável) e user prompt (variável por documento)
+ * para aproveitar o prompt caching dos provedores de IA (Anthropic, OpenAI, etc.),
+ * reduzindo o custo de tokens repetidos entre documentos da mesma análise.
  */
 class MapDocumentAnalysisJob implements ShouldQueue
 {
@@ -99,17 +103,21 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 $aiService->setModel($this->aiModelId);
             }
 
-            // Monta o prompt para micro-análise (agora sempre texto, OCR já extraiu das imagens)
-            $prompt = $this->buildMapPrompt($microAnalysis);
+            // Monta os prompts separados para prompt caching:
+            // - System prompt: contexto fixo (idêntico para todos os docs da análise) → cacheado pelo provider
+            // - Document prompt: conteúdo variável (específico por documento)
+            $systemPrompt = $this->buildSystemPrompt();
+            $documentPrompt = $this->buildDocumentPrompt($microAnalysis);
 
             // Aplica rate limiting
             RateLimiterService::apply($this->aiProvider);
 
             // Chama a IA para análise de texto (imagens já tiveram texto extraído via OCR)
             $result = $aiService->analyzeSingleDocument(
-                $prompt,
+                $documentPrompt,
                 $microAnalysis->extracted_text,
-                $this->deepThinkingEnabled
+                $this->deepThinkingEnabled,
+                $systemPrompt
             );
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
@@ -122,7 +130,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             );
 
             // Salva arquivo de debug com resultado da análise
-            $this->saveAnalysisToFile($microAnalysis, $result, $prompt);
+            $this->saveAnalysisToFile($microAnalysis, $result, $systemPrompt, $documentPrompt);
 
             Log::info('MapDocumentAnalysisJob: Concluído com sucesso', [
                 'micro_id' => $this->microAnalysisId,
@@ -148,12 +156,16 @@ class MapDocumentAnalysisJob implements ShouldQueue
     }
 
     /**
-     * Monta o prompt para micro-análise de um documento
+     * Monta o system prompt com todo o contexto fixo da análise.
      *
-     * Nota: Imagens já tiveram seu texto extraído via OCR antes de chegar aqui,
-     * então todos os documentos são tratados como texto.
+     * Este conteúdo é IDÊNTICO para todos os documentos de uma mesma análise,
+     * permitindo que os provedores de IA (Anthropic, OpenAI, etc.) o cacheem
+     * e cobrem apenas uma fração do custo nos documentos subsequentes.
+     *
+     * Inclui: papel do assistente, contexto do processo, tarefa de análise,
+     * schema JSON da timeline e instruções de formato.
      */
-    private function buildMapPrompt(DocumentMicroAnalysis $microAnalysis): string
+    private function buildSystemPrompt(): string
     {
         $nomeClasse = $this->contextoDados['classeProcessualNome']
             ?? $this->contextoDados['classeProcessual']
@@ -161,11 +173,6 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
         $assuntos = $this->formatAssuntos($this->contextoDados['assunto'] ?? []);
         $numeroProcesso = $this->contextoDados['numeroProcesso'] ?? 'Não informado';
-
-        // Adiciona contexto se o documento original era uma imagem (texto extraído via OCR)
-        $documentContext = $microAnalysis->isImage()
-            ? "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}\n**Tipo original:** {$microAnalysis->mimetype} (texto extraído via OCR)"
-            : "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
 
         // Busca o prompt padrão ativo de "Análise de Documentos" do banco
         // Isso garante que sempre use o prompt mais atual configurado
@@ -180,18 +187,14 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $tarefaPrompt = $this->buildDefaultTaskPrompt();
         }
 
-        $prompt = <<<PROMPT
+        return <<<PROMPT
+Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.
+
 # CONTEXTO DO PROCESSO
 
 **Classe Processual:** {$nomeClasse}
 **Assuntos:** {$assuntos}
 **Número do Processo:** {$numeroProcesso}
-
----
-
-# DOCUMENTO A ANALISAR
-
-{$documentContext}
 
 ---
 
@@ -233,8 +236,26 @@ Regras para o JSON:
 
 **FORMATO:** Responda de forma estruturada usando markdown. Seja conciso mas completo. Não esqueça do bloco JSON ao final.
 PROMPT;
+    }
 
-        return $prompt;
+    /**
+     * Monta o prompt variável específico para cada documento.
+     *
+     * Contém apenas o descriptor do documento (nome, índice, tipo).
+     * O texto do documento é passado separadamente via analyzeSingleDocument().
+     */
+    private function buildDocumentPrompt(DocumentMicroAnalysis $microAnalysis): string
+    {
+        // Adiciona contexto se o documento original era uma imagem (texto extraído via OCR)
+        $documentContext = $microAnalysis->isImage()
+            ? "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}\n**Tipo original:** {$microAnalysis->mimetype} (texto extraído via OCR)"
+            : "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
+
+        return <<<PROMPT
+# DOCUMENTO A ANALISAR
+
+{$documentContext}
+PROMPT;
     }
 
     /**
@@ -313,7 +334,7 @@ PROMPT;
     /**
      * Salva o resultado da análise em arquivo para debug/inspeção
      */
-    private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $prompt): void
+    private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $systemPrompt, string $documentPrompt): void
     {
         // Verifica se debug de arquivos está ativo
         if (!Setting::isDebugAnalysisFilesEnabled()) {
@@ -364,10 +385,18 @@ PROMPT;
 
 ---
 
-## Prompt Enviado à IA
+## System Prompt (contexto fixo - cacheável entre documentos)
 
 ```
-{$prompt}
+{$systemPrompt}
+```
+
+---
+
+## Document Prompt (variável por documento)
+
+```
+{$documentPrompt}
 ```
 
 ---
