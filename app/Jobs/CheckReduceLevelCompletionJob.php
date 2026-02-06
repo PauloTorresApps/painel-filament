@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
@@ -367,6 +368,11 @@ PROMPT;
         string $consolidatedText,
         $microAnalyses
     ): void {
+        // Verifica se debug de arquivos está ativo
+        if (!Setting::isDebugAnalysisFilesEnabled()) {
+            return;
+        }
+
         try {
             $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
             $analysisId = $documentAnalysis->id;

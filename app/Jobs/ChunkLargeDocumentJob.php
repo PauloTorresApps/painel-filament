@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
+use App\Models\Setting;
 use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
@@ -368,6 +369,11 @@ PROMPT;
         int $originalLength,
         int $chunkCount
     ): void {
+        // Verifica se debug de arquivos está ativo
+        if (!Setting::isDebugAnalysisFilesEnabled()) {
+            return;
+        }
+
         try {
             $documentAnalysis = $microAnalysis->documentAnalysis;
             $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
+use App\Models\Setting;
 use App\Services\AIServiceFactory;
 use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
@@ -314,6 +315,11 @@ PROMPT;
      */
     private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $prompt): void
     {
+        // Verifica se debug de arquivos está ativo
+        if (!Setting::isDebugAnalysisFilesEnabled()) {
+            return;
+        }
+
         try {
             $documentAnalysis = $microAnalysis->documentAnalysis;
             $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
