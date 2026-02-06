@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Job para processar um batch individual da fase REDUCE.
@@ -131,6 +132,9 @@ class ReduceBatchJob implements ShouldQueue
                 $this->estimateTokenCount($result),
                 $processingTimeMs
             );
+
+            // Salva arquivo de debug com resultado da consolidação
+            $this->saveReduceToFile($documentAnalysis, $reduceMicro, $result, $prompt, $consolidatedText);
 
             Log::info('ReduceBatchJob: Batch consolidado com sucesso', [
                 'analysis_id' => $this->documentAnalysisId,
@@ -293,6 +297,110 @@ PROMPT;
     private function estimateTokenCount(string $text): int
     {
         return (int) ceil(mb_strlen($text) / 4);
+    }
+
+    /**
+     * Salva o resultado da consolidação (REDUCE) em arquivo para debug/inspeção
+     */
+    private function saveReduceToFile(
+        DocumentAnalysis $documentAnalysis,
+        DocumentMicroAnalysis $reduceMicro,
+        string $result,
+        string $prompt,
+        string $consolidatedText
+    ): void {
+        try {
+            $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
+            $analysisId = $documentAnalysis->id;
+            $timestamp = now()->format('Y-m-d_H-i-s');
+
+            // Cria diretório para reduces
+            $baseDir = "analises-debug/{$numeroProcesso}/analysis_{$analysisId}/reduces";
+
+            $fileName = "reduce_nivel_{$this->reduceLevel}_batch_{$this->batchIndex}_{$timestamp}.md";
+
+            $parentIdsJson = json_encode($this->microAnalysisIds, JSON_PRETTY_PRINT);
+
+            $content = <<<MD
+# Consolidação REDUCE - Nível {$this->reduceLevel} - Batch {$this->batchIndex}
+
+## Metadados
+
+| Campo | Valor |
+|-------|-------|
+| **ID da Micro-Análise (Reduce)** | {$reduceMicro->id} |
+| **ID da Análise Principal** | {$analysisId} |
+| **Número do Processo** | {$documentAnalysis->numero_processo} |
+| **Reduce Level** | {$this->reduceLevel} |
+| **Batch Index** | {$this->batchIndex} |
+| **Micro-Análises Consolidadas** | {$this->formatCount(count($this->microAnalysisIds))} |
+| **Token Count** | {$reduceMicro->token_count} |
+| **Processing Time (ms)** | {$reduceMicro->processing_time_ms} |
+| **Provider** | {$this->aiProvider} |
+| **Deep Thinking** | {$this->deepThinkingEnabled} |
+| **Data/Hora** | {$timestamp} |
+
+## IDs das Micro-Análises Consolidadas
+
+```json
+{$parentIdsJson}
+```
+
+---
+
+## Prompt Enviado à IA
+
+```
+{$prompt}
+```
+
+---
+
+## Texto Consolidado Enviado à IA (entrada)
+
+{$this->truncateText($consolidatedText, 10000)}
+
+---
+
+## Resultado da Consolidação (micro_analysis)
+
+{$result}
+
+MD;
+
+            Storage::disk('local')->put("{$baseDir}/{$fileName}", $content);
+
+            Log::info('ReduceBatchJob: Arquivo de debug salvo', [
+                'path' => "{$baseDir}/{$fileName}",
+                'reduce_micro_id' => $reduceMicro->id
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning('ReduceBatchJob: Falha ao salvar arquivo de debug', [
+                'reduce_micro_id' => $reduceMicro->id ?? null,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Formata contagem para exibição
+     */
+    private function formatCount(int $count): string
+    {
+        return "{$count} documento(s)";
+    }
+
+    /**
+     * Trunca texto para exibição
+     */
+    private function truncateText(string $text, int $maxLength): string
+    {
+        if (mb_strlen($text) <= $maxLength) {
+            return $text;
+        }
+
+        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
     }
 
 }

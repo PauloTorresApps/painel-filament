@@ -2,3 +2,8 @@
 
 @source '../../../../app/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
+
+/* Aumenta a largura mínima das tabelas de análises */
+.fi-wi-table .fi-ta-content {
+    min-width: calc(100% + 20px);
+}

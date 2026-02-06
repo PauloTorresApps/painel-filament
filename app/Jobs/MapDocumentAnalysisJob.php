@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Job responsável pela fase MAP do map-reduce.
@@ -118,6 +119,9 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 $this->estimateTokenCount($result),
                 $processingTimeMs
             );
+
+            // Salva arquivo de debug com resultado da análise
+            $this->saveAnalysisToFile($microAnalysis, $result, $prompt);
 
             Log::info('MapDocumentAnalysisJob: Concluído com sucesso', [
                 'micro_id' => $this->microAnalysisId,
@@ -303,6 +307,121 @@ PROMPT;
         }, $assuntos);
 
         return implode(', ', $nomes);
+    }
+
+    /**
+     * Salva o resultado da análise em arquivo para debug/inspeção
+     */
+    private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $prompt): void
+    {
+        try {
+            $documentAnalysis = $microAnalysis->documentAnalysis;
+            $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
+            $analysisId = $documentAnalysis->id;
+            $docIndex = str_pad($microAnalysis->document_index, 3, '0', STR_PAD_LEFT);
+            $timestamp = now()->format('Y-m-d_H-i-s');
+
+            // Cria diretório base para análises de debug
+            $baseDir = "analises-debug/{$numeroProcesso}/analysis_{$analysisId}";
+
+            // Arquivo com metadados + resultado completo
+            $fileName = "{$docIndex}_{$timestamp}_" . \Illuminate\Support\Str::slug($microAnalysis->descricao, '_') . ".md";
+
+            $content = <<<MD
+# Análise do Documento: {$microAnalysis->descricao}
+
+## Metadados
+
+| Campo | Valor |
+|-------|-------|
+| **ID da Micro-Análise** | {$microAnalysis->id} |
+| **ID da Análise Principal** | {$analysisId} |
+| **Número do Processo** | {$documentAnalysis->numero_processo} |
+| **Índice do Documento** | {$microAnalysis->document_index} |
+| **Descrição** | {$microAnalysis->descricao} |
+| **Mimetype** | {$microAnalysis->mimetype} |
+| **Status** | {$microAnalysis->status} |
+| **Token Count** | {$microAnalysis->token_count} |
+| **Processing Time (ms)** | {$microAnalysis->processing_time_ms} |
+| **Provider** | {$this->aiProvider} |
+| **Model ID** | {$this->aiModelId} |
+| **Deep Thinking** | {$this->deepThinkingEnabled} |
+| **Data/Hora** | {$timestamp} |
+
+---
+
+## Timeline Events (JSON extraído)
+
+```json
+{$this->formatJson($microAnalysis->timeline_events)}
+```
+
+---
+
+## Prompt Enviado à IA
+
+```
+{$prompt}
+```
+
+---
+
+## Texto Original do Documento (primeiros 2000 caracteres)
+
+```
+{$this->truncateText($microAnalysis->extracted_text, 2000)}
+```
+
+---
+
+## Resultado da Análise (micro_analysis)
+
+{$result}
+
+MD;
+
+            Storage::disk('local')->put("{$baseDir}/{$fileName}", $content);
+
+            Log::info('MapDocumentAnalysisJob: Arquivo de debug salvo', [
+                'path' => "{$baseDir}/{$fileName}",
+                'micro_id' => $microAnalysis->id
+            ]);
+
+        } catch (\Exception $e) {
+            // Não falha a análise se não conseguir salvar o arquivo
+            Log::warning('MapDocumentAnalysisJob: Falha ao salvar arquivo de debug', [
+                'micro_id' => $microAnalysis->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Formata array/objeto para JSON legível
+     */
+    private function formatJson($data): string
+    {
+        if (empty($data)) {
+            return 'null';
+        }
+
+        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: 'null';
+    }
+
+    /**
+     * Trunca texto para exibição
+     */
+    private function truncateText(?string $text, int $maxLength): string
+    {
+        if (empty($text)) {
+            return '(vazio)';
+        }
+
+        if (mb_strlen($text) <= $maxLength) {
+            return $text;
+        }
+
+        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
     }
 
 }

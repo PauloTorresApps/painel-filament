@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\DocumentAnalyses\Tables;
 
+use App\Jobs\ReduceDocumentAnalysisJob;
 use App\Jobs\ResumeAnalysisJob;
+use App\Models\DocumentAnalysis;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -169,6 +171,95 @@ class DocumentAnalysesTable
                             ->send();
                     })
                     ->visible(fn ($record) => $record->status === 'failed' && $record->is_resumable && $record->processed_documents_count < $record->total_documents),
+                Action::make('recover')
+                    ->label('Continuar')
+                    ->icon('heroicon-o-play')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Continuar Análise')
+                    ->modalDescription(function ($record) {
+                        $stats = $record->getMicroAnalysisStats();
+                        $mapCompleted = $stats['map_completed'] ?? 0;
+                        $total = $record->total_documents ?? 0;
+                        $failed = $stats['failed'] ?? 0;
+
+                        $msg = "Esta ação irá continuar a análise a partir da fase de consolidação (REDUCE).\n\n";
+                        $msg .= "Documentos analisados: {$mapCompleted}/{$total}";
+
+                        if ($failed > 0) {
+                            $msg .= "\nDocumentos com falha: {$failed} (serão ignorados na consolidação)";
+                        }
+
+                        return $msg;
+                    })
+                    ->modalSubmitActionLabel('Sim, continuar')
+                    ->action(function ($record) {
+                        // Verifica se fase MAP está completa
+                        if (!$record->isMapPhaseComplete()) {
+                            Notification::make()
+                                ->title('Não é possível continuar')
+                                ->body('A análise individual dos documentos ainda não foi concluída.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Verifica se há pelo menos uma micro-análise completa
+                        $completedMicros = $record->microAnalyses()
+                            ->mapLevel()
+                            ->completed()
+                            ->count();
+
+                        if ($completedMicros === 0) {
+                            Notification::make()
+                                ->title('Não é possível continuar')
+                                ->body('Nenhum documento foi analisado com sucesso.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Atualiza status para processando
+                        $record->update([
+                            'status' => 'processing',
+                            'error_message' => null,
+                            'current_phase' => DocumentAnalysis::PHASE_REDUCE,
+                            'progress_message' => 'Retomando consolidação...',
+                        ]);
+
+                        // Obtém parâmetros do job
+                        $jobParams = $record->job_parameters ?? [];
+
+                        // Dispara fase REDUCE
+                        ReduceDocumentAnalysisJob::dispatch(
+                            $record->id,
+                            $jobParams['ai_provider'] ?? 'openrouter',
+                            $jobParams['deep_thinking_enabled'] ?? true,
+                            $jobParams['promptTemplate'] ?? '',
+                            $jobParams['ai_model_id'] ?? null,
+                            1 // Começa do nível 1
+                        )->onQueue('analysis');
+
+                        Notification::make()
+                            ->title('Análise retomada')
+                            ->body("Consolidação de {$completedMicros} documento(s) iniciada.")
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(function ($record) {
+                        // Visível apenas se falhou/congelou e fase MAP está completa
+                        if (!in_array($record->status, ['failed', 'processing'])) {
+                            return false;
+                        }
+
+                        // Verifica se há micro-análises MAP completadas
+                        $stats = $record->getMicroAnalysisStats();
+                        $mapCompleted = $stats['map_completed'] ?? 0;
+
+                        // Precisa ter pelo menos 1 micro-análise MAP completa
+                        // E a fase MAP deve estar completa (não ter pendentes/processando)
+                        return $mapCompleted > 0 && $record->isMapPhaseComplete();
+                    }),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

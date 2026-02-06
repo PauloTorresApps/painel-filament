@@ -11,6 +11,7 @@ use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Job responsável por verificar se um nível de REDUCE foi concluído
@@ -174,6 +175,9 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
             ->whereNotNull('processing_time_ms')
             ->sum('processing_time_ms');
         $totalProcessingTime += $processingTimeMs;
+
+        // Salva arquivo de debug com a análise final
+        $this->saveFinalAnalysisToFile($documentAnalysis, $finalAnalysis, $prompt, $consolidatedText, $microAnalyses);
 
         // Finaliza a análise
         $documentAnalysis->update([
@@ -351,6 +355,103 @@ PROMPT;
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Salva a análise final em arquivo para debug/inspeção
+     */
+    private function saveFinalAnalysisToFile(
+        DocumentAnalysis $documentAnalysis,
+        string $finalAnalysis,
+        string $prompt,
+        string $consolidatedText,
+        $microAnalyses
+    ): void {
+        try {
+            $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
+            $analysisId = $documentAnalysis->id;
+            $timestamp = now()->format('Y-m-d_H-i-s');
+
+            $baseDir = "analises-debug/{$numeroProcesso}/analysis_{$analysisId}";
+
+            $fileName = "PARECER_FINAL_{$timestamp}.md";
+
+            // Lista os IDs das micro-análises usadas
+            $microIds = $microAnalyses->pluck('id')->toArray();
+            $microIdsJson = json_encode($microIds, JSON_PRETTY_PRINT);
+
+            $content = <<<MD
+# PARECER FINAL - Processo {$documentAnalysis->numero_processo}
+
+## Metadados
+
+| Campo | Valor |
+|-------|-------|
+| **ID da Análise** | {$analysisId} |
+| **Número do Processo** | {$documentAnalysis->numero_processo} |
+| **Classe Processual** | {$documentAnalysis->classe_processual} |
+| **Assuntos** | {$documentAnalysis->assuntos} |
+| **Total de Documentos** | {$documentAnalysis->total_documents} |
+| **Micro-Análises Consolidadas** | {$microAnalyses->count()} |
+| **Reduce Level Concluído** | {$this->completedReduceLevel} |
+| **Provider** | {$this->aiProvider} |
+| **Model ID** | {$this->aiModelId} |
+| **Deep Thinking** | {$this->deepThinkingEnabled} |
+| **Data/Hora** | {$timestamp} |
+
+## IDs das Micro-Análises Consolidadas
+
+```json
+{$microIdsJson}
+```
+
+---
+
+## Prompt Enviado à IA (Parecer Final)
+
+```
+{$prompt}
+```
+
+---
+
+## Texto Consolidado Enviado à IA (entrada completa)
+
+{$this->truncateTextFinal($consolidatedText, 20000)}
+
+---
+
+## RESULTADO: PARECER FINAL
+
+{$finalAnalysis}
+
+MD;
+
+            Storage::disk('local')->put("{$baseDir}/{$fileName}", $content);
+
+            Log::info('CheckReduceLevelCompletionJob: Arquivo de parecer final salvo', [
+                'path' => "{$baseDir}/{$fileName}",
+                'analysis_id' => $analysisId
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning('CheckReduceLevelCompletionJob: Falha ao salvar arquivo de parecer final', [
+                'analysis_id' => $documentAnalysis->id ?? null,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Trunca texto para exibição
+     */
+    private function truncateTextFinal(string $text, int $maxLength): string
+    {
+        if (mb_strlen($text) <= $maxLength) {
+            return $text;
+        }
+
+        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
     }
 
 }

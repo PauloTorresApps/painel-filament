@@ -3,6 +3,7 @@
 namespace App\Filament\Analises\Resources\DocumentAnalyses\Schemas;
 
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -31,6 +32,16 @@ class DocumentAnalysisInfolist
                     ->columnSpanFull()
                     ->compact(),
 
+                // Seção de progresso - visível quando NÃO está concluído
+                Section::make('Progresso da Análise')
+                    ->schema([
+                        ViewEntry::make('progress_tracker')
+                            ->view('filament.infolists.entries.analysis-progress-tracker')
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn ($record) => $record->status !== 'completed')
+                    ->columnSpanFull(),
+
                 Section::make('Análise da IA')
                     ->schema([
                         TextEntry::make('ai_analysis')
@@ -47,7 +58,7 @@ class DocumentAnalysisInfolist
                             ->label('Mensagem de Erro')
                             ->color('danger'),
                     ])
-                    ->visible(fn ($record) => $record->status === 'failed')
+                    ->visible(fn ($record) => $record->status === 'failed' && !empty($record->error_message))
                     ->columnSpanFull(),
             ])
             ->columns(1);

@@ -10,6 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Job para processar documentos grandes (>50 páginas ou >100k caracteres).
@@ -23,9 +24,9 @@ class ChunkLargeDocumentJob implements ShouldQueue
 {
     use Queueable, Batchable;
 
-    public int $timeout = 600; // 10 minutos
-    public int $tries = 3;
-    public int $backoff = 60;
+    public int $timeout = 0; // Sem timeout - documentos muito grandes podem levar 1h+
+    public int $tries = 2;   // Reduzido para evitar duplicações
+    public int $backoff = 120; // 2 minutos entre retries
 
     // Configuração de chunking
     public const CHUNK_SIZE_CHARS = 50000; // ~50 páginas (1000 chars/página)
@@ -68,6 +69,14 @@ class ChunkLargeDocumentJob implements ShouldQueue
 
             $documentAnalysis = $microAnalysis->documentAnalysis;
             if (!$documentAnalysis || $documentAnalysis->status === 'cancelled') {
+                return;
+            }
+
+            // Verifica se já foi processada (evita duplicação em retry)
+            if ($microAnalysis->isCompleted()) {
+                Log::info('ChunkLargeDocumentJob: Já processada, pulando', [
+                    'id' => $this->microAnalysisId
+                ]);
                 return;
             }
 
@@ -159,6 +168,9 @@ class ChunkLargeDocumentJob implements ShouldQueue
                     'original_length' => $textLength,
                 ]
             ]);
+
+            // Salva arquivo de debug com resultado da análise
+            $this->saveAnalysisToFile($microAnalysis, $finalResult, $consolidationPrompt, $chunkSummaries, $textLength, $chunkCount);
 
             Log::info('ChunkLargeDocumentJob: Documento grande processado com sucesso', [
                 'micro_id' => $this->microAnalysisId,
@@ -294,6 +306,38 @@ Consolide todas as informações em uma ANÁLISE ÚNICA E COESA que:
 Responda com uma análise estruturada em markdown, como se fosse a análise de um único documento.
 
 NÃO mencione que o documento foi dividido em partes - o resultado deve parecer uma análise contínua.
+
+---
+
+## LINHA DO TEMPO (JSON) - OBRIGATÓRIO
+
+Ao final da análise, inclua um bloco JSON com todos os eventos e datas encontrados no documento.
+O JSON deve estar entre as tags `<timeline_json>` e `</timeline_json>`.
+
+Formato do JSON:
+```json
+{
+  "eventos": [
+    {
+      "data": "YYYY-MM-DD",
+      "data_original": "texto original da data no documento",
+      "tipo": "tipo do evento (petição, decisão, prazo, fato, pagamento, etc.)",
+      "descricao": "descrição curta do evento",
+      "valores": ["R$ X.XXX,XX"],
+      "relevancia": "alta|media|baixa"
+    }
+  ],
+  "documento_data": "YYYY-MM-DD ou null",
+  "documento_tipo": "tipo identificado do documento"
+}
+```
+
+Regras para o JSON:
+- Use formato ISO para datas (YYYY-MM-DD)
+- Se a data tiver apenas mês/ano, use o dia 01 (ex: "2024-03-01")
+- Se não conseguir determinar a data exata, use `null` no campo `data` mas mantenha `data_original`
+- Liste TODOS os eventos com datas encontrados, mesmo os menos relevantes
+- O campo `documento_data` é a data principal do documento (data de protocolo, assinatura, etc.)
 PROMPT;
     }
 
@@ -311,5 +355,114 @@ PROMPT;
     public static function isLargeDocument(string $text): bool
     {
         return mb_strlen($text) > self::LARGE_DOC_THRESHOLD;
+    }
+
+    /**
+     * Salva o resultado da análise em arquivo para debug/inspeção
+     */
+    private function saveAnalysisToFile(
+        DocumentMicroAnalysis $microAnalysis,
+        string $result,
+        string $consolidationPrompt,
+        array $chunkSummaries,
+        int $originalLength,
+        int $chunkCount
+    ): void {
+        try {
+            $documentAnalysis = $microAnalysis->documentAnalysis;
+            $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
+            $analysisId = $documentAnalysis->id;
+            $docIndex = str_pad($microAnalysis->document_index, 3, '0', STR_PAD_LEFT);
+            $timestamp = now()->format('Y-m-d_H-i-s');
+
+            // Cria diretório base para análises de debug
+            $baseDir = "analises-debug/{$numeroProcesso}/analysis_{$analysisId}";
+
+            // Arquivo com metadados + resultado completo
+            $fileName = "{$docIndex}_{$timestamp}_" . \Illuminate\Support\Str::slug($microAnalysis->descricao, '_') . "_CHUNKED.md";
+
+            // Formata os resumos dos chunks
+            $chunkSummariesText = implode("\n\n---\n\n", $chunkSummaries);
+
+            $content = <<<MD
+# Análise do Documento GRANDE (Chunked): {$microAnalysis->descricao}
+
+## Metadados
+
+| Campo | Valor |
+|-------|-------|
+| **ID da Micro-Análise** | {$microAnalysis->id} |
+| **ID da Análise Principal** | {$analysisId} |
+| **Número do Processo** | {$documentAnalysis->numero_processo} |
+| **Índice do Documento** | {$microAnalysis->document_index} |
+| **Descrição** | {$microAnalysis->descricao} |
+| **Mimetype** | {$microAnalysis->mimetype} |
+| **Status** | {$microAnalysis->status} |
+| **Token Count** | {$microAnalysis->token_count} |
+| **Processing Time (ms)** | {$microAnalysis->processing_time_ms} |
+| **Provider** | {$this->aiProvider} |
+| **Model ID** | {$this->aiModelId} |
+| **Deep Thinking** | {$this->deepThinkingEnabled} |
+| **Data/Hora** | {$timestamp} |
+| **DOCUMENTO GRANDE** | SIM |
+| **Tamanho Original** | {$originalLength} caracteres |
+| **Número de Chunks** | {$chunkCount} |
+
+---
+
+## Timeline Events (JSON extraído)
+
+```json
+{$this->formatJson($microAnalysis->timeline_events)}
+```
+
+---
+
+## Prompt de Consolidação Enviado à IA
+
+```
+{$consolidationPrompt}
+```
+
+---
+
+## Resumos dos Chunks (entrada para consolidação)
+
+{$chunkSummariesText}
+
+---
+
+## Resultado Final da Análise (micro_analysis)
+
+{$result}
+
+MD;
+
+            Storage::disk('local')->put("{$baseDir}/{$fileName}", $content);
+
+            Log::info('ChunkLargeDocumentJob: Arquivo de debug salvo', [
+                'path' => "{$baseDir}/{$fileName}",
+                'micro_id' => $microAnalysis->id
+            ]);
+
+        } catch (\Exception $e) {
+            // Não falha a análise se não conseguir salvar o arquivo
+            Log::warning('ChunkLargeDocumentJob: Falha ao salvar arquivo de debug', [
+                'micro_id' => $microAnalysis->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Formata array/objeto para JSON legível
+     */
+    private function formatJson($data): string
+    {
+        if (empty($data)) {
+            return 'null';
+        }
+
+        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: 'null';
     }
 }

@@ -55,10 +55,10 @@ class RecentProcessAnalysesWidget extends TableWidget
                 TextColumn::make('current_phase')
                     ->label('Fase')
                     ->badge()
-                    ->formatStateUsing(fn (?string $state, $record): string => match ($state) {
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'download' => 'Download',
-                        'map' => "Análise ({$record->processed_documents_count}/{$record->total_documents})",
-                        'reduce' => "Consolidação (Nv.{$record->reduce_current_level})",
+                        'map' => 'Análise',
+                        'reduce' => 'Consolidação',
                         'completed' => 'Concluído',
                         default => '-',
                     })
