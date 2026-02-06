@@ -2,10 +2,12 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Analises\Pages\UserProfile;
 use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\MenuItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -37,6 +39,13 @@ class AnalisesPanelProvider extends PanelProvider
             ->pages([])
             ->discoverWidgets(in: app_path('Filament/Analises/Widgets'), for: 'App\Filament\Analises\Widgets')
             ->widgets([])
+            ->userMenuItems([
+                'meu-perfil' => MenuItem::make()
+                    ->label('Meu Perfil')
+                    ->url(fn (): string => UserProfile::getUrl())
+                    ->icon('heroicon-o-user-circle')
+                    ->sort(1),
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

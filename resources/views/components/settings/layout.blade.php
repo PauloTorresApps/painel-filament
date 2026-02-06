@@ -8,6 +8,7 @@
             @endif
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
             <flux:navlist.item :href="route('notifications.edit')" wire:navigate>{{ __('Notificações') }}</flux:navlist.item>
+            <flux:navlist.item href="/analises/user-settings" icon="arrow-top-right-on-square">{{ __('Configurações de Conta') }}</flux:navlist.item>
         </flux:navlist>
     </div>
 

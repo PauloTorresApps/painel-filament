@@ -9,12 +9,14 @@ use Illuminate\Support\Str;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Notifications\Notifiable;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasAvatar;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasAvatar
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable, HasRoles;
@@ -29,6 +31,8 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'default_dashboard_tab',
+        'profile_photo_path',
+        'company_logo_path',
         'email_notifications_enabled',
         'email_notify_process_analysis',
         'email_notify_contract_analysis',
@@ -100,6 +104,46 @@ class User extends Authenticatable implements FilamentUser
             'contract_analysis' => $this->email_notify_contract_analysis,
             default => false,
         };
+    }
+
+    public function getFilamentAvatarUrl(): ?string
+    {
+        return $this->profilePhotoUrl();
+    }
+
+    public function profilePhotoUrl(): ?string
+    {
+        return $this->profile_photo_path
+            ? Storage::disk('public')->url($this->profile_photo_path)
+            : null;
+    }
+
+    public function companyLogoUrl(): ?string
+    {
+        return $this->company_logo_path
+            ? Storage::disk('public')->url($this->company_logo_path)
+            : null;
+    }
+
+    public function hasProfilePhoto(): bool
+    {
+        return !empty($this->profile_photo_path);
+    }
+
+    public function deleteProfilePhoto(): void
+    {
+        if ($this->profile_photo_path) {
+            Storage::disk('public')->delete($this->profile_photo_path);
+            $this->forceFill(['profile_photo_path' => null])->save();
+        }
+    }
+
+    public function deleteCompanyLogo(): void
+    {
+        if ($this->company_logo_path) {
+            Storage::disk('public')->delete($this->company_logo_path);
+            $this->forceFill(['company_logo_path' => null])->save();
+        }
     }
 
     public function judicialUsers(): HasMany
