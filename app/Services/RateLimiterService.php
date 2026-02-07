@@ -49,11 +49,15 @@ class RateLimiterService
             Redis::setex($key, $windowSeconds, (string) (microtime(true) * 1000));
 
         } catch (\Exception $e) {
-            // Se o Redis falhar, não bloqueia a execução
-            Log::warning('Erro ao aplicar rate limiting', [
+            // Se o Redis falhar, aplica fallback com delay fixo para evitar flood na API
+            Log::warning('Rate limiting: Redis indisponível, aplicando fallback', [
                 'provider' => $provider,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'fallback_delay_ms' => $minDelayMs
             ]);
+
+            // Fallback: aplica delay mínimo entre requisições mesmo sem Redis
+            usleep($minDelayMs * 1000);
         }
     }
 

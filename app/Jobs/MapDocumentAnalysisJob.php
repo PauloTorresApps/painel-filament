@@ -6,7 +6,6 @@ use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
-use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -86,14 +85,27 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
             $microAnalysis->markAsProcessing();
 
+            $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
+
             Log::info('MapDocumentAnalysisJob: Iniciando processamento', [
                 'micro_id' => $this->microAnalysisId,
                 'document_index' => $microAnalysis->document_index,
                 'descricao' => $microAnalysis->descricao,
                 'mimetype' => $microAnalysis->mimetype,
                 'provider' => $this->aiProvider,
-                'text_length' => mb_strlen($microAnalysis->extracted_text ?? ''),
+                'text_length' => $textLength,
             ]);
+
+            // Valida se há texto extraído para analisar
+            if ($textLength === 0) {
+                Log::warning('MapDocumentAnalysisJob: Documento sem texto extraído', [
+                    'micro_id' => $this->microAnalysisId,
+                    'descricao' => $microAnalysis->descricao,
+                ]);
+
+                $microAnalysis->markAsFailed('Documento sem texto extraído para análise');
+                return;
+            }
 
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
@@ -109,10 +121,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $systemPrompt = $this->buildSystemPrompt();
             $documentPrompt = $this->buildDocumentPrompt($microAnalysis);
 
-            // Aplica rate limiting
-            RateLimiterService::apply($this->aiProvider);
-
-            // Chama a IA para análise de texto (imagens já tiveram texto extraído via OCR)
+            // Chama a IA para análise de texto (rate limiting é aplicado internamente pelo AI service) (imagens já tiveram texto extraído via OCR)
             $result = $aiService->analyzeSingleDocument(
                 $documentPrompt,
                 $microAnalysis->extracted_text,

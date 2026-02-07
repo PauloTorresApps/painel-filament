@@ -31,7 +31,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 0; // Sem timeout - permite downloads longos
+    public int $timeout = 1800; // 30 minutos - suficiente para orquestração e dispatch de batches
     public int $tries = 2;
 
     public function __construct(

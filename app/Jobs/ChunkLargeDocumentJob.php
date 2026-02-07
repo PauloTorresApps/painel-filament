@@ -6,7 +6,6 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
-use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -25,7 +24,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
 {
     use Queueable, Batchable;
 
-    public int $timeout = 0; // Sem timeout - documentos muito grandes podem levar 1h+
+    public int $timeout = 3600; // 1 hora - documentos muito grandes com muitos chunks
     public int $tries = 2;   // Reduzido para evitar duplicações
     public int $backoff = 120; // 2 minutos entre retries
 
@@ -116,16 +115,34 @@ class ChunkLargeDocumentJob implements ShouldQueue
             foreach ($chunks as $index => $chunk) {
                 $chunkNum = $index + 1;
 
+                // Verifica se o batch foi cancelado durante processamento
+                if ($this->batch()?->cancelled()) {
+                    Log::info('ChunkLargeDocumentJob: Batch cancelado durante processamento', [
+                        'micro_id' => $this->microAnalysisId,
+                        'chunk' => "{$chunkNum}/{$chunkCount}",
+                    ]);
+                    $microAnalysis->markAsFailed('Processamento cancelado pelo usuário');
+                    return;
+                }
+
+                // Verifica se a análise pai foi cancelada
+                $documentAnalysis->refresh();
+                if ($documentAnalysis->status === 'cancelled') {
+                    Log::info('ChunkLargeDocumentJob: Análise cancelada durante processamento', [
+                        'micro_id' => $this->microAnalysisId,
+                        'chunk' => "{$chunkNum}/{$chunkCount}",
+                    ]);
+                    $microAnalysis->markAsFailed('Análise cancelada pelo usuário');
+                    return;
+                }
+
                 Log::info('ChunkLargeDocumentJob: Processando chunk', [
                     'micro_id' => $this->microAnalysisId,
                     'chunk' => "{$chunkNum}/{$chunkCount}",
                     'chunk_length' => mb_strlen($chunk),
                 ]);
 
-                // Aplica rate limiting
-                RateLimiterService::apply($this->aiProvider);
-
-                // Monta prompt variável para este chunk específico
+                // Monta prompt variável para este chunk específico (rate limiting aplicado pelo AI service)
                 $prompt = $this->buildChunkPrompt($chunkNum, $chunkCount);
 
                 // Analisa o chunk com system prompt cacheável
@@ -137,6 +154,12 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 );
 
                 $chunkSummaries[] = "### Parte {$chunkNum}/{$chunkCount}\n\n{$chunkResult}";
+
+                // Atualiza progresso do documento grande
+                $documentAnalysis->update([
+                    'progress_message' => "Processando documento extenso: {$microAnalysis->descricao} ({$chunkNum}/{$chunkCount} partes)",
+                    'last_processed_at' => now(),
+                ]);
             }
 
             // Agora consolida todos os resumos dos chunks em um resumo final do documento
@@ -144,8 +167,6 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 'micro_id' => $this->microAnalysisId,
                 'total_chunks' => count($chunkSummaries),
             ]);
-
-            RateLimiterService::apply($this->aiProvider);
 
             $consolidatedText = implode("\n\n---\n\n", $chunkSummaries);
             $consolidationSystemPrompt = $this->buildConsolidationSystemPrompt($microAnalysis, $chunkCount);

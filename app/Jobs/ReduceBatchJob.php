@@ -6,7 +6,6 @@ use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
-use App\Services\RateLimiterService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -92,15 +91,40 @@ class ReduceBatchJob implements ShouldQueue
                 'micro_analyses_count' => $microAnalyses->count(),
             ]);
 
-            // Cria registro para o resultado do reduce
-            $reduceMicro = DocumentMicroAnalysis::create([
-                'document_analysis_id' => $this->documentAnalysisId,
-                'document_index' => $this->batchIndex,
-                'descricao' => "Consolidação nível {$this->reduceLevel} - Batch {$this->batchIndex}",
-                'reduce_level' => $this->reduceLevel,
-                'parent_ids' => $this->microAnalysisIds,
-                'status' => 'processing',
-            ]);
+            // Verifica se já existe registro para este batch (evita duplicação em retry)
+            $reduceMicro = DocumentMicroAnalysis::where('document_analysis_id', $this->documentAnalysisId)
+                ->where('document_index', $this->batchIndex)
+                ->where('reduce_level', $this->reduceLevel)
+                ->first();
+
+            if ($reduceMicro) {
+                // Se já está completo, pula processamento
+                if ($reduceMicro->isCompleted()) {
+                    Log::info('ReduceBatchJob: Batch já processado, pulando', [
+                        'analysis_id' => $this->documentAnalysisId,
+                        'batch_index' => $this->batchIndex,
+                        'reduce_micro_id' => $reduceMicro->id,
+                    ]);
+                    return;
+                }
+
+                // Se existe mas não está completo, reutiliza o registro
+                Log::info('ReduceBatchJob: Retomando batch existente', [
+                    'reduce_micro_id' => $reduceMicro->id,
+                    'status' => $reduceMicro->status,
+                ]);
+                $reduceMicro->markAsProcessing();
+            } else {
+                // Cria novo registro para o resultado do reduce
+                $reduceMicro = DocumentMicroAnalysis::create([
+                    'document_analysis_id' => $this->documentAnalysisId,
+                    'document_index' => $this->batchIndex,
+                    'descricao' => "Consolidação nível {$this->reduceLevel} - Batch {$this->batchIndex}",
+                    'reduce_level' => $this->reduceLevel,
+                    'parent_ids' => $this->microAnalysisIds,
+                    'status' => 'processing',
+                ]);
+            }
 
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
@@ -113,10 +137,7 @@ class ReduceBatchJob implements ShouldQueue
             // Monta o texto consolidado do batch
             $consolidatedText = $this->buildBatchText($microAnalyses);
 
-            // Aplica rate limiting
-            RateLimiterService::apply($this->aiProvider);
-
-            // Monta prompt de consolidação
+            // Monta prompt de consolidação (rate limiting é aplicado internamente pelo AI service)
             $prompt = $this->buildReducePrompt($microAnalyses->count());
 
             // Chama a IA para consolidar

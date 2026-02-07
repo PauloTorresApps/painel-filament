@@ -99,11 +99,11 @@ class DispatchMapPhaseJob implements ShouldQueue
                 return;
             }
 
-            // Calcula total de caracteres
+            // Calcula total de caracteres (LENGTH é compatível com MySQL, PostgreSQL e SQLite)
             $totalCharacters = $documentAnalysis->microAnalyses()
                 ->where('status', 'pending')
                 ->where('reduce_level', 0)
-                ->sum(DB::raw('CHAR_LENGTH(extracted_text)'));
+                ->sum(DB::raw('LENGTH(extracted_text)'));
 
             $documentAnalysis->update(['total_characters' => $totalCharacters]);
 

@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
-use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -161,10 +160,7 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         // Monta prompt final
         $prompt = $this->buildFinalPrompt();
 
-        // Aplica rate limiting
-        RateLimiterService::apply($this->aiProvider);
-
-        // Chama a IA para gerar análise final
+        // Chama a IA para gerar análise final (rate limiting aplicado internamente)
         $finalAnalysis = $aiService->analyzeSingleDocument(
             $prompt,
             $consolidatedText,

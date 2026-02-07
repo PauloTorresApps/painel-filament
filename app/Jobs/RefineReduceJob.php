@@ -8,11 +8,9 @@ use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
-use App\Services\RateLimiterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Filament\Notifications\Notification as FilamentNotification;
 
 /**
  * Job que implementa a estratégia de "Refinamento Sequencial" (Refine Strategy).
@@ -155,10 +153,7 @@ class RefineReduceJob implements ShouldQueue
                     'reduce_total_batches' => $totalDocs,
                 ]);
 
-                // Aplica rate limiting
-                RateLimiterService::apply($this->aiProvider);
-
-                // Monta o prompt de refinamento
+                // Monta o prompt de refinamento (rate limiting aplicado pelo AI service)
                 $prompt = $this->buildRefinePrompt(
                     $microAnalysis,
                     $docNum,
@@ -193,8 +188,6 @@ class RefineReduceJob implements ShouldQueue
             $documentAnalysis->update([
                 'progress_message' => "Gerando análise final consolidada...",
             ]);
-
-            RateLimiterService::apply($this->aiProvider);
 
             $finalAnalysis = $this->generateFinalAnalysis(
                 $aiService,

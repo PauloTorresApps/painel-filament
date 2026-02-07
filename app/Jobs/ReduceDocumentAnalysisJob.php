@@ -9,7 +9,6 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
-use App\Services\RateLimiterService;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -279,10 +278,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         // Monta prompt final
         $prompt = $this->buildFinalPrompt();
 
-        // Aplica rate limiting
-        RateLimiterService::apply($this->aiProvider);
-
-        // Chama a IA para gerar análise final
+        // Chama a IA para gerar análise final (rate limiting aplicado internamente)
         $finalAnalysis = $aiService->analyzeSingleDocument(
             $prompt,
             $consolidatedText,
