@@ -10,9 +10,15 @@ class PdfToTextService
 {
     /**
      * Mínimo de caracteres por página para considerar que há texto extraível.
-     * PDFs escaneados geralmente retornam < 50 caracteres por página.
+     * PDFs escaneados geralmente retornam < 100 caracteres por página.
      */
-    private const MIN_CHARS_PER_PAGE = 50;
+    private const MIN_CHARS_PER_PAGE = 100;
+
+    /**
+     * Mínimo de caracteres totais para considerar que o texto extraído é útil.
+     * Abaixo disso, sempre tenta OCR independente do número de páginas.
+     */
+    private const MIN_TOTAL_CHARS = 200;
 
     /**
      * Converte um arquivo PDF em texto.
@@ -43,34 +49,55 @@ class PdfToTextService
             $pageCount = $this->getPageCount($tempPath);
 
             // Verifica se o PDF parece ser escaneado (pouco texto extraído)
-            $charsPerPage = $pageCount > 0 ? mb_strlen($text) / $pageCount : 0;
+            $totalChars = mb_strlen($text);
+            $charsPerPage = $pageCount > 0 ? $totalChars / $pageCount : 0;
 
             Log::info('PdfToTextService: Análise inicial do PDF', [
                 'file' => $tempFileName,
                 'pages' => $pageCount,
-                'total_chars' => mb_strlen($text),
+                'total_chars' => $totalChars,
                 'chars_per_page' => round($charsPerPage, 2),
             ]);
 
-            // Se há pouco texto por página, provavelmente é um PDF escaneado
-            if ($charsPerPage < self::MIN_CHARS_PER_PAGE && $this->isOcrAvailable()) {
-                Log::info('PdfToTextService: PDF parece escaneado, aplicando OCR', [
+            // Aplica OCR se:
+            // 1. Texto total é muito pequeno (< MIN_TOTAL_CHARS), OU
+            // 2. Texto por página é muito pequeno (< MIN_CHARS_PER_PAGE)
+            $needsOcr = $totalChars < self::MIN_TOTAL_CHARS || $charsPerPage < self::MIN_CHARS_PER_PAGE;
+
+            if ($needsOcr && $this->isOcrAvailable()) {
+                Log::info('PdfToTextService: Texto insuficiente, aplicando OCR', [
                     'file' => $tempFileName,
+                    'total_chars' => $totalChars,
                     'chars_per_page' => round($charsPerPage, 2),
-                    'threshold' => self::MIN_CHARS_PER_PAGE,
+                    'min_total_threshold' => self::MIN_TOTAL_CHARS,
+                    'min_per_page_threshold' => self::MIN_CHARS_PER_PAGE,
                 ]);
 
                 $ocrText = $this->extractTextWithOcr($tempPath, $pageCount);
+                $ocrChars = mb_strlen($ocrText);
 
-                // Usa o texto do OCR se for maior que o texto extraído normalmente
-                if (mb_strlen($ocrText) > mb_strlen($text)) {
+                // Usa o texto do OCR se extraiu algo significativo
+                // Ou se o texto original era praticamente inexistente
+                if ($ocrChars > 0 && ($ocrChars > $totalChars || $totalChars < 50)) {
                     $text = $ocrText;
 
                     Log::info('PdfToTextService: Usando texto do OCR', [
                         'file' => $tempFileName,
-                        'ocr_chars' => mb_strlen($ocrText),
+                        'original_chars' => $totalChars,
+                        'ocr_chars' => $ocrChars,
+                    ]);
+                } else {
+                    Log::info('PdfToTextService: OCR não melhorou resultado, mantendo texto original', [
+                        'file' => $tempFileName,
+                        'original_chars' => $totalChars,
+                        'ocr_chars' => $ocrChars,
                     ]);
                 }
+            } elseif ($needsOcr && !$this->isOcrAvailable()) {
+                Log::warning('PdfToTextService: PDF precisa de OCR mas Tesseract não está disponível', [
+                    'file' => $tempFileName,
+                    'total_chars' => $totalChars,
+                ]);
             }
 
             // Limpa e normaliza o texto
@@ -124,19 +151,37 @@ class PdfToTextService
             $pageCount = $this->getPageCount($filePath);
 
             // Verifica se o PDF parece ser escaneado
-            $charsPerPage = $pageCount > 0 ? mb_strlen($text) / $pageCount : 0;
+            $totalChars = mb_strlen($text);
+            $charsPerPage = $pageCount > 0 ? $totalChars / $pageCount : 0;
 
-            if ($charsPerPage < self::MIN_CHARS_PER_PAGE && $this->isOcrAvailable()) {
-                Log::info('PdfToTextService: PDF parece escaneado, aplicando OCR', [
+            // Aplica OCR se texto total ou por página for insuficiente
+            $needsOcr = $totalChars < self::MIN_TOTAL_CHARS || $charsPerPage < self::MIN_CHARS_PER_PAGE;
+
+            if ($needsOcr && $this->isOcrAvailable()) {
+                Log::info('PdfToTextService: Texto insuficiente, aplicando OCR', [
                     'file_path' => $filePath,
+                    'total_chars' => $totalChars,
                     'chars_per_page' => round($charsPerPage, 2),
                 ]);
 
                 $ocrText = $this->extractTextWithOcr($filePath, $pageCount);
+                $ocrChars = mb_strlen($ocrText);
 
-                if (mb_strlen($ocrText) > mb_strlen($text)) {
+                // Usa OCR se extraiu algo significativo ou texto original era mínimo
+                if ($ocrChars > 0 && ($ocrChars > $totalChars || $totalChars < 50)) {
                     $text = $ocrText;
+
+                    Log::info('PdfToTextService: Usando texto do OCR', [
+                        'file_path' => $filePath,
+                        'original_chars' => $totalChars,
+                        'ocr_chars' => $ocrChars,
+                    ]);
                 }
+            } elseif ($needsOcr && !$this->isOcrAvailable()) {
+                Log::warning('PdfToTextService: PDF precisa de OCR mas Tesseract não está disponível', [
+                    'file_path' => $filePath,
+                    'total_chars' => $totalChars,
+                ]);
             }
 
             return $this->normalizeText($text);
