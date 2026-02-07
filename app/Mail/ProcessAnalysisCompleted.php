@@ -17,45 +17,10 @@ class ProcessAnalysisCompleted extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /**
-     * Conteúdo do PDF pré-gerado (para evitar problemas com serialização)
-     */
-    protected ?string $pdfContent = null;
-
-    protected string $pdfFileName;
-
     public function __construct(
         public DocumentAnalysis $analysis,
         public User $user,
     ) {
-        $this->pdfFileName = 'Analise_Processo_' . preg_replace('/[^0-9]/', '', $this->analysis->numero_processo) . '.pdf';
-
-        // Gerar PDF no momento da construção (antes de enfileirar)
-        $this->generatePdf();
-    }
-
-    /**
-     * Gera o PDF e armazena o conteúdo
-     */
-    protected function generatePdf(): void
-    {
-        try {
-            $pdf = PdfService::generateDocumentAnalysisPdf($this->analysis);
-            $this->pdfContent = $pdf->output();
-
-            Log::info('ProcessAnalysisCompleted: PDF gerado com sucesso', [
-                'analysis_id' => $this->analysis->id,
-                'pdf_size' => strlen($this->pdfContent),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('ProcessAnalysisCompleted: Erro ao gerar PDF', [
-                'analysis_id' => $this->analysis->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            $this->pdfContent = null;
-        }
     }
 
     public function envelope(): Envelope
@@ -82,25 +47,29 @@ class ProcessAnalysisCompleted extends Mailable
 
     public function attachments(): array
     {
-        // Se o PDF não foi gerado na construção, tenta novamente
-        if ($this->pdfContent === null) {
-            $this->generatePdf();
-        }
+        try {
+            $pdf = PdfService::generateDocumentAnalysisPdf($this->analysis);
+            $pdfContent = $pdf->output();
+            $pdfFileName = 'Analise_Processo_' . preg_replace('/[^0-9]/', '', $this->analysis->numero_processo) . '.pdf';
 
-        // Se ainda não tem PDF, retorna array vazio
-        if ($this->pdfContent === null) {
-            Log::warning('ProcessAnalysisCompleted: Enviando e-mail sem anexo PDF', [
+            Log::info('ProcessAnalysisCompleted: PDF gerado com sucesso', [
                 'analysis_id' => $this->analysis->id,
+                'pdf_size' => strlen($pdfContent),
+            ]);
+
+            return [
+                Attachment::fromData(
+                    fn () => $pdfContent,
+                    $pdfFileName
+                )->withMime('application/pdf'),
+            ];
+        } catch (\Exception $e) {
+            Log::error('ProcessAnalysisCompleted: Erro ao gerar PDF, enviando e-mail sem anexo', [
+                'analysis_id' => $this->analysis->id,
+                'error' => $e->getMessage(),
             ]);
 
             return [];
         }
-
-        return [
-            Attachment::fromData(
-                fn () => $this->pdfContent,
-                $this->pdfFileName
-            )->withMime('application/pdf'),
-        ];
     }
 }
