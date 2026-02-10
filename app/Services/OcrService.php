@@ -7,7 +7,13 @@ use Illuminate\Support\Facades\Log;
 class OcrService
 {
     /**
-     * Extrai texto de uma imagem usando Tesseract OCR
+     * Resolução mínima recomendada para OCR (em pixels de largura)
+     * Imagens menores são ampliadas para melhorar a precisão
+     */
+    private const MIN_WIDTH_FOR_OCR = 2000;
+
+    /**
+     * Extrai texto de uma imagem usando Tesseract OCR com pré-processamento
      *
      * @param string $imageContent Conteúdo da imagem em base64
      * @param string $mimetype Tipo MIME da imagem
@@ -18,6 +24,7 @@ class OcrService
     public function extractText(string $imageContent, string $mimetype, ?string $tempFileName = null): string
     {
         $tempPath = null;
+        $preprocessedPath = null;
 
         try {
             // Decodifica o base64
@@ -33,8 +40,22 @@ class OcrService
             // Cria arquivo temporário
             $tempPath = $this->createTempFile($decodedContent, $extension, $tempFileName);
 
+            // Pré-processa a imagem para melhorar OCR
+            $preprocessedPath = $this->preprocessImage($tempPath, $tempFileName);
+
+            // Usa a imagem pré-processada se disponível, senão usa a original
+            $ocrInputPath = $preprocessedPath ?? $tempPath;
+
             // Extrai texto usando Tesseract
-            $text = $this->runTesseract($tempPath);
+            $text = $this->runTesseract($ocrInputPath);
+
+            // Se o pré-processamento não ajudou, tenta com a imagem original
+            if (empty(trim($text)) && $preprocessedPath !== null) {
+                Log::info('OcrService: Pré-processamento não gerou resultado, tentando imagem original', [
+                    'file' => $tempFileName,
+                ]);
+                $text = $this->runTesseract($tempPath);
+            }
 
             // Limpa e normaliza o texto
             $text = $this->normalizeText($text);
@@ -42,6 +63,7 @@ class OcrService
             Log::info('OcrService: Texto extraído com sucesso', [
                 'mimetype' => $mimetype,
                 'chars_extracted' => mb_strlen($text),
+                'preprocessed' => $preprocessedPath !== null,
             ]);
 
             return $text;
@@ -53,8 +75,9 @@ class OcrService
             ]);
             throw $e;
         } finally {
-            // Sempre limpa o arquivo temporário
+            // Sempre limpa os arquivos temporários
             $this->cleanupTempFile($tempPath);
+            $this->cleanupTempFile($preprocessedPath);
         }
     }
 
@@ -87,7 +110,100 @@ class OcrService
     }
 
     /**
+     * Verifica se o ImageMagick está disponível para pré-processamento
+     */
+    public function isImageMagickAvailable(): bool
+    {
+        $output = [];
+        $returnCode = 0;
+        exec('which convert 2>/dev/null', $output, $returnCode);
+
+        return $returnCode === 0 && !empty($output);
+    }
+
+    /**
+     * Pré-processa a imagem para melhorar a qualidade do OCR
+     *
+     * Pipeline:
+     * 1. Converte para escala de cinza
+     * 2. Amplia imagem se resolução for baixa
+     * 3. Normaliza contraste
+     * 4. Aplica binarização adaptativa (threshold)
+     * 5. Remove ruído (despeckle)
+     * 6. Corrige inclinação (deskew)
+     */
+    private function preprocessImage(string $inputPath, ?string $identifier = null): ?string
+    {
+        if (!$this->isImageMagickAvailable()) {
+            Log::info('OcrService: ImageMagick não disponível, pulando pré-processamento');
+            return null;
+        }
+
+        try {
+            $outputPath = sys_get_temp_dir() . '/ocr_preprocessed_' . ($identifier ?? uniqid()) . '.png';
+
+            // Obtém dimensões da imagem para decidir se precisa de upscale
+            $identifyCmd = sprintf(
+                'identify -format "%%w" %s 2>/dev/null',
+                escapeshellarg($inputPath)
+            );
+            $width = (int) trim(shell_exec($identifyCmd) ?? '0');
+
+            // Monta o pipeline de pré-processamento do ImageMagick
+            $resizeOpt = '';
+            if ($width > 0 && $width < self::MIN_WIDTH_FOR_OCR) {
+                // Amplia a imagem mantendo proporção
+                $scale = (int) ceil((self::MIN_WIDTH_FOR_OCR / $width) * 100);
+                $resizeOpt = "-resize {$scale}%";
+            }
+
+            $command = sprintf(
+                'convert %s '
+                . '-colorspace Gray '           // 1. Escala de cinza
+                . '%s '                          // 2. Resize (se necessário)
+                . '-normalize '                  // 3. Normaliza contraste
+                . '-threshold 50%% '             // 4. Binarização
+                . '-despeckle '                  // 5. Remove ruído
+                . '-deskew 40%% '                // 6. Corrige inclinação
+                . '-strip '                      // Remove metadados
+                . '%s 2>/dev/null',
+                escapeshellarg($inputPath),
+                $resizeOpt,
+                escapeshellarg($outputPath)
+            );
+
+            exec($command, $output, $returnCode);
+
+            if ($returnCode !== 0 || !file_exists($outputPath)) {
+                Log::warning('OcrService: Pré-processamento falhou, usando imagem original', [
+                    'return_code' => $returnCode,
+                    'file' => $identifier,
+                ]);
+                return null;
+            }
+
+            Log::info('OcrService: Imagem pré-processada com sucesso', [
+                'file' => $identifier,
+                'original_width' => $width,
+                'resized' => !empty($resizeOpt),
+            ]);
+
+            return $outputPath;
+
+        } catch (\Exception $e) {
+            Log::warning('OcrService: Erro no pré-processamento', [
+                'error' => $e->getMessage(),
+                'file' => $identifier,
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Executa o Tesseract OCR no arquivo
+     *
+     * Usa OEM 1 (LSTM neural net) + PSM 6 (uniform block of text)
+     * para melhor precisão em documentos jurídicos escaneados
      */
     private function runTesseract(string $filePath): string
     {
@@ -96,10 +212,13 @@ class OcrService
             throw new \Exception('Tesseract OCR não está instalado. Instale com: apt-get install tesseract-ocr tesseract-ocr-por');
         }
 
-        // Executa Tesseract com suporte a português e inglês
+        // Executa Tesseract com:
+        // --oem 1: Motor LSTM neural network (mais preciso)
+        // --psm 6: Assume bloco uniforme de texto (melhor para documentos)
+        // -l por+eng: Suporte a português e inglês
         $outputFile = sys_get_temp_dir() . '/ocr_output_' . uniqid();
         $command = sprintf(
-            'tesseract %s %s -l por+eng --psm 3 2>/dev/null',
+            'tesseract %s %s -l por+eng --oem 1 --psm 6 2>/dev/null',
             escapeshellarg($filePath),
             escapeshellarg($outputFile)
         );

@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     ghostscript \
     tesseract-ocr \
     tesseract-ocr-por \
+    imagemagick \
     postgresql-client \
     redis-tools \
     && rm -rf /var/lib/apt/lists/*

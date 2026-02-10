@@ -314,31 +314,84 @@ class PdfToTextService
     }
 
     /**
-     * Executa Tesseract OCR em uma imagem
+     * Executa Tesseract OCR em uma imagem, com pré-processamento via ImageMagick
      */
     private function runTesseractOnImage(string $imagePath): string
     {
-        $outputFile = sys_get_temp_dir() . '/tesseract_' . uniqid();
+        $preprocessedPath = null;
 
-        // Executa Tesseract com suporte a português e inglês
+        try {
+            // Pré-processa a imagem se ImageMagick estiver disponível
+            $preprocessedPath = $this->preprocessImageForOcr($imagePath);
+            $ocrInputPath = $preprocessedPath ?? $imagePath;
+
+            $outputFile = sys_get_temp_dir() . '/tesseract_' . uniqid();
+
+            // Executa Tesseract com:
+            // --oem 1: Motor LSTM neural network (mais preciso)
+            // --psm 6: Assume bloco uniforme de texto (melhor para documentos)
+            $command = sprintf(
+                'tesseract %s %s -l por+eng --oem 1 --psm 6 2>/dev/null',
+                escapeshellarg($ocrInputPath),
+                escapeshellarg($outputFile)
+            );
+
+            exec($command, $output, $returnCode);
+
+            $textFile = $outputFile . '.txt';
+
+            if (!file_exists($textFile)) {
+                return '';
+            }
+
+            $text = file_get_contents($textFile);
+            @unlink($textFile);
+
+            return $text !== false ? $text : '';
+
+        } finally {
+            if ($preprocessedPath && file_exists($preprocessedPath)) {
+                @unlink($preprocessedPath);
+            }
+        }
+    }
+
+    /**
+     * Pré-processa imagem para melhorar resultado do OCR
+     * Usa ImageMagick para: escala de cinza, normalização, binarização, deskew
+     */
+    private function preprocessImageForOcr(string $imagePath): ?string
+    {
+        $output = [];
+        $returnCode = 0;
+        exec('which convert 2>/dev/null', $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            return null;
+        }
+
+        $outputPath = sys_get_temp_dir() . '/pdf_ocr_preprocessed_' . uniqid() . '.png';
+
         $command = sprintf(
-            'tesseract %s %s -l por+eng --psm 3 2>/dev/null',
+            'convert %s '
+            . '-colorspace Gray '
+            . '-normalize '
+            . '-threshold 50%% '
+            . '-despeckle '
+            . '-deskew 40%% '
+            . '-strip '
+            . '%s 2>/dev/null',
             escapeshellarg($imagePath),
-            escapeshellarg($outputFile)
+            escapeshellarg($outputPath)
         );
 
         exec($command, $output, $returnCode);
 
-        $textFile = $outputFile . '.txt';
-
-        if (!file_exists($textFile)) {
-            return '';
+        if ($returnCode !== 0 || !file_exists($outputPath)) {
+            return null;
         }
 
-        $text = file_get_contents($textFile);
-        @unlink($textFile);
-
-        return $text !== false ? $text : '';
+        return $outputPath;
     }
 
     /**
