@@ -10,7 +10,7 @@ class RateLimiterService
     /**
      * Aguarda se necessário para respeitar o rate limit
      *
-     * @param string $provider Nome do provider (gemini, deepseek, openai)
+     * @param string $provider Nome do provider (openrouter)
      * @param int $rateLimit Limite de requisições por minuto
      * @return void
      */
@@ -64,7 +64,7 @@ class RateLimiterService
     /**
      * Retorna o rate limit configurado para um provider
      *
-     * @param string $provider Nome do provider (gemini, deepseek, openai, openrouter)
+     * @param string $provider Nome do provider (openrouter)
      * @return int Limite de requisições por minuto
      */
     public static function getRateLimit(string $provider): int
@@ -75,7 +75,7 @@ class RateLimiterService
     /**
      * Aplica rate limiting baseado no provider
      *
-     * @param string $provider Nome do provider (gemini, deepseek, openai)
+     * @param string $provider Nome do provider (openrouter)
      * @return void
      */
     public static function apply(string $provider): void

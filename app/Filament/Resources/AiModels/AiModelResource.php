@@ -46,7 +46,7 @@ class AiModelResource extends Resource
                     ->label('Nome')
                     ->required()
                     ->maxLength(100)
-                    ->placeholder('Ex: GPT-4o, Gemini 2.5 Flash, DeepSeek Chat'),
+                    ->placeholder('Ex: Claude Sonnet 4, GPT-4o, Grok 4.1'),
 
                 Select::make('provider')
                     ->label('Provedor de I.A.')
@@ -58,8 +58,8 @@ class AiModelResource extends Resource
                     ->label('ID do Modelo')
                     ->required()
                     ->maxLength(100)
-                    ->placeholder('Ex: gpt-4o, gemini-2.5-flash-lite, deepseek-chat')
-                    ->helperText('Identificador do modelo usado na API do provedor'),
+                    ->placeholder('Ex: anthropic/claude-sonnet-4, openai/gpt-4o, x-ai/grok-4.1-fast')
+                    ->helperText('Identificador do modelo no OpenRouter (formato: provider/modelo)'),
 
                 Textarea::make('description')
                     ->label('Descrição')
