@@ -40,9 +40,7 @@ class PdfService
     public static function generateContractAnalysisPdf(ContractAnalysis $analysis)
     {
         $aiProvider = match ($analysis->ai_provider) {
-            'gemini' => 'Google Gemini',
-            'openai' => 'OpenAI',
-            'deepseek' => 'DeepSeek',
+            'openrouter' => 'OpenRouter',
             default => $analysis->ai_provider ?? null
         };
 
@@ -69,10 +67,8 @@ class PdfService
     public static function generateLegalOpinionPdf(ContractAnalysis $analysis)
     {
         $aiProvider = match ($analysis->legal_opinion_ai_provider) {
-            'gemini' => 'Google Gemini',
-            'openai' => 'OpenAI',
-            'deepseek' => 'DeepSeek',
-            default => $analysis->legal_opinion_ai_provider ?? 'Google Gemini'
+            'openrouter' => 'OpenRouter',
+            default => $analysis->legal_opinion_ai_provider ?? 'OpenRouter'
         };
 
         $processingTime = $analysis->legal_opinion_processing_time_ms

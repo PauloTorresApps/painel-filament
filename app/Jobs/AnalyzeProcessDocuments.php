@@ -46,7 +46,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public string $senha,
         public int $judicialUserId,
         public string $analysisStrategy = 'evolutionary',
-        public ?string $aiModelId = null,           // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $aiModelId = null,
         public ?string $documentAnalysisPrompt = null // Prompt customizado para análise de documentos (MAP)
     ) {
     }

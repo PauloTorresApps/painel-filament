@@ -10,7 +10,7 @@ interface AIProviderInterface
      * @param string $promptTemplate Prompt do usuário
      * @param array $documentos Array de documentos com texto extraído
      * @param array $contextoDados Dados do processo (classe, assuntos, etc)
-     * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo (DeepSeek)
+     * @param bool $deepThinkingEnabled Habilita modo de pensamento profundo (reasoning)
      * @param \App\Models\DocumentAnalysis|null $documentAnalysis Model para persistir estado evolutivo (opcional)
      * @return string Análise gerada pela IA
      */

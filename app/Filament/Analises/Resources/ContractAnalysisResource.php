@@ -101,9 +101,7 @@ class ContractAnalysisResource extends Resource
                     ->label('IA')
                     ->badge()
                     ->formatStateUsing(fn ($state) => match($state) {
-                        'gemini' => 'Gemini',
-                        'openai' => 'OpenAI',
-                        'deepseek' => 'DeepSeek',
+                        'openrouter' => 'OpenRouter',
                         default => $state ?? '-'
                     })
                     ->color('gray')
@@ -137,9 +135,7 @@ class ContractAnalysisResource extends Resource
                 SelectFilter::make('ai_provider')
                     ->label('IA')
                     ->options([
-                        'gemini' => 'Gemini',
-                        'openai' => 'OpenAI',
-                        'deepseek' => 'DeepSeek',
+                        'openrouter' => 'OpenRouter',
                     ]),
             ])
             ->recordActions([

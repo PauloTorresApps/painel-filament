@@ -6,33 +6,26 @@ use App\Contracts\AIProviderInterface;
 
 /**
  * Factory para criação de serviços de IA
- * 
- * Centraliza a lógica de instanciação de providers de IA,
- * eliminando duplicação em múltiplos Jobs.
+ *
+ * Centraliza a lógica de instanciação do provider OpenRouter.
  */
 class AIServiceFactory
 {
     /**
-     * Cria uma instância do serviço de IA apropriado
+     * Cria uma instância do serviço de IA (OpenRouter)
      *
-     * @param string $provider Nome do provider (gemini, openai, deepseek, openrouter)
+     * @param string $provider Nome do provider (mantido para compatibilidade)
      * @return AIProviderInterface
      */
-    public static function make(string $provider): AIProviderInterface
+    public static function make(string $provider = 'openrouter'): AIProviderInterface
     {
-        return match ($provider) {
-            'gemini' => new GeminiService(),
-            'openai' => new OpenAIService(),
-            'deepseek' => new DeepSeekService(),
-            'openrouter' => new OpenRouterService(),
-            default => new GeminiService(),
-        };
+        return new OpenRouterService();
     }
 
     /**
      * Cria uma instância do serviço de IA com modelo específico
      *
-     * @param string $provider Nome do provider
+     * @param string $provider Nome do provider (mantido para compatibilidade)
      * @param string|null $modelId ID do modelo específico
      * @return AIProviderInterface
      */

@@ -44,7 +44,7 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Análise de Contratos',
                 'content' => $this->getAnalysisPrompt(),
-                'ai_provider' => 'deepseek',
+                'ai_provider' => 'openrouter',
                 'deep_thinking_enabled' => false,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
@@ -64,7 +64,7 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Parecer Jurídico',
                 'content' => $this->getLegalOpinionPrompt(),
-                'ai_provider' => 'deepseek',
+                'ai_provider' => 'openrouter',
                 'deep_thinking_enabled' => true,  // Parecer jurídico usa pensamento profundo
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
@@ -83,7 +83,7 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Storyboard de Infográfico (JSON)',
                 'content' => $this->getStoryboardPrompt(),
-                'ai_provider' => 'deepseek',
+                'ai_provider' => 'openrouter',
                 'deep_thinking_enabled' => false,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
@@ -102,7 +102,7 @@ class ContractSystemSeeder extends Seeder
             [
                 'title' => 'Infográfico HTML',
                 'content' => $this->getInfographicPrompt(),
-                'ai_provider' => 'deepseek',
+                'ai_provider' => 'openrouter',
                 'deep_thinking_enabled' => false,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,

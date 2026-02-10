@@ -87,9 +87,6 @@ class AiModelResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => AiModel::getAvailableProviders()[$state] ?? $state)
                     ->color(fn (string $state): string => match ($state) {
-                        'gemini' => 'info',
-                        'openai' => 'success',
-                        'deepseek' => 'warning',
                         'openrouter' => 'primary',
                         default => 'gray',
                     })

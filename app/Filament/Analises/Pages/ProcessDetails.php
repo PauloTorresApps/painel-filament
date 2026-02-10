@@ -420,8 +420,8 @@ class ProcessDetails extends Page
 
             // Obtém informações do modelo de IA configurado no prompt
             $aiModel = $promptPadrao->aiModel;
-            $aiModelId = $aiModel?->model_id; // ID do modelo específico (ex: gemini-2.5-flash)
-            $aiProvider = $aiModel?->provider ?? $promptPadrao->ai_provider ?? 'gemini';
+            $aiModelId = $aiModel?->model_id;
+            $aiProvider = $aiModel?->provider ?? $promptPadrao->ai_provider ?? 'openrouter';
 
             // Dispara o Job com o provider e modelo de IA selecionados
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
@@ -430,24 +430,19 @@ class ProcessDetails extends Page
                 $documentosParaAnalise,
                 $this->dadosBasicos,
                 $promptPadrao->content,                              // Prompt para parecer final (REDUCE)
-                $aiProvider,                                         // Provider de IA (gemini, deepseek, openai)
-                $promptPadrao->deep_thinking_enabled ?? true,        // Modo de pensamento profundo (DeepSeek)
+                $aiProvider,                                         // Provider de IA (OpenRouter)
+                $promptPadrao->deep_thinking_enabled ?? true,        // Modo de pensamento profundo
                 \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
                 $this->senha,
                 $this->judicialUserId,
                 $promptPadrao->analysis_strategy ?? 'evolutionary',  // Estratégia de análise
-                $aiModelId,                                          // ID do modelo específico (ex: gemini-2.5-flash)
+                $aiModelId,                                          // ID do modelo específico
                 $promptAnaliseDocumentos?->content                   // Prompt customizado para análise de documentos (MAP)
             );
 
             $totalDocs = count($documentosParaAnalise);
             $modelName = $aiModel?->name ?? 'IA';
-            $providerName = match($aiProvider) {
-                'gemini' => 'Google Gemini',
-                'deepseek' => 'DeepSeek',
-                'openai' => 'OpenAI',
-                default => 'IA'
-            };
+            $providerName = 'OpenRouter';
 
             \Filament\Notifications\Notification::make()
                 ->title('🚀 Análise Iniciada')

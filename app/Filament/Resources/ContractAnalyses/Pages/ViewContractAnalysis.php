@@ -48,9 +48,7 @@ class ViewContractAnalysis extends ViewRecord
                                 TextEntry::make('ai_provider')
                                     ->label('IA Utilizada')
                                     ->formatStateUsing(fn ($state) => match($state) {
-                                        'gemini' => 'Google Gemini',
-                                        'openai' => 'OpenAI',
-                                        'deepseek' => 'DeepSeek',
+                                        'openrouter' => 'OpenRouter',
                                         default => $state ?? '-'
                                     }),
 

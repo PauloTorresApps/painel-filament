@@ -133,11 +133,6 @@ class AiPromptForm
      */
     private static function modelSupportsReasoning(string $provider, string $modelId): bool
     {
-        // DeepSeek sempre suporta
-        if ($provider === 'deepseek') {
-            return true;
-        }
-
         // OpenRouter - modelos específicos que suportam reasoning
         if ($provider === 'openrouter') {
             $reasoningModels = [

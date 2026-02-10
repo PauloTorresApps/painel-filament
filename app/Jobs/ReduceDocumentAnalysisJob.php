@@ -42,7 +42,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public string $promptTemplate,
-        public ?string $aiModelId = null, // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $aiModelId = null,
         public int $currentReduceLevel = 1
     ) {
     }
@@ -505,12 +505,7 @@ PROMPT;
         }
 
         try {
-            $providerName = match ($this->aiProvider) {
-                'gemini' => 'Google Gemini',
-                'deepseek' => 'DeepSeek',
-                'openai' => 'OpenAI',
-                default => 'IA'
-            };
+            $providerName = 'OpenRouter';
 
             NotificationService::info(
                 $user,

@@ -176,9 +176,7 @@ class ContractPromptResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => AiPrompt::getAvailableProviders()[$state] ?? $state)
                     ->color(fn (string $state): string => match ($state) {
-                        'gemini' => 'info',
-                        'openai' => 'success',
-                        'deepseek' => 'warning',
+                        'openrouter' => 'primary',
                         default => 'gray',
                     })
                     ->sortable(),

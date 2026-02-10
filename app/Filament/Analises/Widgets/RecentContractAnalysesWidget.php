@@ -73,9 +73,7 @@ class RecentContractAnalysesWidget extends TableWidget
                     ->label('IA')
                     ->badge()
                     ->formatStateUsing(fn ($state) => match($state) {
-                        'gemini' => 'Gemini',
-                        'openai' => 'OpenAI',
-                        'deepseek' => 'DeepSeek',
+                        'openrouter' => 'OpenRouter',
                         default => $state ?? '-'
                     })
                     ->color('gray'),

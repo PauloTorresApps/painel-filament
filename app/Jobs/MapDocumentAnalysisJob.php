@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Storage;
  * A coordenação do REDUCE é feita pelo DispatchMapPhaseJob através de callbacks.
  *
  * O prompt é separado em system prompt (fixo, cacheável) e user prompt (variável por documento)
- * para aproveitar o prompt caching dos provedores de IA (Anthropic, OpenAI, etc.),
+ * para aproveitar o prompt caching do OpenRouter (Anthropic, etc.),
  * reduzindo o custo de tokens repetidos entre documentos da mesma análise.
  */
 class MapDocumentAnalysisJob implements ShouldQueue
@@ -36,7 +36,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public array $contextoDados,
-        public ?string $aiModelId = null,             // ID do modelo específico (ex: gemini-2.5-flash)
+        public ?string $aiModelId = null,
         public ?string $customAnalysisPrompt = null   // Prompt customizado para análise de documentos
     ) {
     }
@@ -168,7 +168,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
      * Monta o system prompt com todo o contexto fixo da análise.
      *
      * Este conteúdo é IDÊNTICO para todos os documentos de uma mesma análise,
-     * permitindo que os provedores de IA (Anthropic, OpenAI, etc.) o cacheem
+     * permitindo que o OpenRouter (Anthropic, etc.) o cacheem
      * e cobrem apenas uma fração do custo nos documentos subsequentes.
      *
      * Inclui: papel do assistente, contexto do processo, tarefa de análise,

@@ -124,9 +124,7 @@ class AiPrompt extends Model
     public static function getAvailableProviders(): array
     {
         return [
-            'gemini' => 'Google Gemini',
-            'openai' => 'OpenAI (ChatGPT)',
-            'deepseek' => 'DeepSeek',
+            'openrouter' => 'OpenRouter',
         ];
     }
 

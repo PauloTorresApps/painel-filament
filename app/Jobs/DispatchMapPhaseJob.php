@@ -130,12 +130,7 @@ class DispatchMapPhaseJob implements ShouldQueue
             $documentAnalysis->startMapPhase();
 
             // Notifica que a análise vai começar
-            $providerName = match ($this->aiProvider) {
-                'gemini' => 'Google Gemini',
-                'deepseek' => 'DeepSeek',
-                'openai' => 'OpenAI',
-                default => 'IA'
-            };
+            $providerName = 'OpenRouter';
 
             $largeDocsMsg = count($largeDocs) > 0
                 ? " (" . count($largeDocs) . " documento(s) extenso(s) serão processados em partes)"

@@ -69,13 +69,7 @@ class RateLimiterService
      */
     public static function getRateLimit(string $provider): int
     {
-        return match (strtolower($provider)) {
-            'gemini' => (int) config('services.gemini.rate_limit_per_minute', 15),
-            'deepseek' => (int) config('services.deepseek.rate_limit_per_minute', 60),
-            'openai' => (int) config('services.openai.rate_limit_per_minute', 3),
-            'openrouter' => (int) config('services.openrouter.rate_limit_per_minute', 30),
-            default => 10, // Valor padrão conservador
-        };
+        return (int) config('services.openrouter.rate_limit_per_minute', 30);
     }
 
     /**
