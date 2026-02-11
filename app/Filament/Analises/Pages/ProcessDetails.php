@@ -24,6 +24,7 @@ class ProcessDetails extends Page
     public string $numeroProcesso = '';
     public ?int $judicialUserId = null;
     public ?string $senha = null;
+    public ?string $chave = null;
 
     public function mount(): void
     {
@@ -38,6 +39,7 @@ class ProcessDetails extends Page
             $this->numeroProcesso = $data['numeroProcesso'] ?? '';
             $this->judicialUserId = $data['judicial_user_id'] ?? null;
             $this->senha = $data['senha'] ?? null;
+            $this->chave = $data['chave'] ?? null;
 
             // Recalcula sequência se não existir (fallback para processos consultados antes desta feature)
             $this->garantirSequenciaAnalise();
@@ -437,7 +439,8 @@ class ProcessDetails extends Page
                 $this->judicialUserId,
                 $promptPadrao->analysis_strategy ?? 'evolutionary',  // Estratégia de análise
                 $aiModelId,                                          // ID do modelo específico
-                $promptAnaliseDocumentos?->content                   // Prompt customizado para análise de documentos (MAP)
+                $promptAnaliseDocumentos?->content,                  // Prompt customizado para análise de documentos (MAP)
+                $this->chave                                         // Chave do processo (para processos sigilosos)
             );
 
             $totalDocs = count($documentosParaAnalise);

@@ -35,7 +35,8 @@ class DownloadDocumentJob implements ShouldQueue
         public array $documento,
         public string $numeroProcesso,
         public string $userLogin,
-        public string $senha
+        public string $senha,
+        public ?string $chave = null
     ) {}
 
     /**
@@ -332,7 +333,8 @@ class DownloadDocumentJob implements ShouldQueue
             $resultado = $eprocService->consultarDocumentosProcesso(
                 $this->numeroProcesso,
                 [$idDocumento],
-                true
+                true,
+                $this->chave
             );
 
             $documentos = null;

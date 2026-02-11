@@ -138,7 +138,8 @@ class EprocService
         bool $incluirPartes = true,
         bool $incluirEnderecos = false,
         bool $incluirMovimentos = true,
-        bool $incluirDocumentos = true
+        bool $incluirDocumentos = true,
+        ?string $chave = null
     ) {
         try {
             // Remove a máscara do número do processo (pontos e traços)
@@ -167,15 +168,31 @@ class EprocService
                 $params['dataFinal'] = $dataFinal;
             }
 
+            if ($chave) {
+                $params['parametros'] = new \SoapVar(
+                    '<parametros xmlns="http://www.cnj.jus.br/mni/v300/intercomunicacao" nome="chave" valor="' . htmlspecialchars($chave, ENT_XML1) . '"/>',
+                    XSD_ANYXML
+                );
+            }
+
             // Log dos parâmetros sendo enviados (sem a senha completa por segurança)
             Log::info('Enviando requisição consultarProcesso', [
                 'usuario' => $this->usuario,
                 'numeroProcesso' => $numeroProcessoLimpo,
                 'hash_length' => strlen($this->senha),
-                'hash_first_chars' => substr($this->senha, 0, 8) . '...'
+                'hash_first_chars' => substr($this->senha, 0, 8) . '...',
+                'chave' => $chave ? 'informada' : 'não informada'
             ]);
 
             $response = $this->client->consultarProcesso($params);
+
+            // Log do XML enviado para diagnóstico
+            Log::info('SOAP Request XML', [
+                'request' => $this->client->__getLastRequest()
+            ]);
+            Log::info('SOAP Response XML', [
+                'response' => substr($this->client->__getLastResponse() ?? '', 0, 2000)
+            ]);
 
             return $this->processarResposta($response);
 
@@ -201,7 +218,7 @@ class EprocService
      * Consulta documentos de um processo com conteúdo em base64
      * Usa requisição HTTP manual para suportar MTOM/XOP
      */
-    public function consultarDocumentosProcesso(string $numeroProcesso, array $idsDocumentos)
+    public function consultarDocumentosProcesso(string $numeroProcesso, array $idsDocumentos, bool $incluirConteudo = true, ?string $chave = null)
     {
         try {
             // Remove a máscara do número do processo
@@ -210,23 +227,53 @@ class EprocService
             Log::info('Consultando documentos com conteúdo via HTTP manual', [
                 'numeroProcesso' => $numeroProcessoLimpo,
                 'idsDocumentos' => $idsDocumentos,
-                'quantidade' => count($idsDocumentos)
+                'quantidade' => count($idsDocumentos),
+                'chave' => $chave ? 'informada' : 'não informada'
             ]);
 
             // Monta o envelope SOAP manualmente
-            $soapEnvelope = $this->montarEnvelopeConsultarDocumentos($numeroProcessoLimpo, $idsDocumentos);
+            $soapEnvelope = $this->montarEnvelopeConsultarDocumentos($numeroProcessoLimpo, $idsDocumentos, $chave);
 
             // Faz requisição HTTP manual com cURL
             $endpoint = $this->urlBase . '/ws/controlador_ws.php?srv=intercomunicacao3.0';
             $responseRaw = $this->fazerRequisicaoSOAPManual($endpoint, $soapEnvelope, 'requisicaoConsultarDocumentosProcesso');
 
+            $isMultipart = strpos($responseRaw, 'multipart/related') !== false;
+
             Log::info('Resposta HTTP recebida', [
                 'tamanho' => strlen($responseRaw),
-                'e_multipart' => strpos($responseRaw, 'multipart/related') !== false
+                'e_multipart' => $isMultipart
             ]);
 
-            // Extrai o XML da resposta multipart
-            $xmlResponse = $this->extrairXMLDeMultipart($responseRaw);
+            // Extrai o XML da resposta (multipart ou direta)
+            if ($isMultipart) {
+                $xmlResponse = $this->extrairXMLDeMultipart($responseRaw);
+            } else {
+                // Resposta não-multipart: pode ser erro SOAP ou resposta simples
+                // Separa headers do body
+                $parts = preg_split('/\r?\n\r?\n/', $responseRaw, 2);
+                $xmlResponse = $parts[1] ?? $responseRaw;
+
+                // Se contém XML SOAP, extrai a mensagem de erro
+                if (strpos($xmlResponse, 'Envelope') !== false) {
+                    $xmlLimpo = $this->removerNamespacesXML($xmlResponse);
+                    $xmlObj = @simplexml_load_string($xmlLimpo, 'SimpleXMLElement', LIBXML_NOCDATA);
+                    if ($xmlObj) {
+                        $arr = json_decode(json_encode($xmlObj), true);
+                        // Verifica se há mensagem de erro no recibo
+                        $mensagem = $arr['Body']['respostaConsultarDocumentosProcesso']['recibo']['mensagens']['descritivo']
+                            ?? $arr['Body']['Fault']['faultstring']
+                            ?? null;
+                        if ($mensagem) {
+                            throw new Exception('Erro do webservice: ' . $mensagem);
+                        }
+                    }
+                }
+
+                Log::warning('Resposta não-multipart recebida', [
+                    'conteudo' => substr($xmlResponse, 0, 1000)
+                ]);
+            }
 
             Log::info('XML extraído do multipart', [
                 'tamanho' => strlen($xmlResponse),
@@ -275,11 +322,17 @@ class EprocService
     /**
      * Monta envelope SOAP para consultar documentos
      */
-    protected function montarEnvelopeConsultarDocumentos(string $numeroProcesso, array $idsDocumentos): string
+    protected function montarEnvelopeConsultarDocumentos(string $numeroProcesso, array $idsDocumentos, ?string $chave = null): string
     {
         $idsXML = '';
         foreach ($idsDocumentos as $id) {
             $idsXML .= "<idDocumento>{$id}</idDocumento>\n";
+        }
+
+        $parametrosXML = '';
+        if ($chave) {
+            $chaveEscapada = htmlspecialchars($chave, ENT_XML1);
+            $parametrosXML = "<parametros xmlns=\"http://www.cnj.jus.br/mni/v300/intercomunicacao\" nome=\"chave\" valor=\"{$chaveEscapada}\"/>";
         }
 
         return <<<XML
@@ -296,6 +349,7 @@ class EprocService
             </consultante>
             <numeroProcesso>{$numeroProcesso}</numeroProcesso>
             {$idsXML}
+            {$parametrosXML}
         </ns1:requisicaoConsultarDocumentosProcesso>
     </soap:Body>
 </soap:Envelope>

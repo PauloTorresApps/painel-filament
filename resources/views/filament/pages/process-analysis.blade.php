@@ -187,31 +187,24 @@
                         </p>
                     </div>
 
-                    {{-- Campos de Data --}}
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {{-- Campo Chave do Processo --}}
+                    <div>
                         <x-filament::input.wrapper
-                            label="Data Inicial (Opcional)"
-                            helper-text="Filtrar eventos a partir desta data"
-                            :error="$errors->first('data_inicial')"
+                            label="Chave do Processo (Opcional)"
+                            :error="$errors->first('chave')"
                         >
                             <x-filament::input
-                                type="date"
-                                name="data_inicial"
-                                value="{{ old('data_inicial') }}"
+                                type="text"
+                                name="chave"
+                                id="chave"
+                                placeholder="Digite a chave do processo"
+                                value="{{ old('chave') }}"
+                                class="font-mono"
                             />
                         </x-filament::input.wrapper>
-
-                        <x-filament::input.wrapper
-                            label="Data Final (Opcional)"
-                            helper-text="Filtrar eventos até esta data"
-                            :error="$errors->first('data_final')"
-                        >
-                            <x-filament::input
-                                type="date"
-                                name="data_final"
-                                value="{{ old('data_final') }}"
-                            />
-                        </x-filament::input.wrapper>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Informe a chave do processo, se necessário, para acesso a processos sigilosos
+                        </p>
                     </div>
 
                     {{-- Botão de Submit --}}

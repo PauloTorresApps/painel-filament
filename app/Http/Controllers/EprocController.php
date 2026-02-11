@@ -40,8 +40,7 @@ class EprocController extends Controller
             }
 
             $numeroProcesso = $request->input('numero_processo');
-            $dataInicial = $request->input('data_inicial');
-            $dataFinal = $request->input('data_final');
+            $chave = $request->input('chave');
             $senha = $request->input('password_ws');
 
             // Instancia o serviço com as credenciais do usuário
@@ -49,13 +48,14 @@ class EprocController extends Controller
 
             $resultado = $eprocService->consultarProcesso(
                 $numeroProcesso,
-                $dataInicial,
-                $dataFinal,
+                null, // dataInicial
+                null, // dataFinal
                 true, // incluirCabecalho
                 true, // incluirPartes
                 false, // incluirEnderecos
                 true, // incluirMovimentos
-                true  // incluirDocumentos
+                true, // incluirDocumentos
+                $chave
             );
 
             // Extrai os dados do processo da resposta
@@ -102,7 +102,8 @@ class EprocController extends Controller
                 'documentos' => $dadosNormalizados['documentos'],
                 'numeroProcesso' => $numeroProcesso,
                 'judicial_user_id' => $request->user_ws,
-                'senha' => $senha
+                'senha' => $senha,
+                'chave' => $chave
             ], now()->addMinutes(10));
 
             return redirect()->route('filament.analises.pages.process-details', ['key' => $cacheKey]);

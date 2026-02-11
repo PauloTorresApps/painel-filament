@@ -47,7 +47,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public int $judicialUserId,
         public string $analysisStrategy = 'evolutionary',
         public ?string $aiModelId = null,
-        public ?string $documentAnalysisPrompt = null // Prompt customizado para análise de documentos (MAP)
+        public ?string $documentAnalysisPrompt = null, // Prompt customizado para análise de documentos (MAP)
+        public ?string $chave = null                   // Chave do processo (para processos sigilosos)
     ) {
     }
 
@@ -134,16 +135,20 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Cria jobs de download para cada documento
+            // Escalonamento de 3s entre jobs para evitar rate limiting do webservice
             $downloadJobs = [];
             foreach ($this->documentos as $index => $documento) {
-                $downloadJobs[] = new DownloadDocumentJob(
+                $job = new DownloadDocumentJob(
                     $documentAnalysis->id,
                     $index,
                     $documento,
                     $this->numeroProcesso,
                     $this->userLogin,
-                    $this->senha
+                    $this->senha,
+                    $this->chave
                 );
+                $job->delay(now()->addSeconds($index * 3));
+                $downloadJobs[] = $job;
             }
 
             // Armazena dados necessários para callbacks
