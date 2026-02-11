@@ -114,10 +114,12 @@
         </div>
 
         {{-- Barra de Progresso --}}
+        @php $progressInt = (int) round($overallProgress); @endphp
         <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
             <div
-                class="h-full rounded-full transition-all duration-500 ease-out {{ $status === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-blue-500 to-green-500' }}"
-                style="width: {{ $overallProgress }}%"
+                wire:key="progress-bar-{{ $progressInt }}"
+                class="h-full rounded-full"
+                style="width: {{ $progressInt }}%;{{ $progressInt > 0 ? ' min-width: 0.75rem;' : '' }} background-color: {{ $status === 'failed' ? '#ef4444' : '#3b82f6' }};"
             ></div>
         </div>
     </div>
@@ -126,38 +128,58 @@
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm">
         <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Etapas do Processamento</h4>
 
+        @php
+            $phaseKeys = array_keys($phases);
+            $totalSegments = count($phases) - 1;
+            $completedSegments = $status === 'completed' ? $totalSegments : max(0, (int) $currentPhaseIndex);
+            $lineProgressPct = $totalSegments > 0 ? (int) round(($completedSegments / $totalSegments) * 100) : 0;
+        @endphp
+
         <div class="flex items-center justify-between relative">
-            {{-- Linha de conexão --}}
+            {{-- Linha de conexão (base cinza) --}}
             <div class="absolute top-5 left-0 right-0 h-0.5 bg-gray-200 dark:bg-gray-700 mx-12"></div>
+
+            {{-- Linha de conexão (progresso verde) --}}
+            @if($lineProgressPct > 0)
+                <div wire:key="phase-line-{{ $lineProgressPct }}" class="absolute top-5 left-0 right-0 h-0.5 mx-12" style="background: linear-gradient(to right, #22c55e {{ $lineProgressPct }}%, transparent {{ $lineProgressPct }}%);"></div>
+            @endif
 
             @foreach($phases as $phaseKey => $phaseConfig)
                 @php
-                    $phaseIndex = array_search($phaseKey, array_keys($phases));
-                    $isCompleted = $currentPhaseIndex > $phaseIndex || ($status === 'completed' && $phaseKey === 'completed');
+                    $phaseIndex = array_search($phaseKey, $phaseKeys);
+                    $isCompleted = $currentPhaseIndex !== false && $currentPhaseIndex > $phaseIndex;
+                    if ($status === 'completed') $isCompleted = true;
                     $isCurrent = $phase === $phaseKey && $status === 'processing';
-                    $isPending = $currentPhaseIndex < $phaseIndex && $status !== 'completed';
+                    $isPending = !$isCompleted && !$isCurrent;
                 @endphp
 
-                <div class="flex flex-col items-center relative z-10">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-all duration-300
-                        {{ $isCompleted ? 'bg-green-500 text-white' : '' }}
-                        {{ $isCurrent ? 'bg-blue-500 text-white ring-4 ring-blue-200 dark:ring-blue-900' : '' }}
-                        {{ $isPending ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500' : '' }}
-                        {{ $status === 'failed' && $isCurrent ? 'bg-red-500 text-white ring-4 ring-red-200 dark:ring-red-900' : '' }}
-                    ">
-                        @if($isCompleted)
-                            <x-heroicon-s-check class="w-5 h-5" />
-                        @elseif($isCurrent && $status === 'processing')
-                            <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5 animate-pulse" />
-                        @else
-                            <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5" />
-                        @endif
+                @php
+                    if ($status === 'failed' && $isCurrent) {
+                        $circleStyle = 'background-color: #ef4444; color: white; box-shadow: 0 0 0 4px #fecaca;';
+                        $labelStyle = 'color: #ef4444;';
+                    } elseif ($isCompleted) {
+                        $circleStyle = 'background-color: #22c55e; color: white;';
+                        $labelStyle = 'color: #16a34a;';
+                    } elseif ($isCurrent) {
+                        $circleStyle = 'background-color: #3b82f6; color: white; box-shadow: 0 0 0 4px #bfdbfe;';
+                        $labelStyle = 'color: #2563eb;';
+                    } else {
+                        $circleStyle = '';
+                        $labelStyle = '';
+                    }
+                @endphp
+
+                <div class="flex flex-col items-center relative z-10" wire:key="phase-{{ $phaseKey }}-{{ $status }}-{{ $phase }}">
+                    <div
+                        class="w-10 h-10 rounded-full flex items-center justify-center mb-2 {{ $isPending ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500' : '' }}"
+                        @if($circleStyle) style="{{ $circleStyle }}" @endif
+                    >
+                        <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5 {{ $isCurrent && $status === 'processing' ? 'animate-spin' : '' }}" />
                     </div>
-                    <span class="text-xs font-medium text-center
-                        {{ $isCompleted ? 'text-green-600 dark:text-green-400' : '' }}
-                        {{ $isCurrent ? 'text-blue-600 dark:text-blue-400' : '' }}
-                        {{ $isPending ? 'text-gray-400 dark:text-gray-500' : '' }}
-                    ">
+                    <span
+                        class="text-xs font-medium text-center {{ $isPending ? 'text-gray-400 dark:text-gray-500' : '' }}"
+                        @if($labelStyle) style="{{ $labelStyle }}" @endif
+                    >
                         {{ $phaseConfig['label'] }}
                     </span>
                 </div>
