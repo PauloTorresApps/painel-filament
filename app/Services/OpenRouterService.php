@@ -166,8 +166,10 @@ class OpenRouterService extends AbstractAIService
             }
 
             // Adiciona reasoning se suportado e solicitado
+            // @see https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#enable-reasoning-with-default-config
             if ($useReasoning) {
                 $payload['reasoning'] = [
+                    'enabled' => true,
                     'effort' => 'high',
                     'exclude' => false,
                 ];
