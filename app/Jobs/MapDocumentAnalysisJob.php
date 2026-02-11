@@ -86,6 +86,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $microAnalysis->markAsProcessing();
 
             $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
+            $hasOriginalContent = $microAnalysis->hasOriginalContent();
 
             Log::info('MapDocumentAnalysisJob: Iniciando processamento', [
                 'micro_id' => $this->microAnalysisId,
@@ -94,25 +95,32 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 'mimetype' => $microAnalysis->mimetype,
                 'provider' => $this->aiProvider,
                 'text_length' => $textLength,
+                'processing_strategy' => $microAnalysis->processing_strategy,
+                'has_original_content' => $hasOriginalContent,
+                'is_scanned' => $microAnalysis->is_scanned,
             ]);
 
-            // Valida se há texto extraído para analisar
-            if ($textLength === 0) {
-                Log::warning('MapDocumentAnalysisJob: Documento sem texto extraído', [
+            // Valida se há conteúdo para analisar (texto OU arquivo original)
+            if ($textLength === 0 && !$hasOriginalContent) {
+                Log::warning('MapDocumentAnalysisJob: Documento sem texto extraído e sem conteúdo original', [
                     'micro_id' => $this->microAnalysisId,
                     'descricao' => $microAnalysis->descricao,
                 ]);
 
-                $microAnalysis->markAsFailed('Documento sem texto extraído para análise');
+                $microAnalysis->markAsFailed('Documento sem conteúdo para análise');
                 return;
             }
 
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
-            // Define o modelo específico se configurado
+            // Define o modelo: prioridade para modelo forçado (aiModelId),
+            // senão usa model routing por estratégia do documento
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
+            } elseif ($microAnalysis->processing_strategy) {
+                $optimalModel = $aiService->getModelForStrategy($microAnalysis->processing_strategy);
+                $aiService->setModel($optimalModel);
             }
 
             // Monta os prompts separados para prompt caching:
@@ -121,33 +129,64 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $systemPrompt = $this->buildSystemPrompt();
             $documentPrompt = $this->buildDocumentPrompt($microAnalysis);
 
-            // Chama a IA para análise de texto (rate limiting é aplicado internamente pelo AI service) (imagens já tiveram texto extraído via OCR)
-            $result = $aiService->analyzeSingleDocument(
-                $documentPrompt,
-                $microAnalysis->extracted_text,
-                $this->deepThinkingEnabled,
-                $systemPrompt
-            );
+            // Roteia para a estratégia de análise mais adequada ao tipo de documento
+            $result = $this->analyzeDocument($microAnalysis, $aiService, $systemPrompt, $documentPrompt);
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
-            // Marca como completo
-            $microAnalysis->markAsCompleted(
-                $result,
-                $this->estimateTokenCount($result),
-                $processingTimeMs
-            );
+            // Se o resultado é JSON estruturado, extrai análise e timeline separadamente
+            $structuredData = $this->parseStructuredResult($result);
+
+            if ($structuredData) {
+                $analysisText = $structuredData['analise'];
+                $microAnalysis->markAsCompleted(
+                    $analysisText,
+                    $this->estimateTokenCount($analysisText),
+                    $processingTimeMs
+                );
+
+                // Sobrescreve timeline com dados estruturados (mais confiáveis que regex)
+                $timelineData = $structuredData['timeline'] ?? null;
+                if ($timelineData) {
+                    $microAnalysis->update(['timeline_events' => $timelineData]);
+                }
+
+                Log::info('MapDocumentAnalysisJob: Resultado estruturado processado', [
+                    'micro_id' => $this->microAnalysisId,
+                    'classificacao' => $structuredData['classificacao'] ?? 'N/A',
+                    'relevancia' => $structuredData['relevancia'] ?? 'N/A',
+                    'tipo_documento' => $structuredData['tipo_documento'] ?? 'N/A',
+                    'pontos_chave_count' => count($structuredData['pontos_chave'] ?? []),
+                ]);
+            } else {
+                // Resultado em texto livre (fallback ou multimodal)
+                $microAnalysis->markAsCompleted(
+                    $result,
+                    $this->estimateTokenCount($result),
+                    $processingTimeMs
+                );
+            }
+
+            // Captura annotation hash para cache de reanálise (P5)
+            $metadata = $aiService->getLastAnalysisMetadata();
+            if (!empty($metadata['file_annotations'])) {
+                $hash = $metadata['file_annotations'][0]['hash'] ?? null;
+                if ($hash) {
+                    $microAnalysis->update(['file_annotation_hash' => $hash]);
+                }
+            }
+
+            // Limpa arquivo original do disco para economizar espaço
+            $microAnalysis->deleteOriginalContent();
 
             // Salva arquivo de debug com resultado da análise
             $this->saveAnalysisToFile($microAnalysis, $result, $systemPrompt, $documentPrompt);
 
             Log::info('MapDocumentAnalysisJob: Concluído com sucesso', [
                 'micro_id' => $this->microAnalysisId,
-                'processing_time_ms' => $processingTimeMs
+                'processing_time_ms' => $processingTimeMs,
+                'strategy_used' => $microAnalysis->processing_strategy,
             ]);
-
-            // Nota: A coordenação do REDUCE é feita pelo Bus::batch() callback
-            // no DispatchMapPhaseJob, não mais aqui
 
         } catch (\Exception $e) {
             Log::error('MapDocumentAnalysisJob: Erro no processamento', [
@@ -196,7 +235,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $tarefaPrompt = $this->buildDefaultTaskPrompt();
         }
 
-        return <<<PROMPT
+        $basePrompt = <<<PROMPT
 Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.
 
 # CONTEXTO DO PROCESSO
@@ -208,6 +247,23 @@ Você é um assistente jurídico especializado em análise de documentos process
 ---
 
 {$tarefaPrompt}
+PROMPT;
+
+        // Se structured outputs está habilitado, o schema JSON já define a estrutura da resposta
+        // Não precisa instruir o modelo a incluir timeline JSON no texto
+        if (config('services.openrouter.structured_map_enabled', false)) {
+            return $basePrompt . <<<PROMPT
+
+
+---
+
+**FORMATO:** Preencha todos os campos do JSON schema solicitado. O campo `analise` deve conter a análise completa em markdown. Seja conciso mas completo.
+PROMPT;
+        }
+
+        // Modo texto livre: instrui o modelo a incluir timeline JSON entre tags
+        return $basePrompt . <<<PROMPT
+
 
 ---
 
@@ -248,6 +304,123 @@ PROMPT;
     }
 
     /**
+     * Roteia o documento para a estratégia de análise mais adequada.
+     *
+     * Prioridade:
+     * 1. Imagem com conteúdo original → visão direta (modelo analisa a imagem)
+     * 2. PDF com conteúdo original → envio nativo com plugin (pdf-text ou mistral-ocr)
+     * 3. Fallback → texto extraído localmente (OCR/pdftotext)
+     *
+     * Se a estratégia multimodal falhar, cai para o fallback de texto.
+     */
+    private function analyzeDocument(
+        DocumentMicroAnalysis $microAnalysis,
+        \App\Contracts\AIProviderInterface $aiService,
+        string $systemPrompt,
+        string $documentPrompt
+    ): string {
+        $strategy = $microAnalysis->processing_strategy ?? 'text';
+        $fullPrompt = $systemPrompt . "\n\n" . $documentPrompt;
+
+        Log::info('MapDocumentAnalysisJob: Estratégia de processamento', [
+            'micro_id' => $microAnalysis->id,
+            'strategy' => $strategy,
+            'is_scanned' => $microAnalysis->is_scanned,
+            'has_original' => $microAnalysis->hasOriginalContent(),
+            'has_text' => mb_strlen($microAnalysis->extracted_text ?? '') > 0,
+        ]);
+
+        // Estratégia 1: Imagem → enviar direto via visão
+        if ($strategy === 'vision' && $microAnalysis->hasOriginalContent()) {
+            try {
+                $base64 = $microAnalysis->getOriginalContentBase64();
+
+                if ($base64) {
+                    Log::info('MapDocumentAnalysisJob: Enviando imagem via visão direta', [
+                        'micro_id' => $microAnalysis->id,
+                        'mimetype' => $microAnalysis->mimetype,
+                    ]);
+
+                    return $aiService->analyzeImageDocument(
+                        $fullPrompt,
+                        $base64,
+                        $microAnalysis->mimetype,
+                        $this->deepThinkingEnabled,
+                        $systemPrompt
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('MapDocumentAnalysisJob: Visão falhou, usando fallback texto/OCR', [
+                    'micro_id' => $microAnalysis->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Estratégia 2: PDF → enviar nativo com plugin
+        if (($strategy === 'pdf_text' || $strategy === 'pdf_ocr') && $microAnalysis->hasOriginalContent()) {
+            try {
+                $base64 = $microAnalysis->getOriginalContentBase64();
+
+                if ($base64) {
+                    Log::info('MapDocumentAnalysisJob: Enviando PDF nativo', [
+                        'micro_id' => $microAnalysis->id,
+                        'engine' => $strategy === 'pdf_ocr' ? 'mistral-ocr' : 'pdf-text',
+                    ]);
+
+                    return $aiService->analyzePdfDocument(
+                        $fullPrompt,
+                        $base64,
+                        $microAnalysis->descricao . '.pdf',
+                        $microAnalysis->is_scanned ?? false,
+                        $this->deepThinkingEnabled,
+                        $systemPrompt
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('MapDocumentAnalysisJob: PDF nativo falhou, usando fallback texto', [
+                    'micro_id' => $microAnalysis->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Fallback: análise por texto extraído localmente
+        $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
+
+        Log::info('MapDocumentAnalysisJob: Usando análise por texto extraído', [
+            'micro_id' => $microAnalysis->id,
+            'text_length' => $textLength,
+            'structured_output' => config('services.openrouter.structured_map_enabled', false),
+        ]);
+
+        // Se structured outputs habilitado, usa JSON schema para resposta consistente
+        if (config('services.openrouter.structured_map_enabled', false)) {
+            try {
+                return $aiService->analyzeSingleDocumentStructured(
+                    $documentPrompt,
+                    $microAnalysis->extracted_text ?? '',
+                    $this->getMapAnalysisSchema(),
+                    $this->deepThinkingEnabled,
+                    $systemPrompt
+                );
+            } catch (\Exception $e) {
+                Log::warning('MapDocumentAnalysisJob: Structured output falhou, usando texto livre', [
+                    'micro_id' => $microAnalysis->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $aiService->analyzeSingleDocument(
+            $documentPrompt,
+            $microAnalysis->extracted_text ?? '',
+            $this->deepThinkingEnabled,
+            $systemPrompt
+        );
+    }
+
+    /**
      * Monta o prompt variável específico para cada documento.
      *
      * Contém apenas o descriptor do documento (nome, índice, tipo).
@@ -255,10 +428,18 @@ PROMPT;
      */
     private function buildDocumentPrompt(DocumentMicroAnalysis $microAnalysis): string
     {
-        // Adiciona contexto se o documento original era uma imagem (texto extraído via OCR)
-        $documentContext = $microAnalysis->isImage()
-            ? "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}\n**Tipo original:** {$microAnalysis->mimetype} (texto extraído via OCR)"
-            : "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
+        $strategy = $microAnalysis->processing_strategy ?? 'text';
+
+        $documentContext = "**Documento:** {$microAnalysis->descricao}\n**Índice:** {$microAnalysis->document_index}";
+
+        // Adiciona contexto sobre o tipo de processamento
+        if ($strategy === 'vision') {
+            $documentContext .= "\n**Tipo original:** {$microAnalysis->mimetype} (imagem do documento)";
+        } elseif ($strategy === 'pdf_ocr') {
+            $documentContext .= "\n**Tipo original:** PDF escaneado";
+        } elseif ($strategy === 'pdf_text') {
+            $documentContext .= "\n**Tipo original:** PDF com texto";
+        }
 
         return <<<PROMPT
 # DOCUMENTO A ANALISAR
@@ -310,6 +491,118 @@ Fatos narrados que são importantes para entender a narrativa processual
 ## 6. CONEXÕES
 Referências a outros documentos ou eventos do processo
 PROMPT;
+    }
+
+    /**
+     * Retorna o JSON Schema para a resposta estruturada da fase MAP.
+     * Usado com o recurso de structured outputs da OpenRouter.
+     */
+    private function getMapAnalysisSchema(): array
+    {
+        return [
+            'name' => 'document_analysis',
+            'strict' => true,
+            'schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'analise' => [
+                        'type' => 'string',
+                        'description' => 'Análise completa do documento em formato markdown, incluindo tipo de manifestação, partes, pedidos/decisões, fundamentos e fatos relevantes',
+                    ],
+                    'tipo_documento' => [
+                        'type' => 'string',
+                        'description' => 'Tipo do documento identificado (petição inicial, contestação, decisão, despacho, sentença, recurso, parecer, comprovante, etc.)',
+                    ],
+                    'classificacao' => [
+                        'type' => 'string',
+                        'enum' => ['favoravel', 'desfavoravel', 'neutro', 'informativo'],
+                        'description' => 'Classificação do documento quanto à posição processual',
+                    ],
+                    'relevancia' => [
+                        'type' => 'string',
+                        'enum' => ['alta', 'media', 'baixa'],
+                        'description' => 'Nível de relevância do documento para o desfecho do processo',
+                    ],
+                    'resumo' => [
+                        'type' => 'string',
+                        'description' => 'Resumo do documento em uma frase curta (máximo 200 caracteres)',
+                    ],
+                    'pontos_chave' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                        'description' => 'Lista dos pontos mais importantes encontrados no documento',
+                    ],
+                    'partes_mencionadas' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                        'description' => 'Nomes das partes mencionadas no documento',
+                    ],
+                    'valores_monetarios' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                        'description' => 'Valores monetários mencionados (formato: R$ X.XXX,XX)',
+                    ],
+                    'timeline' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'eventos' => [
+                                'type' => 'array',
+                                'items' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'data' => ['type' => ['string', 'null'], 'description' => 'Data no formato YYYY-MM-DD ou null'],
+                                        'data_original' => ['type' => 'string', 'description' => 'Texto original da data como aparece no documento'],
+                                        'tipo' => ['type' => 'string', 'description' => 'Tipo do evento (petição, decisão, prazo, fato, pagamento, etc.)'],
+                                        'descricao' => ['type' => 'string', 'description' => 'Descrição curta do evento'],
+                                        'valores' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Valores monetários associados'],
+                                        'relevancia' => ['type' => 'string', 'enum' => ['alta', 'media', 'baixa']],
+                                    ],
+                                    'required' => ['data', 'tipo', 'descricao', 'relevancia'],
+                                    'additionalProperties' => false,
+                                ],
+                            ],
+                            'documento_data' => ['type' => ['string', 'null'], 'description' => 'Data principal do documento (YYYY-MM-DD ou null)'],
+                            'documento_tipo' => ['type' => 'string', 'description' => 'Tipo identificado do documento'],
+                        ],
+                        'required' => ['eventos', 'documento_data', 'documento_tipo'],
+                        'additionalProperties' => false,
+                    ],
+                ],
+                'required' => ['analise', 'tipo_documento', 'classificacao', 'relevancia', 'resumo', 'pontos_chave', 'partes_mencionadas', 'valores_monetarios', 'timeline'],
+                'additionalProperties' => false,
+            ],
+        ];
+    }
+
+    /**
+     * Tenta parsear o resultado como JSON estruturado.
+     * Retorna o array parseado ou null se não for JSON válido.
+     */
+    private function parseStructuredResult(string $result): ?array
+    {
+        // Verifica se parece JSON (começa com { após whitespace)
+        $trimmed = ltrim($result);
+        if (!str_starts_with($trimmed, '{')) {
+            return null;
+        }
+
+        try {
+            $data = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
+
+            // Valida que tem pelo menos o campo 'analise'
+            if (!isset($data['analise']) || empty($data['analise'])) {
+                return null;
+            }
+
+            return $data;
+        } catch (\JsonException $e) {
+            Log::warning('MapDocumentAnalysisJob: Resultado parece JSON mas falhou ao parsear', [
+                'micro_id' => $this->microAnalysisId,
+                'error' => $e->getMessage(),
+                'preview' => mb_substr($result, 0, 200),
+            ]);
+            return null;
+        }
     }
 
     /**

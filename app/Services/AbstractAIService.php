@@ -76,6 +76,16 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
+     * Retorna o modelo ideal para uma estratégia de processamento.
+     * Implementação padrão retorna o modelo atual (sem roteamento).
+     * Providers específicos podem sobrescrever para rotear por tipo de documento.
+     */
+    public function getModelForStrategy(string $strategy): string
+    {
+        return $this->model;
+    }
+
+    /**
      * Limpa os metadados da análise
      */
     protected function resetAnalysisMetadata(): void
@@ -160,25 +170,24 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
-     * Analisa uma imagem (usado para documentos de imagem no map-reduce)
+     * Analisa uma imagem enviando diretamente ao modelo de visão
      */
     public function analyzeImageDocument(
         string $prompt,
         string $imageBase64,
         string $mimetype,
-        bool $deepThinkingEnabled = false
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
     ): string {
         $this->resetAnalysisMetadata();
 
-        Log::info('AbstractAIService: Analisando imagem', [
+        Log::info('AbstractAIService: Analisando imagem via visão', [
             'provider' => $this->getName(),
             'mimetype' => $mimetype,
-            'base64_length' => strlen($imageBase64)
+            'base64_length' => strlen($imageBase64),
         ]);
 
-        // Por padrão, retorna mensagem de que análise de imagem não é suportada
-        // Os providers que suportam devem sobrescrever este método
-        $result = $this->callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled);
+        $result = $this->callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt);
 
         $this->finalizeMetadata(1);
 
@@ -186,19 +195,88 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
-     * Faz chamada à API com uma imagem
-     * Os providers que suportam imagens devem sobrescrever este método
+     * Analisa um PDF enviando diretamente à API com plugin de parsing
      */
-    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false): string
+    public function analyzePdfDocument(
+        string $prompt,
+        string $pdfBase64,
+        string $filename,
+        bool $isScanned = false,
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
+    ): string {
+        $this->resetAnalysisMetadata();
+
+        Log::info('AbstractAIService: Analisando PDF nativo', [
+            'provider' => $this->getName(),
+            'filename' => $filename,
+            'is_scanned' => $isScanned,
+            'base64_length' => strlen($pdfBase64),
+        ]);
+
+        $result = $this->callAPIWithPdf($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt);
+
+        $this->finalizeMetadata(1);
+
+        return $result;
+    }
+
+    /**
+     * Faz chamada à API com uma imagem (multimodal)
+     * Os providers que suportam devem sobrescrever este método
+     */
+    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        // Fallback: analisa a descrição se não suportar imagens
         Log::warning('AbstractAIService: Provider não suporta análise de imagem, retornando descrição genérica', [
-            'provider' => $this->getName()
+            'provider' => $this->getName(),
         ]);
 
         return "**[IMAGEM - análise visual não disponível para este provider]**\n\n" .
             "O provider {$this->getName()} não suporta análise visual de imagens. " .
             "Este documento é uma imagem do tipo {$mimetype}.";
+    }
+
+    /**
+     * Faz chamada à API com um PDF nativo
+     * Os providers que suportam devem sobrescrever este método
+     */
+    protected function callAPIWithPdf(string $prompt, string $pdfBase64, string $filename, bool $isScanned = false, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
+    {
+        Log::warning('AbstractAIService: Provider não suporta envio nativo de PDF, retornando descrição genérica', [
+            'provider' => $this->getName(),
+        ]);
+
+        return "**[PDF - envio nativo não disponível para este provider]**\n\n" .
+            "O provider {$this->getName()} não suporta envio nativo de PDFs. " .
+            "O documento '{$filename}' precisa ser processado via extração de texto.";
+    }
+
+    /**
+     * Analisa um único documento retornando resposta JSON estruturada.
+     * Implementação padrão: delega para analyzeSingleDocument (sem structured output).
+     * OpenRouterService sobrescreve para usar response_format com json_schema.
+     */
+    public function analyzeSingleDocumentStructured(
+        string $prompt,
+        string $documentText,
+        array $jsonSchema,
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
+    ): string {
+        return $this->analyzeSingleDocument($prompt, $documentText, $deepThinkingEnabled, $systemPrompt);
+    }
+
+    /**
+     * Analisa texto com web search habilitado (usado no parecer final).
+     * Implementação padrão: delega para analyzeSingleDocument (sem web search).
+     * OpenRouterService sobrescreve para ativar o plugin de web search.
+     */
+    public function analyzeWithWebSearch(
+        string $prompt,
+        string $documentText,
+        bool $deepThinkingEnabled = false
+    ): string {
+        return $this->analyzeSingleDocument($prompt, $documentText, $deepThinkingEnabled);
     }
 
     /**

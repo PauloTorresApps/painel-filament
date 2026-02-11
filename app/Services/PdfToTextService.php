@@ -118,6 +118,76 @@ class PdfToTextService
     }
 
     /**
+     * Extrai texto do PDF e retorna junto com metadados de detecção.
+     * Útil para determinar a estratégia de processamento multimodal.
+     *
+     * @return array{text: string, is_scanned: bool, page_count: int, total_chars: int, chars_per_page: float}
+     */
+    public function extractTextWithMetadata(string $pdfContent, ?string $tempFileName = null): array
+    {
+        $tempPath = null;
+
+        try {
+            $decodedContent = base64_decode($pdfContent);
+
+            if ($decodedContent === false) {
+                throw new \Exception('Falha ao decodificar conteúdo base64');
+            }
+
+            $tempPath = $this->createTempFile($decodedContent, $tempFileName);
+
+            $text = $this->extractTextFromFile($tempPath);
+            $pageCount = $this->getPageCount($tempPath);
+
+            $totalChars = mb_strlen($text);
+            $charsPerPage = $pageCount > 0 ? $totalChars / $pageCount : 0;
+
+            $needsOcr = $totalChars < self::MIN_TOTAL_CHARS || $charsPerPage < self::MIN_CHARS_PER_PAGE;
+
+            Log::info('PdfToTextService: Análise inicial do PDF (com metadados)', [
+                'file' => $tempFileName,
+                'pages' => $pageCount,
+                'total_chars' => $totalChars,
+                'chars_per_page' => round($charsPerPage, 2),
+                'is_scanned' => $needsOcr,
+            ]);
+
+            // Aplica OCR local como fallback (texto extraído serve como backup)
+            if ($needsOcr && $this->isOcrAvailable()) {
+                Log::info('PdfToTextService: Texto insuficiente, aplicando OCR (fallback)', [
+                    'file' => $tempFileName,
+                    'total_chars' => $totalChars,
+                ]);
+
+                $ocrText = $this->extractTextWithOcr($tempPath, $pageCount);
+                $ocrChars = mb_strlen($ocrText);
+
+                if ($ocrChars > 0 && ($ocrChars > $totalChars || $totalChars < 50)) {
+                    $text = $ocrText;
+                }
+            }
+
+            $text = $this->normalizeText($text);
+
+            return [
+                'text' => $text,
+                'is_scanned' => $needsOcr,
+                'page_count' => $pageCount,
+                'total_chars' => mb_strlen($text),
+                'chars_per_page' => round($charsPerPage, 2),
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao extrair texto do PDF com metadados', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        } finally {
+            $this->cleanupTempFile($tempPath);
+        }
+    }
+
+    /**
      * Cria um arquivo temporário com o conteúdo do PDF
      */
     private function createTempFile(string $content, ?string $fileName = null): string

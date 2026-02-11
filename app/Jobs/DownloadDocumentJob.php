@@ -12,10 +12,14 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Job para download e extração de texto de um documento individual.
  * Utiliza o trait Batchable para processamento paralelo via Bus::batch().
+ *
+ * Além de extrair texto (fallback), salva o conteúdo original em disco
+ * para envio direto à OpenRouter via multimodal (visão/PDF nativo).
  */
 class DownloadDocumentJob implements ShouldQueue
 {
@@ -96,26 +100,49 @@ class DownloadDocumentJob implements ShouldQueue
             }
 
             $texto = '';
+            $originalContentPath = null;
+            $processingStrategy = 'text';
+            $isScanned = null;
+
+            // Salva o conteúdo original em disco para envio multimodal à OpenRouter
+            $originalContentPath = $this->saveOriginalContent(
+                $documentoCompleto['conteudo'],
+                $mimetype,
+                $this->documento['idDocumento']
+            );
 
             if ($isImage) {
-                // Para imagens, extrai texto usando OCR (Tesseract)
+                $processingStrategy = 'vision';
+
+                // Para imagens, extrai texto via OCR como fallback
                 $ocrService = new OcrService();
 
-                if (!$ocrService->isAvailable()) {
-                    throw new \Exception('Tesseract OCR não está disponível para extrair texto da imagem');
+                if ($ocrService->isAvailable()) {
+                    try {
+                        $texto = $ocrService->extractText(
+                            $documentoCompleto['conteudo'],
+                            $mimetype,
+                            "doc_{$this->documento['idDocumento']}"
+                        );
+
+                        Log::info('DownloadDocumentJob: Texto extraído da imagem via OCR (fallback)', [
+                            'id_documento' => $this->documento['idDocumento'],
+                            'chars_extracted' => mb_strlen($texto),
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::warning('DownloadDocumentJob: OCR falhou para imagem, análise dependerá de visão', [
+                            'id_documento' => $this->documento['idDocumento'],
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::info('DownloadDocumentJob: Tesseract indisponível, imagem será processada via visão', [
+                        'id_documento' => $this->documento['idDocumento'],
+                    ]);
                 }
-
-                $texto = $ocrService->extractText(
-                    $documentoCompleto['conteudo'],
-                    $mimetype,
-                    "doc_{$this->documento['idDocumento']}"
-                );
-
-                Log::info('DownloadDocumentJob: Texto extraído da imagem via OCR', [
-                    'id_documento' => $this->documento['idDocumento'],
-                    'chars_extracted' => mb_strlen($texto),
-                ]);
             } elseif ($isHtml) {
+                $processingStrategy = 'text';
+
                 // Para HTML, extrai texto removendo tags
                 $htmlService = new HtmlToTextService();
 
@@ -175,20 +202,35 @@ class DownloadDocumentJob implements ShouldQueue
                     }
                 }
             } else {
-                // Para PDFs e outros documentos, extrai texto
-                $texto = $pdfService->extractText(
+                // Para PDFs e outros documentos, extrai texto com metadados de detecção
+                $pdfResult = $pdfService->extractTextWithMetadata(
                     $documentoCompleto['conteudo'],
                     "doc_{$this->documento['idDocumento']}.pdf"
                 );
+
+                $texto = $pdfResult['text'];
+                $isScanned = $pdfResult['is_scanned'];
+                $processingStrategy = $isScanned ? 'pdf_ocr' : 'pdf_text';
+
+                Log::info('DownloadDocumentJob: PDF processado', [
+                    'id_documento' => $this->documento['idDocumento'],
+                    'chars_extracted' => mb_strlen($texto),
+                    'is_scanned' => $isScanned,
+                    'strategy' => $processingStrategy,
+                    'page_count' => $pdfResult['page_count'] ?? null,
+                ]);
             }
 
-            // Cria registro de micro-análise
+            // Cria registro de micro-análise com metadados multimodal
             DocumentMicroAnalysis::create([
                 'document_analysis_id' => $this->documentAnalysisId,
                 'document_index' => $this->documentIndex,
                 'id_documento' => $this->documento['idDocumento'],
                 'descricao' => $this->documento['descricao'] ?? "Documento " . ($this->documentIndex + 1),
                 'mimetype' => $mimetype,
+                'original_content_path' => $originalContentPath,
+                'processing_strategy' => $processingStrategy,
+                'is_scanned' => $isScanned,
                 'extracted_text' => $texto,
                 'status' => 'pending',
                 'reduce_level' => 0,
@@ -198,6 +240,8 @@ class DownloadDocumentJob implements ShouldQueue
                 'analysis_id' => $this->documentAnalysisId,
                 'document_index' => $this->documentIndex,
                 'chars' => mb_strlen($texto),
+                'strategy' => $processingStrategy,
+                'has_original' => $originalContentPath !== null,
             ]);
 
         } catch (\Exception $e) {
@@ -220,6 +264,63 @@ class DownloadDocumentJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    /**
+     * Salva o conteúdo original do documento em disco para envio multimodal.
+     * Retorna o path relativo ao disco 'local', ou null se falhar.
+     */
+    private function saveOriginalContent(string $base64Content, string $mimetype, string $idDocumento): ?string
+    {
+        try {
+            $extension = $this->getExtensionFromMimetype($mimetype);
+            $path = "document-originals/{$this->documentAnalysisId}/{$idDocumento}.{$extension}";
+
+            $decodedContent = base64_decode($base64Content);
+
+            if ($decodedContent === false) {
+                Log::warning('DownloadDocumentJob: Falha ao decodificar base64 para salvar original', [
+                    'id_documento' => $idDocumento,
+                ]);
+                return null;
+            }
+
+            Storage::disk('local')->put($path, $decodedContent);
+
+            Log::info('DownloadDocumentJob: Conteúdo original salvo em disco', [
+                'id_documento' => $idDocumento,
+                'path' => $path,
+                'size_bytes' => strlen($decodedContent),
+            ]);
+
+            return $path;
+        } catch (\Exception $e) {
+            Log::warning('DownloadDocumentJob: Falha ao salvar conteúdo original', [
+                'id_documento' => $idDocumento,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Determina a extensão do arquivo baseada no mimetype
+     */
+    private function getExtensionFromMimetype(string $mimetype): string
+    {
+        $map = [
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/bmp' => 'bmp',
+            'image/tiff' => 'tiff',
+            'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+            'text/html' => 'html',
+        ];
+
+        return $map[strtolower($mimetype)] ?? 'bin';
     }
 
     /**

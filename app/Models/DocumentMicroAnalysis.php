@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class DocumentMicroAnalysis extends Model
 {
@@ -13,6 +14,10 @@ class DocumentMicroAnalysis extends Model
         'id_documento',
         'descricao',
         'mimetype',
+        'original_content_path',
+        'processing_strategy',
+        'is_scanned',
+        'file_annotation_hash',
         'micro_analysis',
         'extracted_text',
         'status',
@@ -31,6 +36,7 @@ class DocumentMicroAnalysis extends Model
         'token_count' => 'integer',
         'processing_time_ms' => 'integer',
         'timeline_events' => 'array',
+        'is_scanned' => 'boolean',
     ];
 
     /**
@@ -47,6 +53,47 @@ class DocumentMicroAnalysis extends Model
     public function isImage(): bool
     {
         return $this->mimetype && str_starts_with($this->mimetype, 'image/');
+    }
+
+    /**
+     * Verifica se o documento é um PDF
+     */
+    public function isPdf(): bool
+    {
+        return $this->mimetype && str_contains(strtolower($this->mimetype), 'pdf');
+    }
+
+    /**
+     * Verifica se o conteúdo original está disponível em disco
+     */
+    public function hasOriginalContent(): bool
+    {
+        return $this->original_content_path && Storage::disk('local')->exists($this->original_content_path);
+    }
+
+    /**
+     * Lê o conteúdo original do disco e retorna como base64
+     */
+    public function getOriginalContentBase64(): ?string
+    {
+        if (!$this->hasOriginalContent()) {
+            return null;
+        }
+
+        $content = Storage::disk('local')->get($this->original_content_path);
+
+        return $content !== null ? base64_encode($content) : null;
+    }
+
+    /**
+     * Remove o arquivo original do disco para liberar espaço
+     */
+    public function deleteOriginalContent(): void
+    {
+        if ($this->original_content_path && Storage::disk('local')->exists($this->original_content_path)) {
+            Storage::disk('local')->delete($this->original_content_path);
+            $this->update(['original_content_path' => null]);
+        }
     }
 
     /**

@@ -4,14 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use MoeMizrak\LaravelOpenrouter\DTO\ChatData;
-use MoeMizrak\LaravelOpenrouter\DTO\ErrorData;
-use MoeMizrak\LaravelOpenrouter\DTO\ImageContentPartData;
-use MoeMizrak\LaravelOpenrouter\DTO\ImageUrlData;
-use MoeMizrak\LaravelOpenrouter\DTO\MessageData;
-use MoeMizrak\LaravelOpenrouter\DTO\TextContentData;
 use MoeMizrak\LaravelOpenrouter\Facades\LaravelOpenRouter;
-use MoeMizrak\LaravelOpenrouter\Types\RoleType;
 
 class OpenRouterService extends AbstractAIService
 {
@@ -124,13 +117,23 @@ class OpenRouterService extends AbstractAIService
     }
 
     /**
+     * Retorna o modelo ideal para uma estratégia de processamento.
+     * Permite roteamento de modelos por tipo de documento via config.
+     */
+    public function getModelForStrategy(string $strategy): string
+    {
+        $routing = config('services.openrouter.model_routing', []);
+
+        return $routing[$strategy] ?? $routing['default'] ?? $this->model;
+    }
+
+    /**
      * Faz a chamada HTTP para a API do OpenRouter
      * Usa chamadas HTTP diretas para evitar problemas de parsing do pacote com respostas de reasoning
      */
     protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
         return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
-            // Aplica rate limiting antes da chamada
             RateLimiterService::apply($this->getRateLimiterKey());
 
             $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
@@ -143,11 +146,9 @@ class OpenRouterService extends AbstractAIService
                 'has_custom_system_prompt' => $systemPrompt !== null,
             ]);
 
-            // Determina o conteúdo do system prompt
             $systemContent = $systemPrompt
                 ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
 
-            // Monta o payload da requisição
             $payload = [
                 'model' => $this->model,
                 'messages' => [
@@ -160,13 +161,10 @@ class OpenRouterService extends AbstractAIService
                 'max_tokens' => $useReasoning ? 16384 : 8192,
             ];
 
-            // Adiciona temperature apenas se não usar reasoning
             if (!$useReasoning) {
                 $payload['temperature'] = 0.4;
             }
 
-            // Adiciona reasoning se suportado e solicitado
-            // @see https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#enable-reasoning-with-default-config
             if ($useReasoning) {
                 $payload['reasoning'] = [
                     'enabled' => true,
@@ -175,242 +173,496 @@ class OpenRouterService extends AbstractAIService
                 ];
             }
 
-            // Monta a URL completa do endpoint de chat
-            $baseUrl = rtrim($this->apiUrl ?? 'https://openrouter.ai/api/v1', '/');
-            $chatEndpoint = $baseUrl . '/chat/completions';
-
-            // Faz a chamada HTTP direta
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json',
-                'HTTP-Referer' => config('app.url'),
-                'X-Title' => config('app.name'),
-            ])
-                ->timeout($this->timeout)
-                ->post($chatEndpoint, $payload);
-
-            // Verifica se houve erro HTTP
-            if ($response->failed()) {
-                $statusCode = $response->status();
-                $errorData = $response->json();
-                $errorMessage = $errorData['error']['message'] ?? $errorData['message'] ?? 'Erro desconhecido';
-
-                Log::error('OpenRouter API - Erro HTTP', [
-                    'status' => $statusCode,
-                    'error' => $errorMessage,
-                    'model' => $this->model,
-                ]);
-
-                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
-            }
-
-            $data = $response->json();
-
-            // Log do body completo para debug
-            Log::info('OpenRouter API - Body da resposta', [
-                'status' => $response->status(),
-                'body_preview' => mb_substr($response->body(), 0, 1000),
-                'data_keys' => is_array($data) ? array_keys($data) : 'not_array',
-            ]);
-
-            // Extrai informações de uso
-            $usage = $data['usage'] ?? null;
-            if ($usage) {
-                $usageArray = [
-                    'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
-                    'completion_tokens' => $usage['completion_tokens'] ?? 0,
-                    'total_tokens' => ($usage['prompt_tokens'] ?? 0) + ($usage['completion_tokens'] ?? 0),
-                ];
-
-                // Adiciona reasoning tokens se disponível
-                if (!empty($usage['completion_tokens_details']['reasoning_tokens'])) {
-                    $usageArray['completion_tokens_details'] = [
-                        'reasoning_tokens' => $usage['completion_tokens_details']['reasoning_tokens'],
-                    ];
-                }
-
-                $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
-
-                Log::info('OpenRouter API - Resposta recebida', [
-                    'model' => $data['model'] ?? $this->model,
-                    'reasoning_enabled' => $useReasoning,
-                    'usage' => $usageArray,
-                    'generation_id' => $data['id'] ?? 'N/A',
-                ]);
-            }
-
-            // Extrai o texto da resposta
-            $text = null;
-            $reasoningContent = null;
-
-            if (!empty($data['choices'])) {
-                $choice = $data['choices'][0];
-                $message = $choice['message'] ?? null;
-
-                if ($message) {
-                    // Log de debug para mensagens com reasoning
-                    if ($useReasoning) {
-                        Log::info('OpenRouter - Estrutura da mensagem', [
-                            'message_keys' => array_keys($message),
-                            'content_length' => mb_strlen($message['content'] ?? ''),
-                            'has_reasoning' => isset($message['reasoning']),
-                            'has_reasoning_details' => isset($message['reasoning_details']),
-                        ]);
-                    }
-
-                    // Extrai o conteúdo principal
-                    $text = $message['content'] ?? null;
-
-                    // Se content for um array, extrai o texto
-                    if (is_array($text)) {
-                        $textParts = array_filter($text, fn($part) => is_array($part) && ($part['type'] ?? '') === 'text');
-                        $text = implode("\n", array_map(fn($part) => $part['text'] ?? '', $textParts));
-                    }
-
-                    // Extrai o conteúdo de reasoning (para log)
-                    $reasoningContent = $message['reasoning'] ?? null;
-
-                    // Se content vazio mas há reasoning, usa reasoning como fallback
-                    if (empty($text) && !empty($reasoningContent)) {
-                        Log::info('OpenRouter - Content vazio, usando reasoning como resposta', [
-                            'reasoning_length' => mb_strlen($reasoningContent),
-                        ]);
-                        $text = $reasoningContent;
-                        $reasoningContent = null;
-                    }
-                }
-            }
-
-            if ($reasoningContent) {
-                Log::info('OpenRouter - Reasoning separado recebido', [
-                    'reasoning_length' => mb_strlen($reasoningContent),
-                ]);
-            }
-
-            if (empty($text)) {
-                Log::error('OpenRouter retornou resposta vazia', [
-                    'response_id' => $data['id'] ?? 'N/A',
-                    'model' => $data['model'] ?? $this->model,
-                    'has_reasoning' => !empty($reasoningContent),
-                    'reasoning_enabled' => $useReasoning,
-                    'choices_count' => count($data['choices'] ?? []),
-                    'raw_message' => json_encode($data['choices'][0]['message'] ?? [], JSON_UNESCAPED_UNICODE),
-                ]);
-                throw new \Exception('A API OpenRouter retornou uma resposta vazia. Tente novamente em alguns instantes.');
-            }
-
-            return $text;
+            return $this->executeAPICall($payload, 'texto', $useReasoning);
         });
     }
 
     /**
-     * Faz chamada à API com uma imagem (multimodal)
+     * Faz chamada à API com uma imagem (multimodal via HTTP direto)
+     * Suporta system prompt customizado para prompt caching e reasoning
      */
-    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false): string
+    protected function callAPIWithImage(string $prompt, string $imageBase64, string $mimetype, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
         if (!$this->supportsVision()) {
             Log::warning('OpenRouter: Modelo não suporta visão, usando fallback', [
-                'model' => $this->model
+                'model' => $this->model,
             ]);
-            return parent::callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled);
+            return parent::callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt);
         }
 
-        return $this->withRetry(function () use ($prompt, $imageBase64, $mimetype, $deepThinkingEnabled) {
-            // Aplica rate limiting antes da chamada
+        return $this->withRetry(function () use ($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt) {
             RateLimiterService::apply($this->getRateLimiterKey());
+
+            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
             Log::info('OpenRouter API - Iniciando chamada com imagem', [
                 'model' => $this->model,
                 'mimetype' => $mimetype,
                 'image_size' => strlen($imageBase64),
+                'reasoning_enabled' => $useReasoning,
+                'has_system_prompt' => $systemPrompt !== null,
             ]);
 
-            // Cria o data URL da imagem
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais e imagens. Forneça análises objetivas, estruturadas e fundamentadas.';
+
             $imageDataUrl = "data:{$mimetype};base64,{$imageBase64}";
 
-            // Monta as mensagens com conteúdo multimodal
-            $content = [
-                new TextContentData(
-                    type: 'text',
-                    text: $prompt
-                ),
-                new ImageContentPartData(
-                    type: 'image_url',
-                    image_url: new ImageUrlData(
-                        url: $imageDataUrl
-                    )
-                ),
-            ];
-
-            $messages = [
-                new MessageData(
-                    content: 'Você é um assistente jurídico especializado em análise de documentos processuais e imagens. Forneça análises objetivas, estruturadas e fundamentadas.',
-                    role: RoleType::SYSTEM
-                ),
-                new MessageData(
-                    content: $content,
-                    role: RoleType::USER
-                ),
-            ];
-
-            // Monta o request
-            $chatData = new ChatData(
-                messages: $messages,
-                model: $this->model,
-                max_tokens: 8192,
-                temperature: 0.4,
-                usage: true,
-            );
-
-            $response = LaravelOpenRouter::chatRequest($chatData);
-
-            // Verifica se é um erro
-            if ($response instanceof ErrorData) {
-                $statusCode = $response->code ?? 500;
-                $errorMessage = $response->message ?? 'Erro desconhecido';
-
-                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
-            }
-
-            // Extrai informações de uso
-            $usage = $response->usage ?? null;
-            if ($usage) {
-                $this->accumulateMetadata([
-                    'prompt_tokens' => $usage->prompt_tokens ?? 0,
-                    'completion_tokens' => $usage->completion_tokens ?? 0,
-                    'total_tokens' => ($usage->prompt_tokens ?? 0) + ($usage->completion_tokens ?? 0),
-                ], $response->model ?? $this->model);
-
-                Log::info('OpenRouter API - Resposta de imagem recebida', [
-                    'model' => $response->model ?? $this->model,
-                    'usage' => [
-                        'prompt_tokens' => $usage->prompt_tokens ?? 'N/A',
-                        'completion_tokens' => $usage->completion_tokens ?? 'N/A',
+            $payload = [
+                'model' => $this->model,
+                'messages' => [
+                    $this->buildSystemMessage($systemContent),
+                    [
+                        'role' => 'user',
+                        'content' => [
+                            ['type' => 'text', 'text' => $prompt],
+                            ['type' => 'image_url', 'image_url' => ['url' => $imageDataUrl]],
+                        ],
                     ],
-                ]);
+                ],
+                'max_tokens' => $useReasoning ? 16384 : 8192,
+            ];
+
+            if (!$useReasoning) {
+                $payload['temperature'] = 0.4;
             }
 
-            // Extrai o texto da resposta
-            $text = null;
-            if (!empty($response->choices)) {
-                $choice = $response->choices[0];
-                $message = $choice->message ?? null;
+            if ($useReasoning) {
+                $payload['reasoning'] = [
+                    'enabled' => true,
+                    'effort' => 'high',
+                    'exclude' => false,
+                ];
+            }
 
-                if ($message) {
-                    $text = $message->content ?? null;
+            return $this->executeAPICall($payload, 'imagem', $useReasoning);
+        });
+    }
+
+    /**
+     * Faz chamada à API com um PDF nativo (via plugin de parsing)
+     * Usa pdf-text (grátis) para PDFs textuais e mistral-ocr (pago) para escaneados
+     */
+    protected function callAPIWithPdf(string $prompt, string $pdfBase64, string $filename, bool $isScanned = false, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
+    {
+        return $this->withRetry(function () use ($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt) {
+            RateLimiterService::apply($this->getRateLimiterKey());
+
+            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+            $pdfEngine = $isScanned ? 'mistral-ocr' : 'pdf-text';
+
+            Log::info('OpenRouter API - Iniciando chamada com PDF nativo', [
+                'model' => $this->model,
+                'filename' => $filename,
+                'is_scanned' => $isScanned,
+                'pdf_engine' => $pdfEngine,
+                'pdf_size' => strlen($pdfBase64),
+                'reasoning_enabled' => $useReasoning,
+            ]);
+
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
+
+            $pdfDataUrl = "data:application/pdf;base64,{$pdfBase64}";
+
+            $payload = [
+                'model' => $this->model,
+                'messages' => [
+                    $this->buildSystemMessage($systemContent),
+                    [
+                        'role' => 'user',
+                        'content' => [
+                            ['type' => 'text', 'text' => $prompt],
+                            ['type' => 'file', 'file' => [
+                                'filename' => $filename,
+                                'file_data' => $pdfDataUrl,
+                            ]],
+                        ],
+                    ],
+                ],
+                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'plugins' => $this->buildPlugins(
+                    [['id' => 'file-parser', 'pdf' => ['engine' => $pdfEngine]]],
+                ),
+            ];
+
+            if (!$useReasoning) {
+                $payload['temperature'] = 0.4;
+            }
+
+            if ($useReasoning) {
+                $payload['reasoning'] = [
+                    'enabled' => true,
+                    'effort' => 'high',
+                    'exclude' => false,
+                ];
+            }
+
+            return $this->executeAPICall($payload, "PDF ({$pdfEngine})", $useReasoning);
+        });
+    }
+
+    /**
+     * Faz chamada à API solicitando resposta em JSON estruturado.
+     * Usa response_format com json_schema + plugin response-healing.
+     */
+    protected function callAPIStructured(string $prompt, array $jsonSchema, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
+    {
+        return $this->withRetry(function () use ($prompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt) {
+            RateLimiterService::apply($this->getRateLimiterKey());
+
+            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+
+            Log::info('OpenRouter API - Iniciando chamada estruturada (JSON)', [
+                'model' => $this->model,
+                'schema_name' => $jsonSchema['name'] ?? 'unknown',
+                'reasoning_enabled' => $useReasoning,
+                'prompt_length' => mb_strlen($prompt),
+            ]);
+
+            $systemContent = $systemPrompt
+                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas. Responda EXCLUSIVAMENTE no formato JSON solicitado.';
+
+            $payload = [
+                'model' => $this->model,
+                'messages' => [
+                    $this->buildSystemMessage($systemContent),
+                    [
+                        'role' => 'user',
+                        'content' => $prompt,
+                    ],
+                ],
+                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'response_format' => [
+                    'type' => 'json_schema',
+                    'json_schema' => $jsonSchema,
+                ],
+                'plugins' => $this->buildPlugins(
+                    [['id' => 'response-healing']],
+                ),
+            ];
+
+            if (!$useReasoning) {
+                $payload['temperature'] = 0.3;
+            }
+
+            if ($useReasoning) {
+                $payload['reasoning'] = [
+                    'enabled' => true,
+                    'effort' => 'high',
+                    'exclude' => false,
+                ];
+            }
+
+            return $this->executeAPICall($payload, 'JSON estruturado', $useReasoning);
+        });
+    }
+
+    /**
+     * Monta o objeto `provider` para routing/fallback/performance da OpenRouter.
+     * Configurado via .env: OPENROUTER_PROVIDER_ORDER, OPENROUTER_PROVIDER_SORT, etc.
+     */
+    private function buildProviderRouting(): ?array
+    {
+        $provider = [];
+
+        // Ordem de providers (ex: 'anthropic,google,openai')
+        $order = config('services.openrouter.provider_order');
+        if ($order) {
+            $provider['order'] = array_map('trim', explode(',', $order));
+        }
+
+        // Permitir fallback automático
+        $provider['allow_fallbacks'] = (bool) config('services.openrouter.allow_fallbacks', true);
+
+        // Só roteia para providers que suportam todos os parâmetros
+        if (config('services.openrouter.require_parameters', true)) {
+            $provider['require_parameters'] = true;
+        }
+
+        // Ordenação por critério (price, throughput, latency)
+        $sort = config('services.openrouter.provider_sort');
+        if ($sort) {
+            $provider['sort'] = $sort;
+        }
+
+        // Teto de preço por 1M tokens
+        $maxPricePrompt = config('services.openrouter.max_price_prompt');
+        $maxPriceCompletion = config('services.openrouter.max_price_completion');
+        if ($maxPricePrompt || $maxPriceCompletion) {
+            $maxPrice = [];
+            if ($maxPricePrompt) {
+                $maxPrice['prompt'] = (float) $maxPricePrompt;
+            }
+            if ($maxPriceCompletion) {
+                $maxPrice['completion'] = (float) $maxPriceCompletion;
+            }
+            $provider['max_price'] = $maxPrice;
+        }
+
+        return !empty($provider) ? $provider : null;
+    }
+
+    /**
+     * Monta o array de transforms (ex: middle-out) para o payload.
+     */
+    private function buildTransforms(): ?array
+    {
+        $transforms = config('services.openrouter.transforms');
+
+        if ($transforms === '' || $transforms === null || $transforms === false) {
+            return null;
+        }
+
+        return array_map('trim', explode(',', $transforms));
+    }
+
+    /**
+     * Monta o array de plugins para o payload.
+     * Recebe plugins base (ex: file-parser do PDF) e mescla opcionais.
+     */
+    private function buildPlugins(array $basePlugins = [], bool $withWebSearch = false): ?array
+    {
+        $plugins = $basePlugins;
+
+        if ($withWebSearch && config('services.openrouter.web_search_enabled', false)) {
+            $plugins[] = [
+                'id' => 'web',
+                'max_results' => (int) config('services.openrouter.web_search_max_results', 3),
+                'search_prompt' => 'Busque legislação, jurisprudência e normas jurídicas brasileiras relevantes para a análise.',
+            ];
+        }
+
+        return !empty($plugins) ? $plugins : null;
+    }
+
+    /**
+     * Executa chamada HTTP à API e processa a resposta.
+     * Método compartilhado entre callAPI, callAPIWithImage e callAPIWithPdf.
+     */
+    private function executeAPICall(array $payload, string $callType, bool $useReasoning): string
+    {
+        // Injeta provider routing (fallbacks, ordenação, teto de preço)
+        if (!isset($payload['provider'])) {
+            $providerRouting = $this->buildProviderRouting();
+            if ($providerRouting) {
+                $payload['provider'] = $providerRouting;
+            }
+        }
+
+        // Injeta transforms (middle-out) se não já definido
+        if (!isset($payload['transforms'])) {
+            $transforms = $this->buildTransforms();
+            if ($transforms !== null) {
+                $payload['transforms'] = $transforms;
+            }
+        }
+
+        $baseUrl = rtrim($this->apiUrl ?? 'https://openrouter.ai/api/v1', '/');
+        $chatEndpoint = $baseUrl . '/chat/completions';
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->apiKey,
+            'Content-Type' => 'application/json',
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => config('app.name'),
+        ])
+            ->timeout($this->timeout)
+            ->post($chatEndpoint, $payload);
+
+        if ($response->failed()) {
+            $statusCode = $response->status();
+            $errorData = $response->json();
+            $errorMessage = $errorData['error']['message'] ?? $errorData['message'] ?? 'Erro desconhecido';
+
+            Log::error("OpenRouter API - Erro HTTP ({$callType})", [
+                'status' => $statusCode,
+                'error' => $errorMessage,
+                'model' => $this->model,
+            ]);
+
+            throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
+        }
+
+        $data = $response->json();
+
+        Log::info("OpenRouter API - Body da resposta ({$callType})", [
+            'status' => $response->status(),
+            'body_preview' => mb_substr($response->body(), 0, 1000),
+            'data_keys' => is_array($data) ? array_keys($data) : 'not_array',
+        ]);
+
+        // Extrai informações de uso
+        $usage = $data['usage'] ?? null;
+        if ($usage) {
+            $usageArray = [
+                'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
+                'completion_tokens' => $usage['completion_tokens'] ?? 0,
+                'total_tokens' => ($usage['prompt_tokens'] ?? 0) + ($usage['completion_tokens'] ?? 0),
+            ];
+
+            if (!empty($usage['completion_tokens_details']['reasoning_tokens'])) {
+                $usageArray['completion_tokens_details'] = [
+                    'reasoning_tokens' => $usage['completion_tokens_details']['reasoning_tokens'],
+                ];
+            }
+
+            $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
+
+            Log::info("OpenRouter API - Resposta recebida ({$callType})", [
+                'model' => $data['model'] ?? $this->model,
+                'reasoning_enabled' => $useReasoning,
+                'usage' => $usageArray,
+                'generation_id' => $data['id'] ?? 'N/A',
+            ]);
+        }
+
+        // Captura annotations para cache (P5)
+        $annotations = $data['annotations'] ?? null;
+        if ($annotations) {
+            $this->lastAnalysisMetadata['file_annotations'] = $annotations;
+        }
+
+        // Extrai o texto da resposta
+        $text = null;
+        $reasoningContent = null;
+
+        if (!empty($data['choices'])) {
+            $choice = $data['choices'][0];
+            $message = $choice['message'] ?? null;
+
+            if ($message) {
+                if ($useReasoning) {
+                    Log::info("OpenRouter - Estrutura da mensagem ({$callType})", [
+                        'message_keys' => array_keys($message),
+                        'content_length' => mb_strlen($message['content'] ?? ''),
+                        'has_reasoning' => isset($message['reasoning']),
+                    ]);
+                }
+
+                $text = $message['content'] ?? null;
+
+                if (is_array($text)) {
+                    $textParts = array_filter($text, fn($part) => is_array($part) && ($part['type'] ?? '') === 'text');
+                    $text = implode("\n", array_map(fn($part) => $part['text'] ?? '', $textParts));
+                }
+
+                $reasoningContent = $message['reasoning'] ?? null;
+
+                if (empty($text) && !empty($reasoningContent)) {
+                    Log::info("OpenRouter - Content vazio, usando reasoning ({$callType})", [
+                        'reasoning_length' => mb_strlen($reasoningContent),
+                    ]);
+                    $text = $reasoningContent;
+                    $reasoningContent = null;
                 }
             }
+        }
 
-            if (empty($text)) {
-                Log::error('OpenRouter retornou resposta vazia para imagem', [
-                    'response_id' => $response->id ?? 'N/A',
-                    'model' => $response->model ?? $this->model,
-                ]);
-                throw new \Exception('A API OpenRouter retornou uma resposta vazia para a imagem. Tente novamente.');
+        if ($reasoningContent) {
+            Log::info("OpenRouter - Reasoning separado recebido ({$callType})", [
+                'reasoning_length' => mb_strlen($reasoningContent),
+            ]);
+        }
+
+        if (empty($text)) {
+            Log::error("OpenRouter retornou resposta vazia ({$callType})", [
+                'response_id' => $data['id'] ?? 'N/A',
+                'model' => $data['model'] ?? $this->model,
+                'has_reasoning' => !empty($reasoningContent),
+                'choices_count' => count($data['choices'] ?? []),
+            ]);
+            throw new \Exception("A API OpenRouter retornou uma resposta vazia para {$callType}. Tente novamente em alguns instantes.");
+        }
+
+        return $text;
+    }
+
+    /**
+     * Analisa um único documento retornando JSON estruturado.
+     * Usa callAPIStructured com response_format + response-healing plugin.
+     */
+    public function analyzeSingleDocumentStructured(
+        string $prompt,
+        string $documentText,
+        array $jsonSchema,
+        bool $deepThinkingEnabled = false,
+        ?string $systemPrompt = null
+    ): string {
+        $this->resetAnalysisMetadata();
+
+        $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO\n\n" . $documentText;
+
+        $result = $this->callAPIStructured($fullPrompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt);
+
+        $this->finalizeMetadata(1);
+
+        return $result;
+    }
+
+    /**
+     * Analisa texto com web search habilitado (usado no parecer final).
+     * Ativa o plugin de web search da OpenRouter para consultar legislação e jurisprudência.
+     */
+    public function analyzeWithWebSearch(
+        string $prompt,
+        string $documentText,
+        bool $deepThinkingEnabled = false
+    ): string {
+        if (!config('services.openrouter.web_search_enabled', false)) {
+            return $this->analyzeSingleDocument($prompt, $documentText, $deepThinkingEnabled);
+        }
+
+        $this->resetAnalysisMetadata();
+
+        $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO\n\n" . $documentText;
+
+        $result = $this->withRetry(function () use ($fullPrompt, $deepThinkingEnabled) {
+            RateLimiterService::apply($this->getRateLimiterKey());
+
+            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+
+            Log::info('OpenRouter API - Iniciando chamada com web search', [
+                'model' => $this->model,
+                'reasoning_enabled' => $useReasoning,
+                'prompt_length' => mb_strlen($fullPrompt),
+            ]);
+
+            $systemContent = 'Você é um assistente jurídico especializado em análise de documentos processuais. '
+                . 'Forneça análises objetivas, estruturadas e fundamentadas. '
+                . 'Ao citar legislação ou jurisprudência, indique a fonte e verifique se está atualizada.';
+
+            $payload = [
+                'model' => $this->model,
+                'messages' => [
+                    $this->buildSystemMessage($systemContent),
+                    [
+                        'role' => 'user',
+                        'content' => $fullPrompt,
+                    ],
+                ],
+                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'plugins' => $this->buildPlugins([], true),
+            ];
+
+            if (!$useReasoning) {
+                $payload['temperature'] = 0.4;
             }
 
-            return $text;
+            if ($useReasoning) {
+                $payload['reasoning'] = [
+                    'enabled' => true,
+                    'effort' => 'high',
+                    'exclude' => false,
+                ];
+            }
+
+            return $this->executeAPICall($payload, 'texto+websearch', $useReasoning);
         });
+
+        $this->finalizeMetadata(1);
+
+        return $result;
     }
 
     /**

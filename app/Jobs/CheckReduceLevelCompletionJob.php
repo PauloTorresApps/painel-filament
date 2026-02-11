@@ -160,8 +160,9 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         // Monta prompt final
         $prompt = $this->buildFinalPrompt();
 
-        // Chama a IA para gerar análise final (rate limiting aplicado internamente)
-        $finalAnalysis = $aiService->analyzeSingleDocument(
+        // Chama a IA para gerar análise final
+        // Usa web search se habilitado, para referenciar legislação/jurisprudência atualizada
+        $finalAnalysis = $aiService->analyzeWithWebSearch(
             $prompt,
             $consolidatedText,
             $this->deepThinkingEnabled
