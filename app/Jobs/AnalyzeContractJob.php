@@ -219,13 +219,13 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Envia e-mail com PDF se o usuário habilitou
             if ($user->wantsEmailFor('contract_analysis')) {
                 try {
-                    Mail::to($user)->queue(new ContractAnalysisCompleted($analysis, $user));
-                    Log::info('AnalyzeContractJob: E-mail de análise enfileirado', [
+                    Mail::to($user)->send(new ContractAnalysisCompleted($analysis, $user));
+                    Log::info('AnalyzeContractJob: E-mail de análise enviado', [
                         'user_id' => $user->id,
                         'analysis_id' => $analysis->id,
                     ]);
                 } catch (\Exception $emailException) {
-                    Log::warning('AnalyzeContractJob: Falha ao enfileirar e-mail', [
+                    Log::warning('AnalyzeContractJob: Falha ao enviar e-mail', [
                         'user_id' => $user->id,
                         'error' => $emailException->getMessage(),
                     ]);

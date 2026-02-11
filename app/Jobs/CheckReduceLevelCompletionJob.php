@@ -346,13 +346,13 @@ PROMPT;
                 // Envia e-mail com PDF se o usuário habilitou
                 if ($user->wantsEmailFor('process_analysis')) {
                     try {
-                        Mail::to($user)->queue(new ProcessAnalysisCompleted($documentAnalysis, $user));
-                        Log::info('CheckReduceLevelCompletionJob: E-mail de análise enfileirado', [
+                        Mail::to($user)->send(new ProcessAnalysisCompleted($documentAnalysis, $user));
+                        Log::info('CheckReduceLevelCompletionJob: E-mail de análise enviado', [
                             'user_id' => $user->id,
                             'analysis_id' => $documentAnalysis->id,
                         ]);
                     } catch (\Exception $emailException) {
-                        Log::warning('CheckReduceLevelCompletionJob: Falha ao enfileirar e-mail', [
+                        Log::warning('CheckReduceLevelCompletionJob: Falha ao enviar e-mail', [
                             'user_id' => $user->id,
                             'error' => $emailException->getMessage(),
                         ]);

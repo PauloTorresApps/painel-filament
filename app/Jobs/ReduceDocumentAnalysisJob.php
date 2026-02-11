@@ -7,6 +7,7 @@ use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Models\User;
+use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use Illuminate\Bus\Batch;
@@ -14,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Filament\Notifications\Notification as FilamentNotification;
 
@@ -455,17 +457,33 @@ PROMPT;
                 $totalDocs = $documentAnalysis->total_documents ?? 0;
                 $timeSeconds = round(($documentAnalysis->processing_time_ms ?? 0) / 1000, 2);
 
-                FilamentNotification::make()
-                    ->title('Análise Concluída')
-                    ->body("Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída com sucesso! Tempo total: {$timeSeconds}s")
-                    ->status('success')
-                    ->sendToDatabase($user);
+                NotificationService::success(
+                    $user,
+                    'Análise Concluída',
+                    "Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída com sucesso! Tempo total: {$timeSeconds}s"
+                );
+
+                // Envia e-mail com PDF se o usuário habilitou
+                if ($user->wantsEmailFor('process_analysis')) {
+                    try {
+                        Mail::to($user)->send(new ProcessAnalysisCompleted($documentAnalysis, $user));
+                        Log::info('ReduceDocumentAnalysisJob: E-mail de análise enviado', [
+                            'user_id' => $user->id,
+                            'analysis_id' => $documentAnalysis->id,
+                        ]);
+                    } catch (\Exception $emailException) {
+                        Log::warning('ReduceDocumentAnalysisJob: Falha ao enviar e-mail', [
+                            'user_id' => $user->id,
+                            'error' => $emailException->getMessage(),
+                        ]);
+                    }
+                }
             } else {
-                FilamentNotification::make()
-                    ->title('Análise Falhou')
-                    ->body("Erro na análise do processo {$documentAnalysis->numero_processo}: " . ($errorMessage ?? 'Erro desconhecido'))
-                    ->status('danger')
-                    ->sendToDatabase($user);
+                NotificationService::error(
+                    $user,
+                    'Análise Falhou',
+                    "Erro na análise do processo {$documentAnalysis->numero_processo}: " . ($errorMessage ?? 'Erro desconhecido')
+                );
             }
         } catch (\Exception $e) {
             Log::warning('ReduceDocumentAnalysisJob: Erro ao notificar usuário', [

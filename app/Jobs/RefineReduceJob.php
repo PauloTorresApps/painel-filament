@@ -6,11 +6,13 @@ use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
+use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * Job que implementa a estratégia de "Refinamento Sequencial" (Refine Strategy).
@@ -226,6 +228,23 @@ class RefineReduceJob implements ShouldQueue
                 'Análise Concluída',
                 "Análise de {$totalDocs} documento(s) do processo {$documentAnalysis->numero_processo} concluída!"
             );
+
+            // Envia e-mail com PDF se o usuário habilitou
+            $user = User::find($documentAnalysis->user_id);
+            if ($user && $user->wantsEmailFor('process_analysis')) {
+                try {
+                    Mail::to($user)->send(new ProcessAnalysisCompleted($documentAnalysis, $user));
+                    Log::info('RefineReduceJob: E-mail de análise enviado', [
+                        'user_id' => $user->id,
+                        'analysis_id' => $documentAnalysis->id,
+                    ]);
+                } catch (\Exception $emailException) {
+                    Log::warning('RefineReduceJob: Falha ao enviar e-mail', [
+                        'user_id' => $user->id,
+                        'error' => $emailException->getMessage(),
+                    ]);
+                }
+            }
 
         } catch (\Exception $e) {
             Log::error('RefineReduceJob: Erro no processamento', [
