@@ -174,7 +174,7 @@
                         class="w-10 h-10 rounded-full flex items-center justify-center mb-2 {{ $isPending ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500' : '' }}"
                         @if($circleStyle) style="{{ $circleStyle }}" @endif
                     >
-                        <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5 {{ $isCurrent && $status === 'processing' ? 'animate-spin' : '' }}" />
+                        <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5 {{ $isCurrent && $status === 'processing' ? 'animate-phase-pulse' : '' }}" />
                     </div>
                     <span
                         class="text-xs font-medium text-center {{ $isPending ? 'text-gray-400 dark:text-gray-500' : '' }}"
@@ -328,3 +328,13 @@
         Atualização automática a cada 5 segundos
     </div>
 </div>
+
+<style>
+    @keyframes phase-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.35); opacity: 0.7; }
+    }
+    .animate-phase-pulse {
+        animation: phase-pulse 1s ease-in-out infinite;
+    }
+</style>
