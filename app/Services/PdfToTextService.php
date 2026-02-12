@@ -4,7 +4,6 @@ namespace App\Services;
 
 use Spatie\PdfToText\Pdf;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class PdfToTextService
 {
@@ -200,70 +199,6 @@ class PdfToTextService
         }
 
         return $tempPath;
-    }
-
-    /**
-     * Extrai texto de um arquivo PDF diretamente pelo caminho
-     *
-     * @param string $filePath Caminho completo do arquivo PDF
-     * @return string Texto extraído do PDF
-     * @throws \Exception
-     */
-    public function extractTextFromPath(string $filePath): string
-    {
-        try {
-            if (!file_exists($filePath)) {
-                throw new \Exception("Arquivo não encontrado: {$filePath}");
-            }
-
-            // Primeiro, tenta extrair texto normalmente
-            $text = $this->extractTextFromFile($filePath);
-            $pageCount = $this->getPageCount($filePath);
-
-            // Verifica se o PDF parece ser escaneado
-            $totalChars = mb_strlen($text);
-            $charsPerPage = $pageCount > 0 ? $totalChars / $pageCount : 0;
-
-            // Aplica OCR se texto total ou por página for insuficiente
-            $needsOcr = $totalChars < self::MIN_TOTAL_CHARS || $charsPerPage < self::MIN_CHARS_PER_PAGE;
-
-            if ($needsOcr && $this->isOcrAvailable()) {
-                Log::info('PdfToTextService: Texto insuficiente, aplicando OCR', [
-                    'file_path' => $filePath,
-                    'total_chars' => $totalChars,
-                    'chars_per_page' => round($charsPerPage, 2),
-                ]);
-
-                $ocrText = $this->extractTextWithOcr($filePath, $pageCount);
-                $ocrChars = mb_strlen($ocrText);
-
-                // Usa OCR se extraiu algo significativo ou texto original era mínimo
-                if ($ocrChars > 0 && ($ocrChars > $totalChars || $totalChars < 50)) {
-                    $text = $ocrText;
-
-                    Log::info('PdfToTextService: Usando texto do OCR', [
-                        'file_path' => $filePath,
-                        'original_chars' => $totalChars,
-                        'ocr_chars' => $ocrChars,
-                    ]);
-                }
-            } elseif ($needsOcr && !$this->isOcrAvailable()) {
-                Log::warning('PdfToTextService: PDF precisa de OCR mas Tesseract não está disponível', [
-                    'file_path' => $filePath,
-                    'total_chars' => $totalChars,
-                ]);
-            }
-
-            return $this->normalizeText($text);
-
-        } catch (\Exception $e) {
-            Log::error('Erro ao extrair texto do PDF', [
-                'file_path' => $filePath,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
-        }
     }
 
     /**
@@ -513,25 +448,4 @@ class PdfToTextService
         @rmdir($dir);
     }
 
-    /**
-     * Verifica se o pdftotext está instalado no sistema
-     */
-    public function isPdfToTextInstalled(): bool
-    {
-        try {
-            $pdf = new Pdf();
-            $pdf->setBinary('/usr/bin/pdftotext');
-            return true;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Verifica se o suporte completo a OCR está disponível
-     */
-    public function isFullOcrSupported(): bool
-    {
-        return $this->isOcrAvailable();
-    }
 }

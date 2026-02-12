@@ -85,16 +85,4 @@ class Setting extends Model
         };
     }
 
-    /**
-     * Obtém todas as configurações de um grupo
-     */
-    public static function getGroup(string $group): array
-    {
-        return self::where('group', $group)
-            ->get()
-            ->mapWithKeys(function ($setting) {
-                return [$setting->key => self::castValue($setting->value, $setting->type)];
-            })
-            ->toArray();
-    }
 }

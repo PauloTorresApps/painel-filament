@@ -74,14 +74,6 @@ class NotificationService
     }
 
     /**
-     * Envia uma notificação de aviso
-     */
-    public static function warning(?User $user, string $title, string $body): void
-    {
-        self::send($user, $title, $body, 'warning');
-    }
-
-    /**
      * Envia uma notificação informativa
      */
     public static function info(?User $user, string $title, string $body): void

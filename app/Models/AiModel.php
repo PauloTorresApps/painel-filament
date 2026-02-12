@@ -37,19 +37,4 @@ class AiModel extends Model
         ];
     }
 
-    /**
-     * Scope para filtrar apenas modelos ativos
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
-    }
-
-    /**
-     * Scope para filtrar por provider
-     */
-    public function scopeByProvider($query, string $provider)
-    {
-        return $query->where('provider', $provider);
-    }
 }

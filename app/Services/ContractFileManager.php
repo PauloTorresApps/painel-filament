@@ -133,39 +133,8 @@ class ContractFileManager
     }
 
     /**
-     * Verifica se um arquivo existe
-     * 
-     * @param ContractAnalysis $analysis Análise a verificar
-     * @return bool
-     */
-    public function fileExists(ContractAnalysis $analysis): bool
-    {
-        return $analysis->file_path && Storage::exists($analysis->file_path);
-    }
-
-    /**
-     * Obtém informações sobre o arquivo
-     * 
-     * @param ContractAnalysis $analysis Análise a verificar
-     * @return array|null Informações do arquivo ou null se não existir
-     */
-    public function getFileInfo(ContractAnalysis $analysis): ?array
-    {
-        if (!$this->fileExists($analysis)) {
-            return null;
-        }
-
-        return [
-            'path' => $analysis->file_path,
-            'size' => Storage::size($analysis->file_path),
-            'last_modified' => Storage::lastModified($analysis->file_path),
-            'mime_type' => Storage::mimeType($analysis->file_path),
-        ];
-    }
-
-    /**
      * Gera um nome único para o arquivo
-     * 
+     *
      * @param UploadedFile $file Arquivo
      * @param ContractAnalysis $analysis Análise
      * @return string Nome único
@@ -177,25 +146,5 @@ class ContractFileManager
         $randomString = substr(md5(uniqid()), 0, 8);
 
         return "contract-{$analysis->id}-{$timestamp}-{$randomString}.{$extension}";
-    }
-
-    /**
-     * Retorna o tamanho máximo permitido em MB
-     * 
-     * @return int
-     */
-    public static function getMaxFileSizeMB(): int
-    {
-        return self::MAX_FILE_SIZE / (1024 * 1024);
-    }
-
-    /**
-     * Retorna as extensões permitidas
-     * 
-     * @return array
-     */
-    public static function getAllowedExtensions(): array
-    {
-        return self::ALLOWED_EXTENSIONS;
     }
 }

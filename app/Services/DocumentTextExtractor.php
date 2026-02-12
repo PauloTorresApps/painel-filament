@@ -100,18 +100,4 @@ class DocumentTextExtractor
         return $text;
     }
 
-    /**
-     * Retorna estatísticas sobre o texto extraído
-     * 
-     * @param string $text Texto extraído
-     * @return array Estatísticas (caracteres, palavras, linhas)
-     */
-    public function getTextStats(string $text): array
-    {
-        return [
-            'characters' => mb_strlen($text),
-            'words' => str_word_count($text),
-            'lines' => substr_count($text, "\n") + 1,
-        ];
-    }
 }

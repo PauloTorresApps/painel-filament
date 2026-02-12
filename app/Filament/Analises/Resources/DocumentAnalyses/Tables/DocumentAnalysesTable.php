@@ -4,7 +4,6 @@ namespace App\Filament\Analises\Resources\DocumentAnalyses\Tables;
 
 use App\Jobs\DispatchMapPhaseJob;
 use App\Jobs\ReduceDocumentAnalysisJob;
-use App\Jobs\ResumeAnalysisJob;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use Filament\Actions\Action;

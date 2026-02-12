@@ -112,22 +112,6 @@ class EprocService
     }
 
     /**
-     * Lista todas as funções disponíveis no WSDL
-     */
-    public function listarFuncoes()
-    {
-        return $this->client->__getFunctions();
-    }
-
-    /**
-     * Lista todos os tipos disponíveis no WSDL
-     */
-    public function listarTipos()
-    {
-        return $this->client->__getTypes();
-    }
-
-    /**
      * Consulta um processo pelo número
      */
     public function consultarProcesso(
@@ -839,11 +823,4 @@ XML;
         return str_replace('[servico]', $this->urlBase, $url);
     }
 
-    /**
-     * Obtém a URL do documento para visualização
-     */
-    public function getUrlDocumento(string $idDocumento): string
-    {
-        return $this->ajustarUrlServico($idDocumento);
-    }
 }

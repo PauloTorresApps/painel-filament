@@ -120,19 +120,4 @@ class PdfService
         $pdf->setOption('margin_right', 20);
     }
 
-    /**
-     * Gera PDF para análise contratual
-     */
-    public static function generateContractAnalysis(array $data)
-    {
-        return self::generate('pdf.contract-analysis', $data, 'DejaVu Sans');
-    }
-
-    /**
-     * Gera PDF para parecer jurídico
-     */
-    public static function generateLegalOpinion(array $data)
-    {
-        return self::generate('pdf.legal-opinion', $data, 'DejaVu Serif');
-    }
 }

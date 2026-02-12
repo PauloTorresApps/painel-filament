@@ -94,22 +94,6 @@ class OcrService
     }
 
     /**
-     * Retorna a versão do Tesseract
-     */
-    public function getVersion(): ?string
-    {
-        $output = [];
-        $returnCode = 0;
-        exec('tesseract --version 2>&1', $output, $returnCode);
-
-        if ($returnCode === 0 && !empty($output)) {
-            return $output[0] ?? null;
-        }
-
-        return null;
-    }
-
-    /**
      * Verifica se o ImageMagick está disponível para pré-processamento
      */
     public function isImageMagickAvailable(): bool

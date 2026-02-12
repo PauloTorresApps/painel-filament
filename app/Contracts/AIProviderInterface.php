@@ -77,11 +77,6 @@ interface AIProviderInterface
     ): string;
 
     /**
-     * Valida se a API está acessível
-     */
-    public function healthCheck(): bool;
-
-    /**
      * Retorna o nome do provider
      */
     public function getName(): string;

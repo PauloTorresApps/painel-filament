@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
@@ -303,15 +302,6 @@ class ChunkLargeDocumentJob implements ShouldQueue
         $timelineInstructions = config('prompts.timeline_instructions');
 
         return $consolidationPrompt . "\n\n---\n\n" . $timelineInstructions;
-    }
-
-
-    /**
-     * Verifica se um documento é considerado "grande"
-     */
-    public static function isLargeDocument(string $text): bool
-    {
-        return mb_strlen($text) > config('analysis.thresholds.large_document_chars', 100000);
     }
 
     /**

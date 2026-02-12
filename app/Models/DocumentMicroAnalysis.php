@@ -203,22 +203,6 @@ class DocumentMicroAnalysis extends Model
     }
 
     /**
-     * Retorna os eventos da timeline ordenados por data
-     */
-    public function getOrderedTimelineEvents(): array
-    {
-        $events = $this->timeline_events['eventos'] ?? [];
-
-        usort($events, function ($a, $b) {
-            $dateA = $a['data'] ?? '9999-99-99';
-            $dateB = $b['data'] ?? '9999-99-99';
-            return strcmp($dateA, $dateB);
-        });
-
-        return $events;
-    }
-
-    /**
      * Marca como falho
      */
     public function markAsFailed(string $errorMessage): void

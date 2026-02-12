@@ -4,7 +4,6 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use MoeMizrak\LaravelOpenrouter\Facades\LaravelOpenRouter;
 
 class OpenRouterService extends AbstractAIService
 {
@@ -36,19 +35,6 @@ class OpenRouterService extends AbstractAIService
     public function getName(): string
     {
         return 'OpenRouter';
-    }
-
-    /**
-     * Valida se a API está acessível
-     */
-    public function healthCheck(): bool
-    {
-        try {
-            $response = LaravelOpenRouter::limitRequest();
-            return $response !== null;
-        } catch (\Exception) {
-            return false;
-        }
     }
 
     /**

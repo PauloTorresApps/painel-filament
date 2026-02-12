@@ -84,21 +84,4 @@ class RateLimiterService
         self::throttle($provider, $rateLimit);
     }
 
-    /**
-     * Limpa o rate limit de um provider (útil para testes)
-     *
-     * @param string $provider Nome do provider
-     * @return void
-     */
-    public static function clear(string $provider): void
-    {
-        try {
-            Redis::del("rate_limit:{$provider}");
-        } catch (\Exception $e) {
-            Log::warning('Erro ao limpar rate limiting', [
-                'provider' => $provider,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
 }

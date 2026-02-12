@@ -199,17 +199,6 @@ class AiPrompt extends Model
     }
 
     /**
-     * Busca o prompt padrão para um sistema (qualquer tipo, para compatibilidade)
-     */
-    public static function getDefaultForSystem(int $systemId): ?self
-    {
-        return self::where('system_id', $systemId)
-            ->where('is_default', true)
-            ->where('is_active', true)
-            ->first();
-    }
-
-    /**
      * Verifica se os prompts necessários para geração de infográfico existem
      *
      * @return array{exists: bool, missing: array<string>}
