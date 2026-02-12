@@ -6,6 +6,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
+use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -22,16 +23,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class ChunkLargeDocumentJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Queueable, Batchable, HandlesJsonOutput;
 
-    public int $timeout = 3600; // 1 hora - documentos muito grandes com muitos chunks
-    public int $tries = 2;   // Reduzido para evitar duplicações
-    public int $backoff = 120; // 2 minutos entre retries
-
-    // Configuração de chunking
-    public const CHUNK_SIZE_CHARS = 50000; // ~50 páginas (1000 chars/página)
-    public const MIN_CHUNK_SIZE = 10000;   // Mínimo para evitar chunks muito pequenos
-    public const LARGE_DOC_THRESHOLD = 100000; // 100k chars = documento grande
+    public int $timeout;
+    public int $tries;
+    public int $backoff;
 
     public function __construct(
         public int $microAnalysisId,
@@ -40,6 +36,9 @@ class ChunkLargeDocumentJob implements ShouldQueue
         public array $contextoDados,
         public ?string $aiModelId = null
     ) {
+        $this->timeout = config('analysis.jobs.chunk_large_document.timeout', 3600);
+        $this->tries = config('analysis.jobs.chunk_large_document.tries', 2);
+        $this->backoff = config('analysis.jobs.chunk_large_document.backoff', 120);
     }
 
     /**
@@ -229,7 +228,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
         $chunks = [];
         $textLength = mb_strlen($text);
 
-        if ($textLength <= self::CHUNK_SIZE_CHARS) {
+        if ($textLength <= config('analysis.chunking.chunk_size_chars', 50000)) {
             return [$text];
         }
 
@@ -242,7 +241,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
             $paragraphLength = mb_strlen($paragraph);
 
             // Se adicionar este parágrafo ultrapassar o limite
-            if ($currentLength + $paragraphLength > self::CHUNK_SIZE_CHARS && $currentLength > self::MIN_CHUNK_SIZE) {
+            if ($currentLength + $paragraphLength > config('analysis.chunking.chunk_size_chars', 50000) && $currentLength > config('analysis.chunking.min_chunk_size', 10000)) {
                 $chunks[] = trim($currentChunk);
                 $currentChunk = $paragraph;
                 $currentLength = $paragraphLength;
@@ -262,7 +261,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
 
     /**
      * System prompt fixo para análise de chunks (cacheável entre chamadas).
-     * Contém o contexto do documento e as instruções de extração.
+     * Contém o contexto do documento e as instruções de extração (via config/prompts.php).
      */
     private function buildChunkSystemPrompt(DocumentMicroAnalysis $microAnalysis, int $totalChunks): string
     {
@@ -270,35 +269,11 @@ class ChunkLargeDocumentJob implements ShouldQueue
             ?? $this->contextoDados['classeProcessual']
             ?? 'Não informada';
 
-        return <<<PROMPT
-Você é um assistente jurídico especializado em análise de documentos processuais extensos.
-
-# CONTEXTO
-
-**Documento:** {$microAnalysis->descricao}
-**Classe Processual:** {$nomeClasse}
-**Total de partes:** {$totalChunks}
-
-Você está analisando partes individuais de um documento extenso dividido em {$totalChunks} partes.
-
-## TAREFA
-
-Extraia as informações relevantes DESTA PARTE do documento:
-
-1. **Fatos narrados** nesta seção
-2. **Datas importantes** mencionadas
-3. **Valores monetários** se houver
-4. **Partes/pessoas** citadas
-5. **Decisões ou pedidos** formulados nesta parte
-6. **Referências legais** (artigos, leis, jurisprudência)
-
-## IMPORTANTE
-- Seja objetivo e extraia apenas o que está NESTA PARTE
-- Não tente concluir a análise - outras partes serão analisadas separadamente
-- Mantenha referências a "páginas" ou "seções" se mencionadas
-
-Responda em markdown estruturado.
-PROMPT;
+        return str_replace(
+            [':descricao', ':nomeClasse', ':totalChunks'],
+            [$microAnalysis->descricao, $nomeClasse, (string) $totalChunks],
+            config('prompts.chunk_analysis')
+        );
     }
 
     /**
@@ -310,7 +285,7 @@ PROMPT;
     }
 
     /**
-     * System prompt para consolidação dos chunks (contém todas as instruções fixas).
+     * System prompt para consolidação dos chunks (via config/prompts.php).
      */
     private function buildConsolidationSystemPrompt(DocumentMicroAnalysis $microAnalysis, int $chunkCount): string
     {
@@ -318,85 +293,25 @@ PROMPT;
             ?? $this->contextoDados['classeProcessual']
             ?? 'Não informada';
 
-        return <<<PROMPT
-Você é um assistente jurídico especializado em análise de documentos processuais.
+        $consolidationPrompt = str_replace(
+            [':descricao', ':nomeClasse', ':chunkCount'],
+            [$microAnalysis->descricao, $nomeClasse, (string) $chunkCount],
+            config('prompts.chunk_consolidation')
+        );
 
-# CONSOLIDAÇÃO DE DOCUMENTO EXTENSO
+        // Adiciona instruções de timeline
+        $timelineInstructions = config('prompts.timeline_instructions');
 
-**Documento:** {$microAnalysis->descricao}
-**Classe Processual:** {$nomeClasse}
-**Total de partes analisadas:** {$chunkCount}
-
-Você recebeu a análise de {$chunkCount} partes de um documento extenso.
-
-## TAREFA
-
-Consolide todas as informações em uma ANÁLISE ÚNICA E COESA que:
-
-1. **PRESERVE a ordem cronológica** dos eventos narrados
-2. **UNIFIQUE informações** que aparecem em múltiplas partes
-3. **REMOVA redundâncias** mantendo a completude
-4. **IDENTIFIQUE o tipo** do documento (petição, decisão, laudo, etc.)
-5. **DESTAQUE os pontos principais**:
-   - Pedidos/decisões centrais
-   - Fatos mais relevantes
-   - Valores e datas importantes
-   - Fundamentos legais
-
-## FORMATO
-
-Responda com uma análise estruturada em markdown, como se fosse a análise de um único documento.
-
-NÃO mencione que o documento foi dividido em partes - o resultado deve parecer uma análise contínua.
-
----
-
-## LINHA DO TEMPO (JSON) - OBRIGATÓRIO
-
-Ao final da análise, inclua um bloco JSON com todos os eventos e datas encontrados no documento.
-O JSON deve estar entre as tags `<timeline_json>` e `</timeline_json>`.
-
-Formato do JSON:
-```json
-{
-  "eventos": [
-    {
-      "data": "YYYY-MM-DD",
-      "data_original": "texto original da data no documento",
-      "tipo": "tipo do evento (petição, decisão, prazo, fato, pagamento, etc.)",
-      "descricao": "descrição curta do evento",
-      "valores": ["R$ X.XXX,XX"],
-      "relevancia": "alta|media|baixa"
-    }
-  ],
-  "documento_data": "YYYY-MM-DD ou null",
-  "documento_tipo": "tipo identificado do documento"
-}
-```
-
-Regras para o JSON:
-- Use formato ISO para datas (YYYY-MM-DD)
-- Se a data tiver apenas mês/ano, use o dia 01 (ex: "2024-03-01")
-- Se não conseguir determinar a data exata, use `null` no campo `data` mas mantenha `data_original`
-- Liste TODOS os eventos com datas encontrados, mesmo os menos relevantes
-- O campo `documento_data` é a data principal do documento (data de protocolo, assinatura, etc.)
-PROMPT;
+        return $consolidationPrompt . "\n\n---\n\n" . $timelineInstructions;
     }
 
-    /**
-     * Estima contagem de tokens
-     */
-    private function estimateTokenCount(string $text): int
-    {
-        return (int) ceil(mb_strlen($text) / 4);
-    }
 
     /**
      * Verifica se um documento é considerado "grande"
      */
     public static function isLargeDocument(string $text): bool
     {
-        return mb_strlen($text) > self::LARGE_DOC_THRESHOLD;
+        return mb_strlen($text) > config('analysis.thresholds.large_document_chars', 100000);
     }
 
     /**
@@ -460,7 +375,7 @@ PROMPT;
 ## Timeline Events (JSON extraído)
 
 ```json
-{$this->formatJson($microAnalysis->timeline_events)}
+{$this->formatJsonForDebug($microAnalysis->timeline_events)}
 ```
 
 ---
@@ -501,15 +416,4 @@ MD;
         }
     }
 
-    /**
-     * Formata array/objeto para JSON legível
-     */
-    private function formatJson($data): string
-    {
-        if (empty($data)) {
-            return 'null';
-        }
-
-        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: 'null';
-    }
 }

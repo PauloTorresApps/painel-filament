@@ -35,9 +35,9 @@ class RefineReduceJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 1800; // 30 minutos (processo sequencial pode demorar)
-    public int $tries = 2;
-    public int $backoff = 60;
+    public int $timeout;
+    public int $tries;
+    public int $backoff;
 
     public array $contextoDados = [];
 
@@ -49,6 +49,9 @@ class RefineReduceJob implements ShouldQueue
         public ?string $aiModelId = null,
         public int $startFromIndex = 0 // Permite retomada
     ) {
+        $this->timeout = config('analysis.jobs.refine_reduce.timeout', 1800);
+        $this->tries = config('analysis.jobs.refine_reduce.tries', 2);
+        $this->backoff = config('analysis.jobs.refine_reduce.backoff', 60);
     }
 
     /**
@@ -385,33 +388,12 @@ CONTENT;
         string $evolutiveSummary
     ): string {
         // Busca o prompt padrão ativo de "Parecer Final" do banco
-        // Isso garante que sempre use o prompt mais atual configurado
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
         $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
 
-        $prompt = <<<PROMPT
-# ANÁLISE FINAL DO PROCESSO
-
-Você recebeu o RESUMO EVOLUTIVO completo de todos os documentos do processo judicial.
-
-Com base nessa narrativa consolidada, responda à solicitação do usuário:
-
----
-
-{$basePrompt}
-
----
-
-## INSTRUÇÕES
-
-1. Use o resumo evolutivo como base para sua análise
-2. A narrativa já está em ordem cronológica - mantenha essa estrutura
-3. Fundamente suas conclusões nos documentos analisados
-4. Seja objetivo e direto
-5. Use markdown para estruturar a resposta
-PROMPT;
+        $prompt = str_replace(':basePrompt', $basePrompt, config('prompts.final_opinion'));
 
         return $aiService->analyzeSingleDocument(
             $prompt,

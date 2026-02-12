@@ -28,12 +28,8 @@ class DispatchMapPhaseJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 120;
-    public int $tries = 3;
-
-    // Limites para escolha de estratégia
-    private const REFINE_THRESHOLD = 20; // Usa refine para <= 20 docs
-    private const LARGE_DOC_THRESHOLD = 100000; // 100k chars = documento grande
+    public int $timeout;
+    public int $tries;
 
     public function __construct(
         public int $analysisId,
@@ -43,7 +39,10 @@ class DispatchMapPhaseJob implements ShouldQueue
         public ?string $aiModelId,
         public int $userId,
         public string $reduceStrategy = 'auto' // 'auto', 'refine', 'batch'
-    ) {}
+    ) {
+        $this->timeout = config('analysis.jobs.dispatch_map.timeout', 120);
+        $this->tries = config('analysis.jobs.dispatch_map.tries', 3);
+    }
 
     /**
      * Execute the job.
@@ -114,7 +113,7 @@ class DispatchMapPhaseJob implements ShouldQueue
             foreach ($pendingMicroAnalyses as $microAnalysis) {
                 $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
 
-                if ($textLength > self::LARGE_DOC_THRESHOLD) {
+                if ($textLength > config('analysis.thresholds.large_document_chars', 100000)) {
                     $largeDocs[] = $microAnalysis;
                     Log::info('DispatchMapPhaseJob: Documento grande detectado', [
                         'micro_id' => $microAnalysis->id,
@@ -299,7 +298,7 @@ class DispatchMapPhaseJob implements ShouldQueue
         // Estratégia automática baseada na quantidade de documentos
         // - Poucos documentos: refine é melhor (narrativa mais coesa)
         // - Muitos documentos: batch é mais rápido e eficiente
-        return $docCount <= self::REFINE_THRESHOLD;
+        return $docCount <= config('analysis.thresholds.refine_max_documents', 20);
     }
 
     /**

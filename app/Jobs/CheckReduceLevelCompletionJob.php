@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
+use App\Traits\HandlesJsonOutput;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -21,14 +22,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class CheckReduceLevelCompletionJob implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, HandlesJsonOutput;
 
-    public int $timeout = 600;
-    public int $tries = 3;
-    public int $backoff = 30;
-
-    private const BATCH_SIZE = 10;
-    private const MAX_REDUCE_LEVELS = 5;
+    public int $timeout;
+    public int $tries;
+    public int $backoff;
 
     public function __construct(
         public int $analysisId,
@@ -38,6 +36,9 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         public ?string $aiModelId,
         public int $completedReduceLevel
     ) {
+        $this->timeout = config('analysis.jobs.check_reduce_completion.timeout', 600);
+        $this->tries = config('analysis.jobs.check_reduce_completion.tries', 3);
+        $this->backoff = config('analysis.jobs.check_reduce_completion.backoff', 30);
     }
 
     /**
@@ -90,7 +91,7 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
             }
 
             // Se há mais de BATCH_SIZE resultados e não atingiu o limite de níveis, precisa de mais um nível
-            if ($completedCount > self::BATCH_SIZE && $this->completedReduceLevel < self::MAX_REDUCE_LEVELS) {
+            if ($completedCount > config('analysis.reduce.batch_size', 10) && $this->completedReduceLevel < config('analysis.reduce.max_levels', 5)) {
                 Log::info('CheckReduceLevelCompletionJob: Disparando próximo nível de reduce', [
                     'analysis_id' => $this->analysisId,
                     'next_level' => $this->completedReduceLevel + 1,
@@ -292,35 +293,12 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
     private function buildFinalPrompt(): string
     {
         // Busca o prompt padrão ativo de "Parecer Final" do banco
-        // Isso garante que sempre use o prompt mais atual configurado
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
         $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
 
-        return <<<PROMPT
-# ANÁLISE FINAL DO PROCESSO
-
-Você recebeu análises consolidadas de todos os documentos do processo judicial.
-
-Com base nessas informações, forneça a análise solicitada pelo usuário:
-
----
-
-{$basePrompt}
-
----
-
-## INSTRUÇÕES ADICIONAIS
-
-1. Considere TODOS os documentos que foram analisados
-2. Mantenha a perspectiva cronológica e causal dos eventos
-3. Fundamente suas conclusões nos documentos analisados
-4. Seja objetivo e direto nas conclusões
-5. Use markdown para estruturar a resposta
-
-Responda com a análise completa conforme solicitado.
-PROMPT;
+        return str_replace(':basePrompt', $basePrompt, config('prompts.final_opinion'));
     }
 
     /**
@@ -399,7 +377,7 @@ PROMPT;
 
             // Lista os IDs das micro-análises usadas
             $microIds = $microAnalyses->pluck('id')->toArray();
-            $microIdsJson = json_encode($microIds, JSON_PRETTY_PRINT);
+            $microIdsJson = $this->formatJsonForDebug($microIds);
 
             $content = <<<MD
 # PARECER FINAL - Processo {$documentAnalysis->numero_processo}
@@ -438,7 +416,7 @@ PROMPT;
 
 ## Texto Consolidado Enviado à IA (entrada completa)
 
-{$this->truncateTextFinal($consolidatedText, 20000)}
+{$this->truncateText($consolidatedText, 20000)}
 
 ---
 
@@ -461,18 +439,6 @@ MD;
                 'error' => $e->getMessage()
             ]);
         }
-    }
-
-    /**
-     * Trunca texto para exibição
-     */
-    private function truncateTextFinal(string $text, int $maxLength): string
-    {
-        if (mb_strlen($text) <= $maxLength) {
-            return $text;
-        }
-
-        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
     }
 
 }

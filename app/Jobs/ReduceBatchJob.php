@@ -6,6 +6,7 @@ use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
+use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -18,11 +19,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class ReduceBatchJob implements ShouldQueue
 {
-    use Queueable, Batchable;
+    use Queueable, Batchable, HandlesJsonOutput;
 
-    public int $timeout = 600; // 10 minutos por batch
-    public int $tries = 3;
-    public int $backoff = 60;
+    public int $timeout;
+    public int $tries;
+    public int $backoff;
 
     public function __construct(
         public int $documentAnalysisId,
@@ -33,6 +34,9 @@ class ReduceBatchJob implements ShouldQueue
         public bool $deepThinkingEnabled,
         public ?string $aiModelId = null
     ) {
+        $this->timeout = config('analysis.jobs.reduce_batch.timeout', 600);
+        $this->tries = config('analysis.jobs.reduce_batch.tries', 3);
+        $this->backoff = config('analysis.jobs.reduce_batch.backoff', 60);
     }
 
     /**
@@ -268,58 +272,13 @@ class ReduceBatchJob implements ShouldQueue
     }
 
     /**
-     * Monta prompt para consolidação intermediária
+     * Monta prompt para consolidação intermediária (via config/prompts.php)
      */
     private function buildReducePrompt(int $documentCount): string
     {
-        return <<<PROMPT
-# TAREFA DE CONSOLIDAÇÃO
-
-Você recebeu as análises de {$documentCount} documentos de um processo judicial.
-
-Sua tarefa é consolidar essas análises em um resumo estruturado que:
-
-1. **Preserve a ordem cronológica** dos eventos do processo
-2. **Identifique conexões** entre os documentos (causa e efeito)
-3. **Destaque informações críticas** (pedidos, decisões, prazos)
-4. **Mantenha referências** a documentos específicos quando relevante
-5. **Seja conciso** mas não perca informações importantes
-
-## FORMATO DE SAÍDA
-
-Organize a consolidação nas seguintes seções:
-
-### CRONOLOGIA DO PROCESSO
-[Sequência temporal dos principais eventos]
-
-### PARTES E REPRESENTANTES
-[Quem são as partes e seus advogados/procuradores]
-
-### PEDIDOS E PRETENSÕES
-[O que cada parte está pedindo]
-
-### DECISÕES E DESPACHOS
-[O que já foi decidido até agora]
-
-### FUNDAMENTOS JURÍDICOS
-[Base legal utilizada pelas partes e pelo juízo]
-
-### SITUAÇÃO ATUAL
-[Estado atual do processo baseado nos documentos analisados]
-
----
-
-Responda apenas com a consolidação, sem comentários adicionais.
-PROMPT;
+        return str_replace(':documentCount', (string) $documentCount, config('prompts.reduce_consolidation'));
     }
 
-    /**
-     * Estima contagem de tokens
-     */
-    private function estimateTokenCount(string $text): int
-    {
-        return (int) ceil(mb_strlen($text) / 4);
-    }
 
     /**
      * Salva o resultado da consolidação (REDUCE) em arquivo para debug/inspeção
@@ -346,7 +305,7 @@ PROMPT;
 
             $fileName = "reduce_nivel_{$this->reduceLevel}_batch_{$this->batchIndex}_{$timestamp}.md";
 
-            $parentIdsJson = json_encode($this->microAnalysisIds, JSON_PRETTY_PRINT);
+            $parentIdsJson = $this->formatJsonForDebug($this->microAnalysisIds);
 
             $content = <<<MD
 # Consolidação REDUCE - Nível {$this->reduceLevel} - Batch {$this->batchIndex}
@@ -416,18 +375,6 @@ MD;
     private function formatCount(int $count): string
     {
         return "{$count} documento(s)";
-    }
-
-    /**
-     * Trunca texto para exibição
-     */
-    private function truncateText(string $text, int $maxLength): string
-    {
-        if (mb_strlen($text) <= $maxLength) {
-            return $text;
-        }
-
-        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
     }
 
 }

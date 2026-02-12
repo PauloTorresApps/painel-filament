@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
+use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -29,15 +30,11 @@ use Filament\Notifications\Notification as FilamentNotification;
  */
 class ReduceDocumentAnalysisJob implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, HandlesJsonOutput;
 
-    public int $timeout = 600; // 10 minutos para reduce
-    public int $tries = 3;
-    public int $backoff = 60;
-
-    // Configuração do reduce hierárquico
-    private const BATCH_SIZE = 10; // Quantas micro-análises consolidar por vez
-    private const MAX_REDUCE_LEVELS = 5; // Limite de níveis de reduce
+    public int $timeout;
+    public int $tries;
+    public int $backoff;
 
     public function __construct(
         public int $documentAnalysisId,
@@ -47,6 +44,9 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         public ?string $aiModelId = null,
         public int $currentReduceLevel = 1
     ) {
+        $this->timeout = config('analysis.jobs.reduce_document.timeout', 600);
+        $this->tries = config('analysis.jobs.reduce_document.tries', 3);
+        $this->backoff = config('analysis.jobs.reduce_document.backoff', 60);
     }
 
     /**
@@ -107,7 +107,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
 
             // Calcula total de níveis necessários
             $totalLevels = $this->calculateTotalLevels($totalMicroAnalyses);
-            $totalBatches = (int) ceil($totalMicroAnalyses / self::BATCH_SIZE);
+            $totalBatches = (int) ceil($totalMicroAnalyses / config('analysis.reduce.batch_size', 10));
 
             // Se é o primeiro nível, inicializa a fase REDUCE
             if ($this->currentReduceLevel === 1) {
@@ -126,7 +126,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
             ]);
 
             // Se há apenas uma micro-análise ou poucas o suficiente, gera análise final diretamente
-            if ($totalMicroAnalyses <= self::BATCH_SIZE) {
+            if ($totalMicroAnalyses <= config('analysis.reduce.batch_size', 10)) {
                 $this->generateFinalAnalysis($documentAnalysis, $microAnalyses);
                 return;
             }
@@ -159,7 +159,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
      */
     private function performParallelReduce(DocumentAnalysis $documentAnalysis, $microAnalyses): void
     {
-        $batches = $microAnalyses->chunk(self::BATCH_SIZE);
+        $batches = $microAnalyses->chunk(config('analysis.reduce.batch_size', 10));
         $reduceBatchJobs = [];
         $batchIndex = 0;
 
@@ -411,35 +411,12 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
     private function buildFinalPrompt(): string
     {
         // Busca o prompt padrão ativo de "Parecer Final" do banco
-        // Isso garante que sempre use o prompt mais atual configurado
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
         $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
 
-        return <<<PROMPT
-# ANÁLISE FINAL DO PROCESSO
-
-Você recebeu análises consolidadas de todos os documentos do processo judicial.
-
-Com base nessas informações, forneça a análise solicitada pelo usuário:
-
----
-
-{$basePrompt}
-
----
-
-## INSTRUÇÕES ADICIONAIS
-
-1. Considere TODOS os documentos que foram analisados
-2. Mantenha a perspectiva cronológica e causal dos eventos
-3. Fundamente suas conclusões nos documentos analisados
-4. Seja objetivo e direto nas conclusões
-5. Use markdown para estruturar a resposta
-
-Responda com a análise completa conforme solicitado.
-PROMPT;
+        return str_replace(':basePrompt', $basePrompt, config('prompts.final_opinion'));
     }
 
     /**
@@ -497,19 +474,19 @@ PROMPT;
      */
     private function calculateTotalLevels(int $totalItems): int
     {
-        if ($totalItems <= self::BATCH_SIZE) {
+        if ($totalItems <= config('analysis.reduce.batch_size', 10)) {
             return 1;
         }
 
         $levels = 1;
         $items = $totalItems;
 
-        while ($items > self::BATCH_SIZE) {
-            $items = (int) ceil($items / self::BATCH_SIZE);
+        while ($items > config('analysis.reduce.batch_size', 10)) {
+            $items = (int) ceil($items / config('analysis.reduce.batch_size', 10));
             $levels++;
         }
 
-        return min($levels, self::MAX_REDUCE_LEVELS);
+        return min($levels, config('analysis.reduce.max_levels', 5));
     }
 
     /**
@@ -563,7 +540,7 @@ PROMPT;
 
             // Lista os IDs das micro-análises usadas
             $microIds = $microAnalyses->pluck('id')->toArray();
-            $microIdsJson = json_encode($microIds, JSON_PRETTY_PRINT);
+            $microIdsJson = $this->formatJsonForDebug($microIds);
 
             $content = <<<MD
 # PARECER FINAL - Processo {$documentAnalysis->numero_processo}
@@ -602,7 +579,7 @@ PROMPT;
 
 ## Texto Consolidado Enviado à IA (entrada completa)
 
-{$this->truncateTextFinal($consolidatedText, 20000)}
+{$this->truncateText($consolidatedText, 20000)}
 
 ---
 
@@ -627,15 +604,4 @@ MD;
         }
     }
 
-    /**
-     * Trunca texto para exibição
-     */
-    private function truncateTextFinal(string $text, int $maxLength): string
-    {
-        if (mb_strlen($text) <= $maxLength) {
-            return $text;
-        }
-
-        return mb_substr($text, 0, $maxLength) . "\n\n... [TRUNCADO - Total: " . mb_strlen($text) . " caracteres]";
-    }
 }

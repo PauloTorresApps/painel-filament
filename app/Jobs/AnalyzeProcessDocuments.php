@@ -31,8 +31,9 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
-    public int $timeout = 1800; // 30 minutos - suficiente para orquestração e dispatch de batches
-    public int $tries = 2;
+    public int $timeout;
+    public int $tries;
+    public int $uniqueFor;
 
     public function __construct(
         public int $userId,
@@ -50,6 +51,9 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public ?string $documentAnalysisPrompt = null, // Prompt customizado para análise de documentos (MAP)
         public ?string $chave = null                   // Chave do processo (para processos sigilosos)
     ) {
+        $this->timeout = config('analysis.jobs.analyze_process.timeout', 1800);
+        $this->tries = config('analysis.jobs.analyze_process.tries', 2);
+        $this->uniqueFor = config('analysis.jobs.analyze_process.unique_for', 600);
     }
 
     /**
@@ -59,8 +63,6 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     {
         return "analyze_process_{$this->userId}_{$this->numeroProcesso}";
     }
-
-    public int $uniqueFor = 600; // 10 minutos
 
     /**
      * Execute o job.
