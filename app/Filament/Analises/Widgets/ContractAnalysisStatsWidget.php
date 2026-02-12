@@ -46,7 +46,7 @@ class ContractAnalysisStatsWidget extends StatsOverviewWidget
         return [
             Stat::make('Total de Análises', $total)
                 ->description('Contratos analisados')
-                ->descriptionIcon('heroicon-m-document-chart-bar')
+                ->descriptionIcon('heroicon-m-clipboard-document-check')
                 ->color('primary'),
 
             Stat::make('Concluídas', $completed)

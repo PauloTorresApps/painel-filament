@@ -14,7 +14,6 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use UnitEnum;
@@ -23,7 +22,7 @@ class ContractAnalysisResource extends Resource
 {
     protected static ?string $model = ContractAnalysis::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentMagnifyingGlass;
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-document-arrow-down';
 
     protected static ?string $navigationLabel = 'Histórico de Contratos';
 

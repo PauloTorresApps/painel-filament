@@ -20,7 +20,7 @@ use UnitEnum;
 
 class ContractAnalysis extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-document-chart-bar';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-clipboard-document-check';
     protected string $view = 'filament.pages.contract-analysis';
     protected static ?string $navigationLabel = 'Análise de Contratos';
     protected static ?string $title = 'Análise de Contratos';

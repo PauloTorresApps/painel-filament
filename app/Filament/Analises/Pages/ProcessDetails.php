@@ -191,7 +191,7 @@ class ProcessDetails extends Page
 
             \Filament\Actions\Action::make('analisar_documentos')
                 ->label('Enviar todos os documentos para análise')
-                ->icon('heroicon-m-document-magnifying-glass')
+                ->icon('heroicon-m-square-3-stack-3d')
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Confirmar Análise de Documentos')

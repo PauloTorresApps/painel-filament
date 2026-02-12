@@ -57,7 +57,7 @@
     // Fases do processo
     $phases = [
         'download' => ['label' => 'Download', 'icon' => 'heroicon-o-arrow-down-tray'],
-        'map' => ['label' => 'Análise Individual', 'icon' => 'heroicon-o-document-magnifying-glass'],
+        'map' => ['label' => 'Análise Individual', 'icon' => 'heroicon-o-square-3-stack-3d'],
         'reduce' => ['label' => 'Consolidação', 'icon' => 'heroicon-o-squares-plus'],
         'completed' => ['label' => 'Concluído', 'icon' => 'heroicon-o-check-badge'],
     ];

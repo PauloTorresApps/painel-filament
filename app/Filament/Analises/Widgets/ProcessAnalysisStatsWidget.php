@@ -38,7 +38,7 @@ class ProcessAnalysisStatsWidget extends StatsOverviewWidget
         return [
             Stat::make('Total', $total)
                 ->description('Processos analisados')
-                ->descriptionIcon('heroicon-m-document-magnifying-glass')
+                ->descriptionIcon('heroicon-m-square-3-stack-3d')
                 ->color('primary'),
 
             Stat::make('Concluídas', $completed)

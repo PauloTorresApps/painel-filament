@@ -14,14 +14,13 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Support\Icons\Heroicon;
 use UnitEnum;
 
 class ContractAnalysisResource extends Resource
 {
     protected static ?string $model = ContractAnalysis::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentMagnifyingGlass;
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-document-arrow-down';
 
     protected static ?string $navigationLabel = 'Histórico de Contratos';
 
@@ -31,9 +30,9 @@ class ContractAnalysisResource extends Resource
 
     protected static UnitEnum|string|null $navigationGroup = 'Contratos';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 1;
 
-    protected static ?string $slug = 'historico-contratos';
+    protected static ?string $slug = 'contratos';
 
     public static function table(Table $table): Table
     {

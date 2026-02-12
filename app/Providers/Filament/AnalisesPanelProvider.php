@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Analises\Pages\UserProfile;
+use App\Filament\Analises\Resources\ContractAnalysisResource;
 use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -34,6 +35,9 @@ class AnalisesPanelProvider extends PanelProvider
                 'primary' => Color::Amber,
             ])
             ->viteTheme('resources/css/filament/admin/theme.css')
+            ->resources([
+                ContractAnalysisResource::class,
+            ])
             ->discoverResources(in: app_path('Filament/Analises/Resources'), for: 'App\Filament\Analises\Resources')
             ->discoverPages(in: app_path('Filament/Analises/Pages'), for: 'App\Filament\Analises\Pages')
             ->pages([])

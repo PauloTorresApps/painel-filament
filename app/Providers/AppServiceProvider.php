@@ -4,12 +4,10 @@ namespace App\Providers;
 
 use App\Http\Responses\LoginResponse;
 use App\Http\Responses\LogoutResponse;
-use Filament\Facades\Filament;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse as FilamentLoginResponseContract;
 use Filament\Auth\Http\Responses\Contracts\LogoutResponse as LogoutResponseContract;
 use Laravel\Fortify\Contracts\LoginResponse as FortifyLoginResponseContract;
 use Illuminate\Support\Facades\Gate;
-use Filament\Navigation\NavigationItem;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider

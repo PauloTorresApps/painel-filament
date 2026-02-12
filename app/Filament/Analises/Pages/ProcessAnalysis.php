@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Auth;
 
 class ProcessAnalysis extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-document-magnifying-glass';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-square-3-stack-3d';
 
     protected static ?string $navigationLabel = 'Análise de Processos';
 

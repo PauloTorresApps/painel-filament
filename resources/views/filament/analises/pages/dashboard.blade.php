@@ -19,7 +19,7 @@
                             'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300' => $activeTab !== 'processos',
                         ])
                     >
-                        <x-heroicon-o-document-magnifying-glass @class([
+                        <x-heroicon-o-square-3-stack-3d @class([
                             '-ml-0.5 mr-2 h-5 w-5',
                             'text-primary-500' => $activeTab === 'processos',
                             'text-gray-400 group-hover:text-gray-500' => $activeTab !== 'processos',
@@ -39,7 +39,7 @@
                             'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300' => $activeTab !== 'contratos',
                         ])
                     >
-                        <x-heroicon-o-document-chart-bar @class([
+                        <x-heroicon-o-clipboard-document-check @class([
                             '-ml-0.5 mr-2 h-5 w-5',
                             'text-primary-500' => $activeTab === 'contratos',
                             'text-gray-400 group-hover:text-gray-500' => $activeTab !== 'contratos',
