@@ -149,7 +149,7 @@
                     $phaseIndex = array_search($phaseKey, $phaseKeys);
                     $isCompleted = $currentPhaseIndex !== false && $currentPhaseIndex > $phaseIndex;
                     if ($status === 'completed') $isCompleted = true;
-                    $isCurrent = $phase === $phaseKey && $status === 'processing';
+                    $isCurrent = $phase === $phaseKey && in_array($status, ['processing', 'failed']);
                     $isPending = !$isCompleted && !$isCurrent;
                 @endphp
 
@@ -172,13 +172,13 @@
                 <div class="flex flex-col items-center relative z-10" wire:key="phase-{{ $phaseKey }}-{{ $status }}-{{ $phase }}">
                     <div
                         class="w-10 h-10 rounded-full flex items-center justify-center mb-2 {{ $isPending ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500' : '' }}"
-                        @if($circleStyle) style="{{ $circleStyle }}" @endif
+                        style="{{ $circleStyle }}"
                     >
                         <x-dynamic-component :component="$phaseConfig['icon']" class="w-5 h-5 {{ $isCurrent && $status === 'processing' ? 'animate-phase-pulse' : '' }}" />
                     </div>
                     <span
                         class="text-xs font-medium text-center {{ $isPending ? 'text-gray-400 dark:text-gray-500' : '' }}"
-                        @if($labelStyle) style="{{ $labelStyle }}" @endif
+                        style="{{ $labelStyle }}"
                     >
                         {{ $phaseConfig['label'] }}
                     </span>
