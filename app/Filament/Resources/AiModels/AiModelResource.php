@@ -20,6 +20,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 use UnitEnum;
 
 class AiModelResource extends Resource
@@ -37,6 +38,16 @@ class AiModelResource extends Resource
     protected static UnitEnum|string|null $navigationGroup = 'Configurações';
 
     protected static ?int $navigationSort = 1;
+
+    public static function canAccess(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+
+        return $user->hasRole(['Admin', 'Manager']);
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -60,6 +71,27 @@ class AiModelResource extends Resource
                     ->maxLength(100)
                     ->placeholder('Ex: anthropic/claude-sonnet-4, openai/gpt-4o, x-ai/grok-4.1-fast')
                     ->helperText('Identificador do modelo no OpenRouter (formato: provider/modelo)'),
+
+                Select::make('purpose')
+                    ->label('Propósito')
+                    ->multiple()
+                    ->options(AiModel::getAvailablePurposes())
+                    ->native(false)
+                    ->live()
+                    ->helperText(function ($record) {
+                        $assignments = AiModel::getCurrentPurposeAssignments($record?->id);
+                        if (empty($assignments)) {
+                            return 'Nenhum propósito atribuído atualmente. Cada propósito só pode ser vinculado a um modelo ativo por vez.';
+                        }
+
+                        $lines = [];
+                        foreach ($assignments as $purpose => $modelName) {
+                            $purposeLabel = AiModel::getAvailablePurposes()[$purpose] ?? $purpose;
+                            $lines[] = "**{$purposeLabel}** → {$modelName}";
+                        }
+
+                        return 'Atribuições atuais: ' . implode(' | ', $lines) . '. Ao selecionar um propósito já atribuído, ele será transferido para este modelo.';
+                    }),
 
                 Textarea::make('description')
                     ->label('Descrição')
@@ -97,6 +129,12 @@ class AiModelResource extends Resource
                     ->searchable()
                     ->copyable()
                     ->copyMessage('ID copiado!'),
+
+                Tables\Columns\TextColumn::make('purpose')
+                    ->label('Propósito')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => AiModel::getAvailablePurposes()[$state] ?? $state)
+                    ->color('info'),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Ativo')

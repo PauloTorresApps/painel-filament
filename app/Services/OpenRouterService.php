@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AiModel;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -104,10 +105,17 @@ class OpenRouterService extends AbstractAIService
 
     /**
      * Retorna o modelo ideal para uma estratégia de processamento.
-     * Permite roteamento de modelos por tipo de documento via config.
+     * Prioridade: 1) cadastro no banco de dados, 2) variáveis de ambiente (config).
      */
     public function getModelForStrategy(string $strategy): string
     {
+        // 1. Prioridade: cadastro no banco de dados
+        $dbModel = AiModel::getModelIdForPurpose($strategy);
+        if ($dbModel) {
+            return $dbModel;
+        }
+
+        // 2. Fallback: variáveis de ambiente (config)
         $routing = config('services.openrouter.model_routing', []);
 
         return $routing[$strategy] ?? $routing['default'] ?? $this->model;
