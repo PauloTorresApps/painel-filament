@@ -114,6 +114,18 @@ class OpenRouterService extends AbstractAIService
     }
 
     /**
+     * Retorna o limite de tokens de saída baseado no modo de reasoning.
+     */
+    protected function getMaxTokens(bool $useReasoning): int
+    {
+        if ($useReasoning) {
+            return (int) config('services.openrouter.max_tokens_reasoning', 32768);
+        }
+
+        return (int) config('services.openrouter.max_tokens', 8192);
+    }
+
+    /**
      * Faz a chamada HTTP para a API do OpenRouter
      * Usa chamadas HTTP diretas para evitar problemas de parsing do pacote com respostas de reasoning
      */
@@ -144,7 +156,7 @@ class OpenRouterService extends AbstractAIService
                         'content' => $prompt,
                     ],
                 ],
-                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'max_tokens' => $this->getMaxTokens($useReasoning),
             ];
 
             if (!$useReasoning) {
@@ -206,7 +218,7 @@ class OpenRouterService extends AbstractAIService
                         ],
                     ],
                 ],
-                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'max_tokens' => $this->getMaxTokens($useReasoning),
             ];
 
             if (!$useReasoning) {
@@ -266,7 +278,7 @@ class OpenRouterService extends AbstractAIService
                         ],
                     ],
                 ],
-                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'max_tokens' => $this->getMaxTokens($useReasoning),
                 'plugins' => $this->buildPlugins(
                     [['id' => 'file-parser', 'pdf' => ['engine' => $pdfEngine]]],
                 ),
@@ -318,7 +330,7 @@ class OpenRouterService extends AbstractAIService
                         'content' => $prompt,
                     ],
                 ],
-                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'max_tokens' => $this->getMaxTokens($useReasoning),
                 'response_format' => [
                     'type' => 'json_schema',
                     'json_schema' => $jsonSchema,
@@ -627,7 +639,7 @@ class OpenRouterService extends AbstractAIService
                         'content' => $fullPrompt,
                     ],
                 ],
-                'max_tokens' => $useReasoning ? 16384 : 8192,
+                'max_tokens' => $this->getMaxTokens($useReasoning),
                 'plugins' => $this->buildPlugins([], true),
             ];
 

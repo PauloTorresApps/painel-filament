@@ -60,9 +60,13 @@ return [
     'openrouter' => [
         'api_key' => env('OPENROUTER_API_KEY'),
         'api_url' => config('laravel-openrouter.api_endpoint', 'https://openrouter.ai/api/v1/'),
-        'model' => env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-4'),
+        'model' => env('OPENROUTER_MODEL', 'google/gemini-2.5-flash-lite'),
         'timeout' => env('OPENROUTER_TIMEOUT', 300),
         'rate_limit_per_minute' => env('OPENROUTER_RATE_LIMIT_PER_MINUTE', 30),
+
+        // Limites de tokens de saída (completion)
+        'max_tokens' => (int) env('OPENROUTER_MAX_TOKENS', 8192),
+        'max_tokens_reasoning' => (int) env('OPENROUTER_MAX_TOKENS_REASONING', 32768),
 
         // Roteamento de modelos por tipo de documento (opcional)
         // Se null, usa o modelo padrão (OPENROUTER_MODEL)
@@ -71,7 +75,7 @@ return [
             'pdf_ocr' => env('OPENROUTER_MODEL_PDF_OCR'),
             'vision' => env('OPENROUTER_MODEL_VISION'),
             'large_context' => env('OPENROUTER_MODEL_LARGE'),
-            'default' => env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-4'),
+            'default' => env('OPENROUTER_MODEL', 'google/gemini-2.5-flash-lite'),
         ],
 
         // Provider routing: resiliência e performance (opcional)
