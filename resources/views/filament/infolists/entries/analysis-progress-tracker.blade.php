@@ -7,12 +7,12 @@
     // Obtem estatísticas das micro-análises
     $stats = $record->getMicroAnalysisStats();
     $totalDocs = $record->total_documents ?? 0;
-    $mapCompleted = $stats['map_completed'] ?? 0;
+    $mapCompleted = min($stats['map_completed'] ?? 0, $totalDocs);
     $processing = $stats['processing'] ?? 0;
     $pending = $stats['pending'] ?? 0;
     $failed = $stats['failed'] ?? 0;
 
-    // Calcula progresso geral
+    // Calcula progresso geral (já vem capado em 100 pelo model)
     $overallProgress = $record->getOverallProgressPercentage();
 
     // Busca micro-análises do nível MAP ordenadas por índice

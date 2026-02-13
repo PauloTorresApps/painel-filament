@@ -81,7 +81,8 @@ class DocumentAnalysesTable
                         }
                         if ($record->total_documents > 0) {
                             $percentage = $record->getProgressPercentage();
-                            return "{$record->processed_documents_count}/{$record->total_documents} ({$percentage}%)";
+                            $processed = min($record->processed_documents_count, $record->total_documents);
+                            return "{$processed}/{$record->total_documents} ({$percentage}%)";
                         }
                         return '-';
                     })

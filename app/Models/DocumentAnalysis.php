@@ -171,6 +171,9 @@ class DocumentAnalysis extends Model
      */
     public function updateMapProgress(int $completed): void
     {
+        // Garante que o valor nunca ultrapasse total_documents
+        $completed = min($completed, $this->total_documents ?? $completed);
+
         $this->update([
             'processed_documents_count' => $completed,
             'progress_message' => "Analisando documentos individualmente ({$completed}/{$this->total_documents})...",
@@ -199,6 +202,9 @@ class DocumentAnalysis extends Model
      */
     public function updateReduceProgress(int $level, int $processedBatches, int $totalBatches): void
     {
+        // Garante que processedBatches nunca ultrapasse totalBatches
+        $processedBatches = min($processedBatches, $totalBatches);
+
         $this->update([
             'reduce_current_level' => $level,
             'reduce_processed_batches' => $processedBatches,
@@ -239,13 +245,15 @@ class DocumentAnalysis extends Model
      */
     public function getOverallProgressPercentage(): float
     {
-        return match ($this->current_phase) {
+        $progress = match ($this->current_phase) {
             self::PHASE_DOWNLOAD => min(10, $this->getProgressPercentage() * 0.1),
             self::PHASE_MAP => 10 + ($this->getProgressPercentage() * 0.6),
             self::PHASE_REDUCE => 70 + ($this->getReduceProgressPercentage() * 0.3),
             self::PHASE_COMPLETED => 100,
             default => 0,
         };
+
+        return min(100, $progress);
     }
 
     /**
@@ -257,7 +265,9 @@ class DocumentAnalysis extends Model
             return 0;
         }
 
-        return round(($this->reduce_processed_batches / $this->reduce_total_batches) * 100, 2);
+        $processed = max(0, $this->reduce_processed_batches ?? 0);
+
+        return min(100, round(($processed / $this->reduce_total_batches) * 100, 2));
     }
 
     /**
