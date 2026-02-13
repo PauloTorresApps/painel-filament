@@ -121,13 +121,13 @@ class MapDocumentAnalysisJob implements ShouldQueue
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
-            // Define o modelo: prioridade para modelo forçado (aiModelId),
-            // senão usa model routing por estratégia do documento
-            if ($this->aiModelId) {
-                $aiService->setModel($this->aiModelId);
-            } elseif ($microAnalysis->processing_strategy) {
+            // Define o modelo: prioridade para roteamento por tipo de arquivo,
+            // senão usa modelo configurado no prompt (aiModelId)
+            if ($microAnalysis->processing_strategy) {
                 $optimalModel = $aiService->getModelForStrategy($microAnalysis->processing_strategy);
                 $aiService->setModel($optimalModel);
+            } elseif ($this->aiModelId) {
+                $aiService->setModel($this->aiModelId);
             }
 
             // Monta os prompts separados para prompt caching:
@@ -187,7 +187,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $microAnalysis->deleteOriginalContent();
 
             // Salva arquivo de debug com resultado da análise
-            $this->saveAnalysisToFile($microAnalysis, $result, $systemPrompt, $documentPrompt);
+            $this->saveAnalysisToFile($microAnalysis, $result, $systemPrompt, $documentPrompt, $metadata);
 
             Log::info('MapDocumentAnalysisJob: Concluído com sucesso', [
                 'micro_id' => $this->microAnalysisId,
@@ -508,7 +508,7 @@ PROMPT;
     /**
      * Salva o resultado da análise em arquivo para debug/inspeção
      */
-    private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $systemPrompt, string $documentPrompt): void
+    private function saveAnalysisToFile(DocumentMicroAnalysis $microAnalysis, string $result, string $systemPrompt, string $documentPrompt, array $apiMetadata = []): void
     {
         // Verifica se debug de arquivos está ativo
         if (!Setting::isDebugAnalysisFilesEnabled()) {
@@ -527,6 +527,14 @@ PROMPT;
 
             // Arquivo com metadados + resultado completo
             $fileName = "{$docIndex}_{$timestamp}_" . \Illuminate\Support\Str::slug($microAnalysis->descricao, '_') . ".md";
+
+            // Extrai metadados da API (null coalescing não funciona em heredoc)
+            $metaModeloApi = $apiMetadata['model'] ?? 'N/A';
+            $metaTokensPrompt = $apiMetadata['total_prompt_tokens'] ?? 'N/A';
+            $metaTokensCompletion = $apiMetadata['total_completion_tokens'] ?? 'N/A';
+            $metaTokensReasoning = $apiMetadata['total_reasoning_tokens'] ?? 0;
+            $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
+            $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
 
             $content = <<<MD
 # Análise do Documento: {$microAnalysis->descricao}
@@ -548,6 +556,12 @@ PROMPT;
 | **Model ID** | {$this->aiModelId} |
 | **Deep Thinking** | {$this->deepThinkingEnabled} |
 | **Data/Hora** | {$timestamp} |
+| **Modelo Resposta API** | {$metaModeloApi} |
+| **Tokens Enviados (Prompt)** | {$metaTokensPrompt} |
+| **Tokens Recebidos (Completion)** | {$metaTokensCompletion} |
+| **Tokens de Raciocínio** | {$metaTokensReasoning} |
+| **Total de Tokens** | {$metaTokensTotal} |
+| **Chamadas à API** | {$metaApiCalls} |
 
 ---
 

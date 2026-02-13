@@ -18,6 +18,37 @@ abstract class AbstractAIService implements AIProviderInterface
     protected array $lastAnalysisMetadata = [];
 
     /**
+     * Override de max_tokens de saída (null = usa default do provider)
+     */
+    protected ?int $maxTokensOverride = null;
+
+    /**
+     * Override de limite de caracteres de entrada (null = sem limite)
+     */
+    protected ?int $inputCharLimit = null;
+
+    /**
+     * Define override de max_tokens de saída para a próxima chamada.
+     * Resetado automaticamente no início de cada análise (resetAnalysisMetadata).
+     */
+    public function setMaxTokens(?int $maxTokens): self
+    {
+        $this->maxTokensOverride = $maxTokens;
+        return $this;
+    }
+
+    /**
+     * Define limite de caracteres de entrada para summarização.
+     * null = sem limite (texto completo é enviado).
+     * Resetado automaticamente no início de cada análise (resetAnalysisMetadata).
+     */
+    public function setInputCharLimit(?int $limit): self
+    {
+        $this->inputCharLimit = $limit;
+        return $this;
+    }
+
+    /**
      * Define o modelo a ser utilizado
      */
     public function setModel(string $model): self
@@ -101,6 +132,8 @@ abstract class AbstractAIService implements AIProviderInterface
             'documents_processed' => 0,
             'started_at' => now()->toISOString(),
             'finished_at' => null,
+            'max_tokens_override' => $this->maxTokensOverride,
+            'input_char_limit' => $this->inputCharLimit,
         ];
     }
 
@@ -152,10 +185,12 @@ abstract class AbstractAIService implements AIProviderInterface
         $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO\n\n" . $documentText;
 
         // Se o documento for muito grande, sumariza primeiro
-        if (mb_strlen($documentText) > static::SINGLE_DOC_CHAR_LIMIT) {
+        // inputCharLimit = null desativa a sumarização (usado em REDUCE/FINAL)
+        $charLimit = $this->inputCharLimit ?? static::SINGLE_DOC_CHAR_LIMIT;
+        if ($charLimit > 0 && mb_strlen($documentText) > $charLimit) {
             Log::info('AbstractAIService: Documento muito grande, sumarizando', [
                 'original_chars' => mb_strlen($documentText),
-                'limit' => static::SINGLE_DOC_CHAR_LIMIT
+                'limit' => $charLimit,
             ]);
 
             $documentText = $this->summarizeDocument($documentText, 'Documento', $deepThinkingEnabled);

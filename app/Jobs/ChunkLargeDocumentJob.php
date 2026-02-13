@@ -99,8 +99,12 @@ class ChunkLargeDocumentJob implements ShouldQueue
             ]);
 
             // Obtém o serviço de IA
+            // Prioridade: roteamento por tipo de arquivo > modelo do prompt
             $aiService = AIServiceFactory::make($this->aiProvider);
-            if ($this->aiModelId) {
+            if ($microAnalysis->processing_strategy) {
+                $optimalModel = $aiService->getModelForStrategy($microAnalysis->processing_strategy);
+                $aiService->setModel($optimalModel);
+            } elseif ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
             }
 
@@ -195,8 +199,11 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 ]
             ]);
 
+            // Captura metadados da API (acumulados de todos os chunks + consolidação)
+            $apiMetadata = $aiService->getLastAnalysisMetadata();
+
             // Salva arquivo de debug com resultado da análise
-            $this->saveAnalysisToFile($microAnalysis, $finalResult, $consolidationPrompt, $chunkSummaries, $textLength, $chunkCount);
+            $this->saveAnalysisToFile($microAnalysis, $finalResult, $consolidationPrompt, $chunkSummaries, $textLength, $chunkCount, $apiMetadata);
 
             Log::info('ChunkLargeDocumentJob: Documento grande processado com sucesso', [
                 'micro_id' => $this->microAnalysisId,
@@ -313,7 +320,8 @@ class ChunkLargeDocumentJob implements ShouldQueue
         string $consolidationPrompt,
         array $chunkSummaries,
         int $originalLength,
-        int $chunkCount
+        int $chunkCount,
+        array $apiMetadata = []
     ): void {
         // Verifica se debug de arquivos está ativo
         if (!Setting::isDebugAnalysisFilesEnabled()) {
@@ -335,6 +343,14 @@ class ChunkLargeDocumentJob implements ShouldQueue
 
             // Formata os resumos dos chunks
             $chunkSummariesText = implode("\n\n---\n\n", $chunkSummaries);
+
+            // Extrai metadados da API (null coalescing não funciona em heredoc)
+            $metaModeloApi = $apiMetadata['model'] ?? 'N/A';
+            $metaTokensPrompt = $apiMetadata['total_prompt_tokens'] ?? 'N/A';
+            $metaTokensCompletion = $apiMetadata['total_completion_tokens'] ?? 'N/A';
+            $metaTokensReasoning = $apiMetadata['total_reasoning_tokens'] ?? 0;
+            $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
+            $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
 
             $content = <<<MD
 # Análise do Documento GRANDE (Chunked): {$microAnalysis->descricao}
@@ -359,6 +375,12 @@ class ChunkLargeDocumentJob implements ShouldQueue
 | **DOCUMENTO GRANDE** | SIM |
 | **Tamanho Original** | {$originalLength} caracteres |
 | **Número de Chunks** | {$chunkCount} |
+| **Modelo Resposta API** | {$metaModeloApi} |
+| **Tokens Enviados (Prompt)** | {$metaTokensPrompt} |
+| **Tokens Recebidos (Completion)** | {$metaTokensCompletion} |
+| **Tokens de Raciocínio** | {$metaTokensReasoning} |
+| **Total de Tokens** | {$metaTokensTotal} |
+| **Chamadas à API** | {$metaApiCalls} |
 
 ---
 

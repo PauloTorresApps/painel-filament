@@ -274,6 +274,10 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
             $aiService->setModel($this->aiModelId);
         }
 
+        // Parecer final precisa de mais tokens de saída e não deve resumir a entrada
+        $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
+        $aiService->setInputCharLimit(null);
+
         // Monta o texto consolidado
         $consolidatedText = $this->buildBatchText($microAnalyses);
 
@@ -295,8 +299,11 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
             ->sum('processing_time_ms');
         $totalProcessingTime += $processingTimeMs;
 
+        // Captura metadados da API
+        $apiMetadata = $aiService->getLastAnalysisMetadata();
+
         // Salva arquivo de debug com a análise final
-        $this->saveFinalAnalysisToFile($documentAnalysis, $finalAnalysis, $prompt, $consolidatedText, $microAnalyses);
+        $this->saveFinalAnalysisToFile($documentAnalysis, $finalAnalysis, $prompt, $consolidatedText, $microAnalyses, $apiMetadata);
 
         // Finaliza a análise
         $documentAnalysis->update([
@@ -522,7 +529,8 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         string $finalAnalysis,
         string $prompt,
         string $consolidatedText,
-        $microAnalyses
+        $microAnalyses,
+        array $apiMetadata = []
     ): void {
         // Verifica se debug de arquivos está ativo
         if (!Setting::isDebugAnalysisFilesEnabled()) {
@@ -542,6 +550,14 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
             $microIds = $microAnalyses->pluck('id')->toArray();
             $microIdsJson = $this->formatJsonForDebug($microIds);
 
+            // Extrai metadados da API (null coalescing não funciona em heredoc)
+            $metaModeloApi = $apiMetadata['model'] ?? 'N/A';
+            $metaTokensPrompt = $apiMetadata['total_prompt_tokens'] ?? 'N/A';
+            $metaTokensCompletion = $apiMetadata['total_completion_tokens'] ?? 'N/A';
+            $metaTokensReasoning = $apiMetadata['total_reasoning_tokens'] ?? 0;
+            $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
+            $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
+
             $content = <<<MD
 # PARECER FINAL - Processo {$documentAnalysis->numero_processo}
 
@@ -560,6 +576,12 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
 | **Model ID** | {$this->aiModelId} |
 | **Deep Thinking** | {$this->deepThinkingEnabled} |
 | **Data/Hora** | {$timestamp} |
+| **Modelo Resposta API** | {$metaModeloApi} |
+| **Tokens Enviados (Prompt)** | {$metaTokensPrompt} |
+| **Tokens Recebidos (Completion)** | {$metaTokensCompletion} |
+| **Tokens de Raciocínio** | {$metaTokensReasoning} |
+| **Total de Tokens** | {$metaTokensTotal} |
+| **Chamadas à API** | {$metaApiCalls} |
 
 ## IDs das Micro-Análises Consolidadas
 

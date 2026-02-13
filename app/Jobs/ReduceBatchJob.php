@@ -138,6 +138,10 @@ class ReduceBatchJob implements ShouldQueue
                 $aiService->setModel($this->aiModelId);
             }
 
+            // REDUCE precisa de mais tokens de saída e não deve resumir a entrada
+            $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_reduce', 16384));
+            $aiService->setInputCharLimit(null);
+
             // Monta o texto consolidado do batch
             $consolidatedText = $this->buildBatchText($microAnalyses);
 
@@ -159,8 +163,11 @@ class ReduceBatchJob implements ShouldQueue
                 $processingTimeMs
             );
 
+            // Captura metadados da API
+            $apiMetadata = $aiService->getLastAnalysisMetadata();
+
             // Salva arquivo de debug com resultado da consolidação
-            $this->saveReduceToFile($documentAnalysis, $reduceMicro, $result, $prompt, $consolidatedText);
+            $this->saveReduceToFile($documentAnalysis, $reduceMicro, $result, $prompt, $consolidatedText, $apiMetadata);
 
             Log::info('ReduceBatchJob: Batch consolidado com sucesso', [
                 'analysis_id' => $this->documentAnalysisId,
@@ -288,7 +295,8 @@ class ReduceBatchJob implements ShouldQueue
         DocumentMicroAnalysis $reduceMicro,
         string $result,
         string $prompt,
-        string $consolidatedText
+        string $consolidatedText,
+        array $apiMetadata = []
     ): void {
         // Verifica se debug de arquivos está ativo
         if (!Setting::isDebugAnalysisFilesEnabled()) {
@@ -306,6 +314,14 @@ class ReduceBatchJob implements ShouldQueue
             $fileName = "reduce_nivel_{$this->reduceLevel}_batch_{$this->batchIndex}_{$timestamp}.md";
 
             $parentIdsJson = $this->formatJsonForDebug($this->microAnalysisIds);
+
+            // Extrai metadados da API (null coalescing não funciona em heredoc)
+            $metaModeloApi = $apiMetadata['model'] ?? 'N/A';
+            $metaTokensPrompt = $apiMetadata['total_prompt_tokens'] ?? 'N/A';
+            $metaTokensCompletion = $apiMetadata['total_completion_tokens'] ?? 'N/A';
+            $metaTokensReasoning = $apiMetadata['total_reasoning_tokens'] ?? 0;
+            $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
+            $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
 
             $content = <<<MD
 # Consolidação REDUCE - Nível {$this->reduceLevel} - Batch {$this->batchIndex}
@@ -325,6 +341,12 @@ class ReduceBatchJob implements ShouldQueue
 | **Provider** | {$this->aiProvider} |
 | **Deep Thinking** | {$this->deepThinkingEnabled} |
 | **Data/Hora** | {$timestamp} |
+| **Modelo Resposta API** | {$metaModeloApi} |
+| **Tokens Enviados (Prompt)** | {$metaTokensPrompt} |
+| **Tokens Recebidos (Completion)** | {$metaTokensCompletion} |
+| **Tokens de Raciocínio** | {$metaTokensReasoning} |
+| **Total de Tokens** | {$metaTokensTotal} |
+| **Chamadas à API** | {$metaApiCalls} |
 
 ## IDs das Micro-Análises Consolidadas
 

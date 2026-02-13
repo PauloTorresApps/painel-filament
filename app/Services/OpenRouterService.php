@@ -118,6 +118,10 @@ class OpenRouterService extends AbstractAIService
      */
     protected function getMaxTokens(bool $useReasoning): int
     {
+        if ($this->maxTokensOverride !== null) {
+            return $this->maxTokensOverride;
+        }
+
         if ($useReasoning) {
             return (int) config('services.openrouter.max_tokens_reasoning', 32768);
         }
