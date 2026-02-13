@@ -70,7 +70,7 @@ return [
 
         // Limites de tokens por fase (REDUCE e FINAL precisam de mais espaço)
         'max_tokens_reduce' => (int) env('OPENROUTER_MAX_TOKENS_REDUCE', 16384),
-        'max_tokens_final' => (int) env('OPENROUTER_MAX_TOKENS_FINAL', 16384),
+        'max_tokens_final' => (int) env('OPENROUTER_MAX_TOKENS_FINAL', 65000),
 
         // Roteamento de modelos por tipo de documento (opcional)
         // Se null, usa o modelo padrão (OPENROUTER_MODEL)

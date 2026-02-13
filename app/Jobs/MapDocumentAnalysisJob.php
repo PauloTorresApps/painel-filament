@@ -589,10 +589,10 @@ PROMPT;
 
 ---
 
-## Texto Original do Documento (primeiros 2000 caracteres)
+## Texto Original do Documento
 
 ```
-{$this->truncateText($microAnalysis->extracted_text, 2000)}
+{$microAnalysis->extracted_text}
 ```
 
 ---

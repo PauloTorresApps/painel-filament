@@ -366,7 +366,7 @@ class ReduceBatchJob implements ShouldQueue
 
 ## Texto Consolidado Enviado à IA (entrada)
 
-{$this->truncateText($consolidatedText, 10000)}
+{$consolidatedText}
 
 ---
 

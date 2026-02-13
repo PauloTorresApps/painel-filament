@@ -601,7 +601,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
 
 ## Texto Consolidado Enviado à IA (entrada completa)
 
-{$this->truncateText($consolidatedText, 20000)}
+{$consolidatedText}
 
 ---
 
