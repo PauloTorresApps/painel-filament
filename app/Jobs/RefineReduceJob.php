@@ -10,6 +10,7 @@ use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -31,13 +32,14 @@ use Illuminate\Support\Facades\Mail;
  * - Evita o problema de "esquecimento" da IA
  * - Produz uma análise mais coesa e cronológica
  */
-class RefineReduceJob implements ShouldQueue
+class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
     public int $timeout;
     public int $tries;
     public int $backoff;
+    public int $uniqueFor;
 
     public array $contextoDados = [];
 
@@ -52,6 +54,15 @@ class RefineReduceJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.refine_reduce.timeout', 1800);
         $this->tries = config('analysis.jobs.refine_reduce.tries', 2);
         $this->backoff = config('analysis.jobs.refine_reduce.backoff', 60);
+        $this->uniqueFor = 1800; // 30 min
+    }
+
+    /**
+     * Chave única para evitar execução duplicada
+     */
+    public function uniqueId(): string
+    {
+        return "refine_reduce_{$this->documentAnalysisId}";
     }
 
     /**
@@ -125,80 +136,38 @@ class RefineReduceJob implements ShouldQueue
                 $aiService->setModel($this->aiModelId);
             }
 
-            // Estado evolutivo - começa vazio ou com resumo anterior
-            $evolutiveSummary = '';
-            $processedCount = 0;
+            // Desativa limite de caracteres para evitar sumarização desnecessária
+            $aiService->setInputCharLimit(null);
 
-            // Se estamos retomando, recupera o resumo até o ponto anterior
-            if ($this->startFromIndex > 0) {
-                $evolutiveSummary = $this->recoverPreviousSummary($documentAnalysis, $this->startFromIndex);
+            // Busca o prompt do parecer final
+            $finalOpinionPrompt = $this->getFinalOpinionPrompt();
+
+            // Calcula tamanho total das micro-análises para decidir a estratégia
+            $totalChars = $microAnalyses->sum(fn ($m) => mb_strlen($m->micro_analysis ?? ''));
+
+            // Se todas as micro-análises cabem em uma janela de contexto razoável,
+            // faz consolidação direta em 1 única chamada ao invés de N chamadas sequenciais
+            $directConsolidationLimit = 200000; // ~50k tokens — cabe confortavelmente em modelos modernos
+
+            if ($this->startFromIndex === 0 && $totalChars <= $directConsolidationLimit) {
+                // CONSOLIDAÇÃO DIRETA: 1 única chamada à API
+                $finalAnalysis = $this->directConsolidation(
+                    $aiService,
+                    $documentAnalysis,
+                    $microAnalyses,
+                    $finalOpinionPrompt,
+                    $totalDocs
+                );
+            } else {
+                // REFINAMENTO SEQUENCIAL: para retomadas ou quando o conteúdo é muito grande
+                $finalAnalysis = $this->sequentialRefinement(
+                    $aiService,
+                    $documentAnalysis,
+                    $microAnalyses,
+                    $finalOpinionPrompt,
+                    $totalDocs
+                );
             }
-
-            // Processa cada documento sequencialmente
-            foreach ($microAnalyses as $index => $microAnalysis) {
-                // Pula documentos já processados na retomada
-                if ($index < $this->startFromIndex) {
-                    continue;
-                }
-
-                $docNum = $index + 1;
-                $processedCount++;
-
-                Log::info('RefineReduceJob: Processando documento', [
-                    'analysis_id' => $this->documentAnalysisId,
-                    'doc_num' => $docNum,
-                    'total' => $totalDocs,
-                    'descricao' => $microAnalysis->descricao,
-                ]);
-
-                // Atualiza progresso
-                $documentAnalysis->update([
-                    'progress_message' => "Refinando análise: documento {$docNum}/{$totalDocs}...",
-                    'reduce_processed_batches' => $processedCount,
-                    'reduce_total_batches' => $totalDocs,
-                ]);
-
-                // Monta o prompt de refinamento (rate limiting aplicado pelo AI service)
-                $prompt = $this->buildRefinePrompt(
-                    $microAnalysis,
-                    $docNum,
-                    $totalDocs,
-                    !empty($evolutiveSummary)
-                );
-
-                // Monta o contexto: resumo anterior + novo documento
-                $content = $this->buildRefineContent(
-                    $evolutiveSummary,
-                    $microAnalysis,
-                    $docNum
-                );
-
-                // Chama a IA para refinar
-                $evolutiveSummary = $aiService->analyzeSingleDocument(
-                    $prompt,
-                    $content,
-                    // Usa deep thinking apenas nos últimos documentos (quando a narrativa está completa)
-                    $this->deepThinkingEnabled && ($docNum >= $totalDocs - 2)
-                );
-
-                // Salva checkpoint do resumo evolutivo
-                $this->saveCheckpoint($documentAnalysis, $index, $evolutiveSummary);
-            }
-
-            // Gera análise final usando o resumo evolutivo completo
-            Log::info('RefineReduceJob: Gerando análise final', [
-                'analysis_id' => $this->documentAnalysisId,
-            ]);
-
-            $documentAnalysis->update([
-                'progress_message' => "Gerando análise final consolidada...",
-            ]);
-
-            $finalAnalysis = $this->generateFinalAnalysis(
-                $aiService,
-                $documentAnalysis,
-                $evolutiveSummary
-            );
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -217,7 +186,7 @@ class RefineReduceJob implements ShouldQueue
                 'is_resumable' => false,
                 'last_processed_at' => now(),
                 'progress_message' => 'Análise concluída com sucesso!',
-                'evolutionary_summary' => $evolutiveSummary, // Salva o resumo evolutivo
+                'evolutionary_summary' => $finalAnalysis,
             ]);
 
             Log::info('RefineReduceJob: Análise concluída com sucesso', [
@@ -277,13 +246,172 @@ class RefineReduceJob implements ShouldQueue
     }
 
     /**
-     * Monta o prompt de refinamento
+     * Consolidação direta: envia todas as micro-análises em 1 única chamada à API.
+     * Usado quando o conteúdo total cabe na janela de contexto do modelo.
+     */
+    private function directConsolidation(
+        \App\Contracts\AIProviderInterface $aiService,
+        DocumentAnalysis $documentAnalysis,
+        $microAnalyses,
+        string $finalOpinionPrompt,
+        int $totalDocs
+    ): string {
+        Log::info('RefineReduceJob: Usando consolidação direta (1 chamada)', [
+            'analysis_id' => $this->documentAnalysisId,
+            'total_docs' => $totalDocs,
+        ]);
+
+        $documentAnalysis->update([
+            'progress_message' => "Gerando parecer final ({$totalDocs} documento(s))...",
+            'reduce_processed_batches' => $totalDocs,
+            'reduce_total_batches' => $totalDocs,
+        ]);
+
+        $nomeClasse = $this->contextoDados['classeProcessualNome']
+            ?? $this->contextoDados['classeProcessual']
+            ?? 'Não informada';
+
+        // Monta prompt com todas as análises + parecer final
+        $prompt = <<<PROMPT
+# PARECER FINAL DO PROCESSO
+
+**Classe Processual:** {$nomeClasse}
+**Total de documentos analisados:** {$totalDocs}
+
+Você receberá as análises individuais de TODOS os documentos do processo em ordem cronológica.
+
+## TAREFA
+
+Com base em todas as análises abaixo, gere o parecer final solicitado:
+
+---
+
+{$finalOpinionPrompt}
+
+---
+
+## INSTRUÇÕES
+
+1. Considere TODOS os documentos analisados
+2. Mantenha a perspectiva cronológica e causal dos eventos
+3. Fundamente suas conclusões nos documentos analisados
+4. Seja objetivo e direto nas conclusões
+5. Use markdown para estruturar a resposta
+
+Responda com o parecer final completo.
+PROMPT;
+
+        // Concatena todas as micro-análises como conteúdo
+        $content = '';
+        foreach ($microAnalyses as $index => $microAnalysis) {
+            $docNum = $index + 1;
+            $content .= "# DOCUMENTO {$docNum}/{$totalDocs}: {$microAnalysis->descricao}\n\n";
+            $content .= $microAnalysis->micro_analysis . "\n\n---\n\n";
+        }
+
+        $result = $aiService->analyzeSingleDocument(
+            $prompt,
+            $content,
+            $this->deepThinkingEnabled
+        );
+
+        // Salva o resumo evolutivo (é a consolidação completa neste caso)
+        $documentAnalysis->update([
+            'evolutionary_summary' => $result,
+            'last_processed_at' => now(),
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Refinamento sequencial: processa documento a documento mantendo resumo evolutivo.
+     * Usado quando o conteúdo total é grande demais para uma única chamada.
+     */
+    private function sequentialRefinement(
+        \App\Contracts\AIProviderInterface $aiService,
+        DocumentAnalysis $documentAnalysis,
+        $microAnalyses,
+        string $finalOpinionPrompt,
+        int $totalDocs
+    ): string {
+        // Estado evolutivo - começa vazio ou com resumo anterior
+        $evolutiveSummary = '';
+        $processedCount = 0;
+
+        if ($this->startFromIndex > 0) {
+            $evolutiveSummary = $this->recoverPreviousSummary($documentAnalysis, $this->startFromIndex);
+        }
+
+        Log::info('RefineReduceJob: Usando refinamento sequencial', [
+            'analysis_id' => $this->documentAnalysisId,
+            'total_docs' => $totalDocs,
+            'start_from' => $this->startFromIndex,
+        ]);
+
+        foreach ($microAnalyses as $index => $microAnalysis) {
+            if ($index < $this->startFromIndex) {
+                continue;
+            }
+
+            $docNum = $index + 1;
+            $processedCount++;
+            $isLast = ($docNum === $totalDocs);
+
+            Log::info('RefineReduceJob: Processando documento', [
+                'analysis_id' => $this->documentAnalysisId,
+                'doc_num' => $docNum,
+                'total' => $totalDocs,
+                'descricao' => $microAnalysis->descricao,
+                'is_last' => $isLast,
+            ]);
+
+            $progressMsg = $isLast
+                ? "Gerando parecer final (documento {$docNum}/{$totalDocs})..."
+                : "Refinando análise: documento {$docNum}/{$totalDocs}...";
+
+            $documentAnalysis->update([
+                'progress_message' => $progressMsg,
+                'reduce_processed_batches' => $processedCount,
+                'reduce_total_batches' => $totalDocs,
+            ]);
+
+            $prompt = $this->buildRefinePrompt(
+                $microAnalysis,
+                $docNum,
+                $totalDocs,
+                !empty($evolutiveSummary),
+                $isLast ? $finalOpinionPrompt : null
+            );
+
+            $content = $this->buildRefineContent(
+                $evolutiveSummary,
+                $microAnalysis,
+                $docNum
+            );
+
+            $evolutiveSummary = $aiService->analyzeSingleDocument(
+                $prompt,
+                $content,
+                $this->deepThinkingEnabled && $isLast
+            );
+
+            $this->saveCheckpoint($documentAnalysis, $index, $evolutiveSummary);
+        }
+
+        return $evolutiveSummary;
+    }
+
+    /**
+     * Monta o prompt de refinamento.
+     * No último documento, incorpora o prompt do parecer final para eliminar uma chamada extra à API.
      */
     private function buildRefinePrompt(
         DocumentMicroAnalysis $microAnalysis,
         int $docNum,
         int $totalDocs,
-        bool $hasHistory
+        bool $hasHistory,
+        ?string $finalOpinionPrompt = null
     ): string {
         $nomeClasse = $this->contextoDados['classeProcessualNome']
             ?? $this->contextoDados['classeProcessual']
@@ -311,12 +439,49 @@ Responda em markdown estruturado.
 PROMPT;
         }
 
-        // Documentos subsequentes - refina com contexto
+        // Último documento: incorpora parecer final no mesmo passo
         $isLast = ($docNum === $totalDocs);
-        $lastInstructions = $isLast
-            ? "\n\n**ATENÇÃO:** Este é o ÚLTIMO documento. Sua análise deve concluir a narrativa processual."
-            : "";
 
+        if ($isLast && $finalOpinionPrompt) {
+            return <<<PROMPT
+# REFINAMENTO FINAL E PARECER - DOCUMENTO {$docNum}/{$totalDocs}
+
+**Último Documento:** {$microAnalysis->descricao}
+**Classe Processual:** {$nomeClasse}
+
+Você receberá:
+1. O RESUMO EVOLUTIVO de todos os documentos anteriores
+2. A ANÁLISE do ÚLTIMO documento a incorporar
+
+## TAREFA EM DUAS ETAPAS
+
+### ETAPA 1: Incorpore o último documento
+- INTEGRE cronologicamente os novos fatos à narrativa existente
+- IDENTIFIQUE CONEXÕES entre este documento e os anteriores
+- ATUALIZE o estado do processo
+
+### ETAPA 2: Gere o Parecer Final
+Com base na narrativa completa (todos os documentos incorporados), responda ao seguinte:
+
+---
+
+{$finalOpinionPrompt}
+
+---
+
+## INSTRUÇÕES ADICIONAIS
+
+1. Considere TODOS os documentos que foram analisados
+2. Mantenha a perspectiva cronológica e causal dos eventos
+3. Fundamente suas conclusões nos documentos analisados
+4. Seja objetivo e direto nas conclusões
+5. Use markdown para estruturar a resposta
+
+Responda DIRETAMENTE com o parecer final solicitado acima, já considerando todos os documentos do processo.
+PROMPT;
+        }
+
+        // Documentos intermediários - refina com contexto
         return <<<PROMPT
 # REFINAMENTO DA ANÁLISE PROCESSUAL - DOCUMENTO {$docNum}/{$totalDocs}
 
@@ -343,7 +508,6 @@ Atualize o resumo evolutivo incorporando as novas informações:
 - MANTENHA a ordem cronológica dos eventos
 - PRESERVE detalhes importantes (datas, valores, decisões)
 - ATUALIZE conclusões anteriores se novas informações as modificarem
-{$lastInstructions}
 
 Responda com o RESUMO EVOLUTIVO ATUALIZADO em markdown estruturado.
 PROMPT;
@@ -379,27 +543,14 @@ CONTENT;
     }
 
     /**
-     * Gera a análise final usando o prompt do usuário
-     * Busca o prompt padrão ativo de "Parecer Final" do banco para garantir consistência
+     * Obtém o prompt do parecer final para incorporar no último passo de refinamento.
+     * Busca o prompt padrão ativo de "Parecer Final" do banco para garantir consistência.
      */
-    private function generateFinalAnalysis(
-        \App\Contracts\AIProviderInterface $aiService,
-        DocumentAnalysis $documentAnalysis,
-        string $evolutiveSummary
-    ): string {
-        // Busca o prompt padrão ativo de "Parecer Final" do banco
+    private function getFinalOpinionPrompt(): string
+    {
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
-        // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
-        $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
-
-        $prompt = str_replace(':basePrompt', $basePrompt, config('prompts.final_opinion'));
-
-        return $aiService->analyzeSingleDocument(
-            $prompt,
-            $evolutiveSummary,
-            $this->deepThinkingEnabled
-        );
+        return $promptFromDb?->content ?? $this->promptTemplate;
     }
 
     /**

@@ -87,6 +87,12 @@ interface AIProviderInterface
     public function setModel(string $model): self;
 
     /**
+     * Define limite de caracteres de entrada para summarização.
+     * null = sem limite (texto completo é enviado).
+     */
+    public function setInputCharLimit(?int $limit): self;
+
+    /**
      * Retorna o modelo atual
      */
     public function getModel(): string;

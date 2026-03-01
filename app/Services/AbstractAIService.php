@@ -70,7 +70,7 @@ abstract class AbstractAIService implements AIProviderInterface
     /**
      * Limites de tokens para processamento
      */
-    protected const SINGLE_DOC_CHAR_LIMIT = 30000; // ~7.5k tokens
+    protected const SINGLE_DOC_CHAR_LIMIT = 120000; // ~30k tokens - modelos modernos suportam 200k+
 
     /**
      * Configurações de rate limiting

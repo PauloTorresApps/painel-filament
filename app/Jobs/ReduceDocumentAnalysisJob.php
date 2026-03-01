@@ -13,6 +13,7 @@ use App\Services\NotificationService;
 use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
@@ -28,13 +29,14 @@ use Filament\Notifications\Notification as FilamentNotification;
  * - Batches são processados em paralelo via Bus::batch() + ReduceBatchJob
  * - Após todos os batches de um nível, dispara o próximo nível ou gera análise final
  */
-class ReduceDocumentAnalysisJob implements ShouldQueue
+class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable, HandlesJsonOutput;
 
     public int $timeout;
     public int $tries;
     public int $backoff;
+    public int $uniqueFor;
 
     public function __construct(
         public int $documentAnalysisId,
@@ -47,6 +49,15 @@ class ReduceDocumentAnalysisJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.reduce_document.timeout', 600);
         $this->tries = config('analysis.jobs.reduce_document.tries', 3);
         $this->backoff = config('analysis.jobs.reduce_document.backoff', 60);
+        $this->uniqueFor = 1800;
+    }
+
+    /**
+     * Chave única para evitar execução duplicada
+     */
+    public function uniqueId(): string
+    {
+        return "reduce_doc_{$this->documentAnalysisId}_level_{$this->currentReduceLevel}";
     }
 
     /**
