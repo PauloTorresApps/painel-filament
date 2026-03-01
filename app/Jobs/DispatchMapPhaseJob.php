@@ -36,9 +36,10 @@ class DispatchMapPhaseJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public array $contextoDados,
-        public ?string $aiModelId,
+        public ?string $aiModelId,              // Modelo para REDUCE (parecer final)
         public int $userId,
-        public string $reduceStrategy = 'auto' // 'auto', 'refine', 'batch'
+        public string $reduceStrategy = 'auto', // 'auto', 'refine', 'batch'
+        public ?string $mapModelId = null        // Modelo para MAP (análise de documentos)
     ) {
         $this->timeout = config('analysis.jobs.dispatch_map.timeout', 120);
         $this->tries = config('analysis.jobs.dispatch_map.tries', 3);
@@ -147,6 +148,9 @@ class DispatchMapPhaseJob implements ShouldQueue
             // Cria jobs de MAP - diferentes tipos baseado no tamanho
             $mapJobs = [];
 
+            // Usa modelo MAP específico, com fallback para o modelo REDUCE
+            $mapModel = $this->mapModelId ?? $this->aiModelId;
+
             // Jobs para documentos regulares
             foreach ($regularDocs as $microAnalysis) {
                 $mapJobs[] = new MapDocumentAnalysisJob(
@@ -154,7 +158,7 @@ class DispatchMapPhaseJob implements ShouldQueue
                     $this->aiProvider,
                     $this->deepThinkingEnabled,
                     $this->contextoDados,
-                    $this->aiModelId,
+                    $mapModel,
                     $customAnalysisPrompt  // Prompt customizado para análise de documentos
                 );
             }
@@ -166,7 +170,7 @@ class DispatchMapPhaseJob implements ShouldQueue
                     $this->aiProvider,
                     $this->deepThinkingEnabled,
                     $this->contextoDados,
-                    $this->aiModelId
+                    $mapModel
                     // TODO: Adicionar customAnalysisPrompt ao ChunkLargeDocumentJob se necessário
                 );
             }
@@ -179,6 +183,8 @@ class DispatchMapPhaseJob implements ShouldQueue
                 'regular_docs' => count($regularDocs),
                 'large_docs' => count($largeDocs),
                 'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
+                'map_model' => $mapModel,
+                'reduce_model' => $this->aiModelId,
             ]);
 
             // Armazena dados para callbacks

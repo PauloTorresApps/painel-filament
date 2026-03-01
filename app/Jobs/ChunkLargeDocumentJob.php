@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AiModel;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
@@ -99,13 +100,16 @@ class ChunkLargeDocumentJob implements ShouldQueue
             ]);
 
             // Obtém o serviço de IA
-            // Prioridade: roteamento por tipo de arquivo > modelo do prompt
+            // Modelo do prompt como base, override por purpose se cadastrado
             $aiService = AIServiceFactory::make($this->aiProvider);
-            if ($microAnalysis->processing_strategy) {
-                $optimalModel = $aiService->getModelForStrategy($microAnalysis->processing_strategy);
-                $aiService->setModel($optimalModel);
-            } elseif ($this->aiModelId) {
+            if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
+            }
+            if ($microAnalysis->processing_strategy) {
+                $purposeModel = AiModel::getModelIdForPurpose($microAnalysis->processing_strategy);
+                if ($purposeModel) {
+                    $aiService->setModel($purposeModel);
+                }
             }
 
             // Monta system prompt fixo para os chunks (cacheável entre chamadas)

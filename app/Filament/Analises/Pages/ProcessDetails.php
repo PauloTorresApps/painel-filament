@@ -25,6 +25,7 @@ class ProcessDetails extends Page
     public ?int $judicialUserId = null;
     public ?string $senha = null;
     public ?string $chave = null;
+    public array $selectedDocuments = [];
 
     public function mount(): void
     {
@@ -62,6 +63,63 @@ class ProcessDetails extends Page
             $this->numeroProcesso = session('numeroProcesso', '');
 
             session()->forget(['dadosBasicos', 'movimentos', 'documentos', 'numeroProcesso']);
+        }
+
+        $this->initSelectedDocuments();
+    }
+
+    /**
+     * Inicializa a seleção padrão dos documentos.
+     * PDF e HTML iniciam selecionados; arquivos de mídia (imagem, vídeo, áudio) iniciam desmarcados.
+     */
+    private function initSelectedDocuments(): void
+    {
+        $extensoesMedia = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mp3', 'wav', 'ogg', 'aac',
+                           'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico'];
+
+        foreach ($this->documentos as $doc) {
+            $idDocumento = $doc['idDocumento'] ?? null;
+            if ($idDocumento === null) {
+                continue;
+            }
+
+            $descricao = strtolower($doc['descricao'] ?? '');
+            $mimeType = strtolower($doc['conteudo']['mimetype'] ?? ($doc['mimetype'] ?? ''));
+
+            $isMedia = str_starts_with($mimeType, 'image/')
+                    || str_starts_with($mimeType, 'video/')
+                    || str_starts_with($mimeType, 'audio/');
+
+            if (!$isMedia) {
+                foreach ($extensoesMedia as $ext) {
+                    if (str_ends_with($descricao, '.' . $ext)) {
+                        $isMedia = true;
+                        break;
+                    }
+                }
+            }
+
+            $this->selectedDocuments[$idDocumento] = !$isMedia;
+        }
+    }
+
+    /**
+     * Seleciona todos os documentos para análise.
+     */
+    public function selectAll(): void
+    {
+        foreach ($this->selectedDocuments as $id => $_) {
+            $this->selectedDocuments[$id] = true;
+        }
+    }
+
+    /**
+     * Desmarca todos os documentos da análise.
+     */
+    public function deselectAll(): void
+    {
+        foreach ($this->selectedDocuments as $id => $_) {
+            $this->selectedDocuments[$id] = false;
         }
     }
 
@@ -190,22 +248,29 @@ class ProcessDetails extends Page
                 }),
 
             \Filament\Actions\Action::make('analisar_documentos')
-                ->label('Enviar todos os documentos para análise')
+                ->label(function () {
+                    $count = collect($this->selectedDocuments)->filter()->count();
+                    return "Enviar {$count} documento(s) para análise";
+                })
                 ->icon('heroicon-m-square-3-stack-3d')
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Confirmar Análise de Documentos')
-                ->modalDescription('Todos os documentos não-mídia serão enviados para análise pela IA. Esta operação pode levar alguns minutos.')
+                ->modalDescription(function () {
+                    $count = collect($this->selectedDocuments)->filter()->count();
+                    return "{$count} documento(s) selecionado(s) serão enviados para análise pela IA. Esta operação pode levar alguns minutos.";
+                })
                 ->action(function () {
                     $this->enviarParaAnalise();
                 })
                 ->visible(fn () => !empty($this->documentos))
                 ->disabled(function () {
-                    // Desabilita se já existe análise em andamento
-                    return \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                    $noneSelected = collect($this->selectedDocuments)->filter()->isEmpty();
+                    $analysisInProgress = \App\Models\DocumentAnalysis::where('user_id', auth()->id())
                         ->where('numero_processo', $this->numeroProcesso)
                         ->where('status', 'processing')
                         ->exists();
+                    return $noneSelected || $analysisInProgress;
                 }),
 
             \Filament\Actions\Action::make('voltar')
@@ -285,145 +350,63 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Log dos documentos antes do filtro para debug
-            Log::info('Documentos disponíveis para filtro', [
-                'total' => count($this->documentos),
-                'documentos' => collect($this->documentos)->map(function($doc) {
-                    return [
-                        'id' => $doc['idDocumento'] ?? 'sem_id',
-                        'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                        'nivelSigilo' => $doc['nivelSigilo'] ?? 'null',
-                        'mimetype' => $doc['conteudo']['mimetype'] ?? 'null',
-                    ];
-                })->toArray()
+            // Filtra documentos selecionados pelo usuário via checkboxes
+            $selectedIds = collect($this->selectedDocuments)
+                ->filter(fn ($selected) => $selected)
+                ->keys()
+                ->all();
+
+            Log::info('Documentos selecionados pelo usuário', [
+                'total_disponíveis' => count($this->documentos),
+                'total_selecionados' => count($selectedIds),
+                'ids_selecionados' => $selectedIds,
             ]);
 
-            // Filtra apenas documentos que não sejam vídeos
-            $documentosParaAnalise = collect($this->documentos)->filter(function ($doc) {
-                $descricao = strtolower($doc['descricao'] ?? '');
-                // Mimetype está dentro de conteudo
-                $mimeType = strtolower($doc['conteudo']['mimetype'] ?? '');
-
-                // Rejeita APENAS vídeos (mantém PDFs, imagens, HTML, documentos Office, etc.)
-                $extensoesVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'm4v'];
-
-                // Rejeita por mimetype de vídeo
-                if (str_starts_with($mimeType, 'video/')) {
-                    Log::debug('Documento rejeitado: vídeo (mimetype)', [
-                        'id' => $doc['idDocumento'] ?? 'sem_id',
-                        'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                        'mimeType' => $mimeType
-                    ]);
-                    return false;
-                }
-
-                // Rejeita por extensão de vídeo
-                foreach ($extensoesVideo as $ext) {
-                    if (str_ends_with($descricao, '.' . $ext)) {
-                        Log::debug('Documento rejeitado: vídeo (extensão)', [
-                            'id' => $doc['idDocumento'] ?? 'sem_id',
-                            'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                            'extensao' => $ext
-                        ]);
-                        return false;
-                    }
-                }
-
-                // Documento aprovado! (aceita PDFs, imagens, documentos Office, etc.)
-                Log::info('Documento APROVADO para análise', [
-                    'id' => $doc['idDocumento'] ?? 'sem_id',
-                    'descricao' => $doc['descricao'] ?? 'sem_descricao',
-                    'mimeType' => $mimeType
-                ]);
-
-                return true;
-            })
-            // ORDENA DOCUMENTOS POR SEQUÊNCIA GLOBAL DE ANÁLISE
-            // A sequência é calculada no EprocController baseada em:
-            // 1. Ordem cronológica dos eventos (idMovimento)
-            // 2. Ordem dos documentos vinculados (idDocumentoVinculado) dentro de cada evento
-            // Resultado: 1, 2, 3... N (sequência contínua do primeiro ao último documento)
-            ->sortBy(function ($doc) {
-                return (int) ($doc['sequencia_analise'] ?? 999999);
-            })
-            ->values()
-            ->toArray();
+            $documentosParaAnalise = collect($this->documentos)
+                ->filter(fn ($doc) => in_array($doc['idDocumento'] ?? null, $selectedIds))
+                ->sortBy(fn ($doc) => (int) ($doc['sequencia_analise'] ?? 999999))
+                ->values()
+                ->toArray();
 
             // Log da ordem final de análise
             if (!empty($documentosParaAnalise)) {
                 Log::info('📋 ORDEM FINAL DE ANÁLISE DOS DOCUMENTOS', [
                     'total_documentos' => count($documentosParaAnalise),
-                    'ordem_analise' => collect($documentosParaAnalise)->map(function ($doc) {
-                        return [
-                            'sequencia_global' => $doc['sequencia_analise'] ?? 'N/A',
-                            'evento_id' => $doc['idMovimento'] ?? 'N/A',
-                            'documento_id' => $doc['idDocumento'] ?? 'N/A',
-                            'descricao' => $doc['descricao'] ?? 'Sem descrição',
-                        ];
-                    })->toArray()
+                    'ordem_analise' => collect($documentosParaAnalise)->map(fn ($doc) => [
+                        'sequencia_global' => $doc['sequencia_analise'] ?? 'N/A',
+                        'evento_id' => $doc['idMovimento'] ?? 'N/A',
+                        'documento_id' => $doc['idDocumento'] ?? 'N/A',
+                        'descricao' => $doc['descricao'] ?? 'Sem descrição',
+                    ])->toArray()
                 ]);
             }
 
             if (empty($documentosParaAnalise)) {
-                $totalDocumentos = count($this->documentos);
-
-                // Conta motivos de exclusão
-                $htmlSemConteudo = collect($this->documentos)->filter(function($doc) {
-                    $mimeType = strtolower($doc['mimetype'] ?? '');
-                    return $mimeType === 'text/html' || str_contains($mimeType, 'html');
-                })->count();
-
-                $videos = collect($this->documentos)->filter(function($doc) {
-                    $mimeType = strtolower($doc['mimetype'] ?? '');
-                    if ($mimeType === 'text/html' || str_contains($mimeType, 'html')) return false;
-
-                    $descricao = strtolower($doc['descricao'] ?? '');
-                    $extensoesVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'm4v'];
-
-                    if (str_starts_with($mimeType, 'video/')) {
-                        return true;
-                    }
-
-                    foreach ($extensoesVideo as $ext) {
-                        if (str_ends_with($descricao, '.' . $ext)) {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                })->count();
-
-                $detalhes = [];
-                if ($htmlSemConteudo > 0) $detalhes[] = "{$htmlSemConteudo} sem conteúdo disponível (HTML)";
-                if ($videos > 0) $detalhes[] = "{$videos} arquivo(s) de vídeo";
-
-                $mensagemDetalhes = !empty($detalhes)
-                    ? "Motivos de exclusão: " . implode(", ", $detalhes) . "."
-                    : "Todos os documentos foram filtrados.";
-
                 \Filament\Notifications\Notification::make()
-                    ->title('📋 Nenhum Documento Elegível para Análise')
-                    ->body("Total: {$totalDocumentos} documento(s). {$mensagemDetalhes} Documentos em vídeo não podem ser analisados. Outros formatos (PDF, imagens, documentos Office, etc.) são aceitos.")
+                    ->title('📋 Nenhum Documento Selecionado')
+                    ->body('Selecione pelo menos um documento para enviar para análise. Use os checkboxes ao lado de cada documento na lista de eventos.')
                     ->warning()
                     ->persistent()
                     ->send();
 
-                Log::warning('Nenhum documento elegível para análise', [
+                Log::warning('Nenhum documento selecionado para análise', [
                     'user_id' => auth()->user()->id,
                     'numero_processo' => $this->numeroProcesso,
-                    'total_documentos' => $totalDocumentos,
-                    'html_sem_conteudo' => $htmlSemConteudo,
-                    'videos' => $videos,
-                    'detalhe_mensagem' => $mensagemDetalhes
+                    'total_documentos' => count($this->documentos),
                 ]);
 
                 return;
             }
 
-            // Obtém informações do modelo de IA configurado no prompt
-            $aiModel = $promptPadrao->aiModel;
-            $aiModelId = $aiModel?->model_id;
-            $aiProvider = $aiModel?->provider ?? $promptPadrao->ai_provider ?? 'openrouter';
+            // Obtém modelos de IA separados para cada fase
+            // REDUCE: modelo do prompt de parecer final
+            $reduceModel = $promptPadrao->aiModel;
+            $reduceModelId = $reduceModel?->model_id;
+            $aiProvider = $reduceModel?->provider ?? $promptPadrao->ai_provider ?? 'openrouter';
+
+            // MAP: modelo do prompt de análise de documentos (fallback para o modelo REDUCE)
+            $mapModel = $promptAnaliseDocumentos?->aiModel;
+            $mapModelId = $mapModel?->model_id ?? $reduceModelId;
 
             // Dispara o Job com o provider e modelo de IA selecionados
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
@@ -438,13 +421,14 @@ class ProcessDetails extends Page
                 $this->senha,
                 $this->judicialUserId,
                 $promptPadrao->analysis_strategy ?? 'evolutionary',  // Estratégia de análise
-                $aiModelId,                                          // ID do modelo específico
+                $reduceModelId,                                      // ID do modelo para REDUCE (parecer final)
                 $promptAnaliseDocumentos?->content,                  // Prompt customizado para análise de documentos (MAP)
-                $this->chave                                         // Chave do processo (para processos sigilosos)
+                $this->chave,                                        // Chave do processo (para processos sigilosos)
+                $mapModelId                                          // ID do modelo para MAP (análise de documentos)
             );
 
             $totalDocs = count($documentosParaAnalise);
-            $modelName = $aiModel?->name ?? 'IA';
+            $modelName = $reduceModel?->name ?? 'IA';
             $providerName = 'OpenRouter';
 
             \Filament\Notifications\Notification::make()

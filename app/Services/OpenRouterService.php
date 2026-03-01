@@ -14,7 +14,7 @@ class OpenRouterService extends AbstractAIService
     {
         $this->apiKey = config('services.openrouter.api_key') ?? config('laravel-openrouter.api_key');
         $this->apiUrl = config('services.openrouter.api_url') ?? config('laravel-openrouter.api_endpoint');
-        $this->model = config('services.openrouter.model', 'anthropic/claude-sonnet-4');
+        $this->model = ''; // Modelo será definido via setModel() a partir do cadastro de prompts (AiPrompt → AiModel)
         $this->timeout = (int) config('services.openrouter.timeout', 300);
 
         if (empty($this->apiKey)) {
@@ -39,86 +39,49 @@ class OpenRouterService extends AbstractAIService
     }
 
     /**
-     * Verifica se o modelo suporta reasoning (pensamento profundo)
+     * Verifica se o modelo suporta reasoning (pensamento profundo).
+     * Consulta o cadastro de modelos no banco de dados.
      */
     protected function supportsReasoning(): bool
     {
-        $reasoningModels = [
-            // DeepSeek
-            'deepseek/deepseek-r1',
-            'deepseek/deepseek-reasoner',
-            // OpenAI
-            'openai/o1',
-            'openai/o1-mini',
-            'openai/o1-preview',
-            'openai/o3-mini',
-            // Google
-            'google/gemini-2.0-flash-thinking-exp',
-            'google/gemini-2.5-flash-preview',
-            'google/gemini-2.5-pro-preview',
-            // Anthropic
-            'anthropic/claude-sonnet-4',
-            'anthropic/claude-3.7-sonnet',
-            // xAI Grok (suportam reasoning via parâmetro)
-            'x-ai/grok-3',
-            'x-ai/grok-3-fast',
-            'x-ai/grok-3-mini',
-            'x-ai/grok-3-mini-fast',
-            'x-ai/grok-4.1',
-            'x-ai/grok-4.1-fast',
-            'x-ai/grok-4.1-mini',
-            'x-ai/grok-4.1-mini-fast',
-        ];
-
-        foreach ($reasoningModels as $reasoningModel) {
-            if (str_contains($this->model, $reasoningModel) || str_contains($reasoningModel, $this->model)) {
-                return true;
-            }
+        if (empty($this->model)) {
+            return false;
         }
 
-        return false;
+        $aiModel = AiModel::where('model_id', $this->model)
+            ->where('is_active', true)
+            ->first();
+
+        return $aiModel?->supports_reasoning ?? false;
     }
 
     /**
-     * Verifica se o modelo suporta análise de imagens
+     * Verifica se o modelo suporta análise de imagens.
+     * Consulta o cadastro de modelos no banco de dados.
      */
     protected function supportsVision(): bool
     {
-        $visionModels = [
-            'openai/gpt-4o',
-            'openai/gpt-4-turbo',
-            'openai/gpt-4-vision',
-            'anthropic/claude-3',
-            'anthropic/claude-sonnet-4',
-            'google/gemini',
-            'meta-llama/llama-3.2',
-        ];
-
-        foreach ($visionModels as $visionModel) {
-            if (str_contains($this->model, $visionModel) || str_starts_with($this->model, $visionModel)) {
-                return true;
-            }
+        if (empty($this->model)) {
+            return false;
         }
 
-        return false;
+        $aiModel = AiModel::where('model_id', $this->model)
+            ->where('is_active', true)
+            ->first();
+
+        return $aiModel?->supports_vision ?? false;
     }
 
     /**
      * Retorna o modelo ideal para uma estratégia de processamento.
-     * Prioridade: 1) cadastro no banco de dados, 2) variáveis de ambiente (config).
+     * Usa exclusivamente o cadastro no banco de dados (AiModel com purpose).
+     * Retorna o modelo atual se nenhum modelo específico estiver cadastrado para a estratégia.
      */
     public function getModelForStrategy(string $strategy): string
     {
-        // 1. Prioridade: cadastro no banco de dados
         $dbModel = AiModel::getModelIdForPurpose($strategy);
-        if ($dbModel) {
-            return $dbModel;
-        }
 
-        // 2. Fallback: variáveis de ambiente (config)
-        $routing = config('services.openrouter.model_routing', []);
-
-        return $routing[$strategy] ?? $routing['default'] ?? $this->model;
+        return $dbModel ?? $this->model;
     }
 
     /**
@@ -177,9 +140,8 @@ class OpenRouterService extends AbstractAIService
 
             if ($useReasoning) {
                 $payload['reasoning'] = [
-                    'enabled' => true,
                     'effort' => 'high',
-                    'exclude' => false,
+                    'exclude' => true,
                 ];
             }
 
@@ -239,9 +201,8 @@ class OpenRouterService extends AbstractAIService
 
             if ($useReasoning) {
                 $payload['reasoning'] = [
-                    'enabled' => true,
                     'effort' => 'high',
-                    'exclude' => false,
+                    'exclude' => true,
                 ];
             }
 
@@ -302,9 +263,8 @@ class OpenRouterService extends AbstractAIService
 
             if ($useReasoning) {
                 $payload['reasoning'] = [
-                    'enabled' => true,
                     'effort' => 'high',
-                    'exclude' => false,
+                    'exclude' => true,
                 ];
             }
 
@@ -358,9 +318,8 @@ class OpenRouterService extends AbstractAIService
 
             if ($useReasoning) {
                 $payload['reasoning'] = [
-                    'enabled' => true,
                     'effort' => 'high',
-                    'exclude' => false,
+                    'exclude' => true,
                 ];
             }
 
@@ -661,9 +620,8 @@ class OpenRouterService extends AbstractAIService
 
             if ($useReasoning) {
                 $payload['reasoning'] = [
-                    'enabled' => true,
                     'effort' => 'high',
-                    'exclude' => false,
+                    'exclude' => true,
                 ];
             }
 
@@ -677,39 +635,21 @@ class OpenRouterService extends AbstractAIService
 
     /**
      * Monta a mensagem system para o payload da API.
-     * Para modelos Anthropic, usa content blocks com cache_control para habilitar prompt caching.
-     * Para outros modelos, usa formato padrão (auto-caching pelo provider).
+     * Usa content blocks com cache_control para habilitar prompt caching.
+     * O cache_control é ignorado por providers que não o suportam.
      */
     private function buildSystemMessage(string $content): array
     {
-        // Para modelos Anthropic via OpenRouter, formata com cache_control
-        // Isso habilita prompt caching explícito: tokens cacheados custam 10% do preço normal
-        if ($this->isAnthropicModel()) {
-            return [
-                'role' => 'system',
-                'content' => [
-                    [
-                        'type' => 'text',
-                        'text' => $content,
-                        'cache_control' => ['type' => 'ephemeral'],
-                    ],
-                ],
-            ];
-        }
-
-        // Para outros modelos, formato padrão (OpenAI, DeepSeek, etc. usam auto-caching)
         return [
             'role' => 'system',
-            'content' => $content,
+            'content' => [
+                [
+                    'type' => 'text',
+                    'text' => $content,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ],
+            ],
         ];
-    }
-
-    /**
-     * Verifica se o modelo atual é um modelo Anthropic
-     */
-    private function isAnthropicModel(): bool
-    {
-        return str_starts_with($this->model, 'anthropic/');
     }
 
     /**
@@ -749,7 +689,7 @@ class OpenRouterService extends AbstractAIService
 
         // Erro de modelo não encontrado
         if ($statusCode === 404 || str_contains($lowerMessage, 'model not found') || str_contains($lowerMessage, 'not available')) {
-            return "Modelo '{$this->model}' não encontrado ou indisponível no OpenRouter. Verifique a configuração OPENROUTER_MODEL no .env";
+            return "Modelo '{$this->model}' não encontrado ou indisponível no OpenRouter. Verifique o modelo configurado no cadastro de prompts.";
         }
 
         // Erro de moderação de conteúdo

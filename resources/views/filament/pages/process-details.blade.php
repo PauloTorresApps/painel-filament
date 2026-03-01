@@ -45,8 +45,33 @@
             }
         </style>
 
-        {{-- Filtro de movimentos --}}
-        <div class="mb-6 flex justify-end gap-3">
+        {{-- Filtro de movimentos e controles de seleção --}}
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+            {{-- Controles de seleção de documentos --}}
+            @if(!empty($documentos))
+                <div class="inline-flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span class="font-bold text-primary-600 dark:text-primary-400">{{ collect($selectedDocuments)->filter()->count() }}</span>
+                        de {{ count($documentos) }} documentos selecionados
+                    </span>
+                    <span class="text-gray-300 dark:text-gray-600">|</span>
+                    <button
+                        wire:click="selectAll"
+                        type="button"
+                        class="text-sm font-medium text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition"
+                    >
+                        Selecionar todos
+                    </button>
+                    <button
+                        wire:click="deselectAll"
+                        type="button"
+                        class="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition"
+                    >
+                        Desmarcar todos
+                    </button>
+                </div>
+            @endif
+
             <div class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                 <input
                     type="checkbox"
@@ -364,6 +389,15 @@
                                                                     }
                                                                 @endphp
                                                                 <div class="documento-card flex items-center gap-3 p-3 rounded-lg border {{ $isSigiloso ? 'border-amber-200 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-900/5' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-indigo-300 dark:hover:border-indigo-700/40 hover:shadow-md">
+                                                                    {{-- Checkbox de seleção para análise --}}
+                                                                    <div class="flex-shrink-0">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            wire:model.live="selectedDocuments.{{ $documento['idDocumento'] }}"
+                                                                            class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-gray-600 cursor-pointer"
+                                                                            title="{{ ($selectedDocuments[$documento['idDocumento']] ?? false) ? 'Selecionado para análise' : 'Não selecionado para análise' }}"
+                                                                        >
+                                                                    </div>
                                                                     <div class="flex-shrink-0">
                                                                         <div class="w-10 h-10 {{ $isSigiloso ? 'bg-amber-100 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-800' }} rounded-lg flex items-center justify-center">
                                                                             @if($isSigiloso)
@@ -902,8 +936,20 @@
             }
         }
 
+        function reapplyMovementFilter() {
+            const checkbox = document.getElementById('hideEmptyMovements');
+            if (checkbox) {
+                toggleEmptyMovements(checkbox.checked);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            toggleEmptyMovements(true);
+            reapplyMovementFilter();
+        });
+
+        // Reaplica o filtro após o Livewire re-renderizar o DOM
+        document.addEventListener('livewire:morphed', function() {
+            reapplyMovementFilter();
         });
     </script>
 @endpush

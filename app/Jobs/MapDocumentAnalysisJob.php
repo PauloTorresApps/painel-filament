@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AiModel;
 use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
@@ -121,13 +122,19 @@ class MapDocumentAnalysisJob implements ShouldQueue
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
-            // Define o modelo: prioridade para roteamento por tipo de arquivo,
-            // senão usa modelo configurado no prompt (aiModelId)
-            if ($microAnalysis->processing_strategy) {
-                $optimalModel = $aiService->getModelForStrategy($microAnalysis->processing_strategy);
-                $aiService->setModel($optimalModel);
-            } elseif ($this->aiModelId) {
+            // Define o modelo: usa o modelo do prompt como base,
+            // e sobrescreve com o modelo de purpose apenas se houver um cadastrado
+            if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
+            }
+
+            // Override por purpose: se houver um modelo específico cadastrado para
+            // o tipo de documento (pdf_text, pdf_ocr, vision, etc.), usa esse modelo
+            if ($microAnalysis->processing_strategy) {
+                $purposeModel = AiModel::getModelIdForPurpose($microAnalysis->processing_strategy);
+                if ($purposeModel) {
+                    $aiService->setModel($purposeModel);
+                }
             }
 
             // Monta os prompts separados para prompt caching:

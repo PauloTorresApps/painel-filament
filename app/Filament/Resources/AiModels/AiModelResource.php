@@ -57,7 +57,7 @@ class AiModelResource extends Resource
                     ->label('Nome')
                     ->required()
                     ->maxLength(100)
-                    ->placeholder('Ex: Claude Sonnet 4, GPT-4o, Grok 4.1'),
+                    ->placeholder('Nome descritivo do modelo'),
 
                 Select::make('provider')
                     ->label('Provedor de I.A.')
@@ -69,8 +69,18 @@ class AiModelResource extends Resource
                     ->label('ID do Modelo')
                     ->required()
                     ->maxLength(100)
-                    ->placeholder('Ex: anthropic/claude-sonnet-4, openai/gpt-4o, x-ai/grok-4.1-fast')
+                    ->placeholder('provider/nome-do-modelo')
                     ->helperText('Identificador do modelo no OpenRouter (formato: provider/modelo)'),
+
+                Toggle::make('supports_reasoning')
+                    ->label('Suporta Reasoning')
+                    ->default(false)
+                    ->helperText('Habilite se o modelo suporta modo de pensamento profundo (reasoning/chain-of-thought)'),
+
+                Toggle::make('supports_vision')
+                    ->label('Suporta Visão')
+                    ->default(false)
+                    ->helperText('Habilite se o modelo suporta análise de imagens (multimodal)'),
 
                 Select::make('purpose')
                     ->label('Propósito')
@@ -135,6 +145,16 @@ class AiModelResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => AiModel::getAvailablePurposes()[$state] ?? $state)
                     ->color('info'),
+
+                Tables\Columns\IconColumn::make('supports_reasoning')
+                    ->label('Reasoning')
+                    ->boolean()
+                    ->sortable(),
+
+                Tables\Columns\IconColumn::make('supports_vision')
+                    ->label('Visão')
+                    ->boolean()
+                    ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Ativo')

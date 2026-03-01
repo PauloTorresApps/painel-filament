@@ -19,11 +19,15 @@ class AiModel extends Model
         'model_id',
         'description',
         'is_active',
+        'supports_reasoning',
+        'supports_vision',
         'purpose',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'supports_reasoning' => 'boolean',
+        'supports_vision' => 'boolean',
         'purpose' => 'array',
     ];
 

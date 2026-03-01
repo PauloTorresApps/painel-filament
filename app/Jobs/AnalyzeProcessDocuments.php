@@ -47,9 +47,10 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public string $senha,
         public int $judicialUserId,
         public string $analysisStrategy = 'evolutionary',
-        public ?string $aiModelId = null,
+        public ?string $aiModelId = null,                 // Modelo para REDUCE (parecer final)
         public ?string $documentAnalysisPrompt = null, // Prompt customizado para análise de documentos (MAP)
-        public ?string $chave = null                   // Chave do processo (para processos sigilosos)
+        public ?string $chave = null,                  // Chave do processo (para processos sigilosos)
+        public ?string $mapModelId = null              // Modelo para MAP (análise de documentos)
     ) {
         $this->timeout = config('analysis.jobs.analyze_process.timeout', 1800);
         $this->tries = config('analysis.jobs.analyze_process.tries', 2);
@@ -137,7 +138,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Cria jobs de download para cada documento
-            // Escalonamento de 3s entre jobs para evitar rate limiting do webservice
+            // Escalonamento de 1s entre jobs para evitar rate limiting do webservice
             $downloadJobs = [];
             foreach ($this->documentos as $index => $documento) {
                 $job = new DownloadDocumentJob(
@@ -149,7 +150,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                     $this->senha,
                     $this->chave
                 );
-                $job->delay(now()->addSeconds($index * 3));
+                $job->delay(now()->addSeconds($index));
                 $downloadJobs[] = $job;
             }
 
@@ -159,6 +160,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $deepThinkingEnabled = $this->deepThinkingEnabled;
             $contextoDados = $this->contextoDados;
             $aiModelId = $this->aiModelId;
+            $mapModelId = $this->mapModelId;
             $userId = $this->userId;
 
             // Dispara batch de downloads paralelos
@@ -166,7 +168,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 ->name("download_docs_analysis_{$analysisId}")
                 ->onQueue('downloads')
                 ->allowFailures() // Permite que alguns downloads falhem sem cancelar o batch
-                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $contextoDados, $aiModelId, $userId) {
+                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $contextoDados, $aiModelId, $mapModelId, $userId) {
                     // Callback de sucesso: todos os downloads concluídos
                     Log::info('AnalyzeProcessDocuments: Batch de downloads concluído', [
                         'analysis_id' => $analysisId,
@@ -182,7 +184,9 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                         $deepThinkingEnabled,
                         $contextoDados,
                         $aiModelId,
-                        $userId
+                        $userId,
+                        'auto',
+                        $mapModelId
                     )->onQueue('analysis');
                 })
                 ->catch(function (Batch $batch, \Throwable $e) use ($analysisId, $userId) {
