@@ -98,6 +98,8 @@ return [
         // Web search plugin para o parecer final
         'web_search_enabled' => env('OPENROUTER_WEB_SEARCH_ENABLED', false),
         'web_search_max_results' => env('OPENROUTER_WEB_SEARCH_MAX_RESULTS', 3),
+        'temperature' => env('OPENROUTER_TEMPERATURE', 0.3),
+        'top_p' => env('OPENROUTER_TOP_P', 0.2),
     ],
 
 ];

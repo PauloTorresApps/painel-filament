@@ -135,7 +135,7 @@ class OpenRouterService extends AbstractAIService
             ];
 
             if (!$useReasoning) {
-                $payload['temperature'] = 0.4;
+                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
             }
 
             if ($useReasoning) {
@@ -196,7 +196,7 @@ class OpenRouterService extends AbstractAIService
             ];
 
             if (!$useReasoning) {
-                $payload['temperature'] = 0.4;
+                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
             }
 
             if ($useReasoning) {
@@ -258,7 +258,7 @@ class OpenRouterService extends AbstractAIService
             ];
 
             if (!$useReasoning) {
-                $payload['temperature'] = 0.4;
+                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
             }
 
             if ($useReasoning) {
@@ -313,7 +313,7 @@ class OpenRouterService extends AbstractAIService
             ];
 
             if (!$useReasoning) {
-                $payload['temperature'] = 0.3;
+                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
             }
 
             if ($useReasoning) {
@@ -615,7 +615,7 @@ class OpenRouterService extends AbstractAIService
             ];
 
             if (!$useReasoning) {
-                $payload['temperature'] = 0.4;
+                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
             }
 
             if ($useReasoning) {
