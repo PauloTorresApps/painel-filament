@@ -5,16 +5,39 @@ namespace App\Strategies;
 use App\Contracts\AIProviderInterface;
 use App\Models\DocumentMicroAnalysis;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class TextProcessingStrategy implements DocumentProcessingStrategy
 {
+    /**
+     * Mimetypes que podem ser lidos como texto bruto do disco
+     * quando a extração de texto falhar.
+     */
+    private const TEXT_BASED_MIMETYPES = [
+        'text/html',
+        'text/plain',
+        'text/xml',
+        'application/xml',
+        'application/xhtml+xml',
+    ];
+
     public function __construct(
         private readonly ?array $mapAnalysisSchema = null
     ) {}
 
     public function canHandle(DocumentMicroAnalysis $microAnalysis): bool
     {
-        return mb_strlen($microAnalysis->extracted_text ?? '') > 0;
+        // Aceita se há texto extraído
+        if (mb_strlen($microAnalysis->extracted_text ?? '') > 0) {
+            return true;
+        }
+
+        // Fallback: aceita se há conteúdo original em formato textual (HTML, XML, etc.)
+        if ($microAnalysis->hasOriginalContent() && $this->isTextBasedMimetype($microAnalysis->mimetype)) {
+            return true;
+        }
+
+        return false;
     }
 
     public function process(
@@ -24,7 +47,24 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
         string $documentPrompt,
         bool $deepThinkingEnabled
     ): string {
-        $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
+        $text = $microAnalysis->extracted_text ?? '';
+
+        // Fallback: se não há texto extraído, lê o conteúdo original do disco
+        if (mb_strlen($text) === 0 && $microAnalysis->hasOriginalContent()) {
+            $text = $this->readOriginalAsText($microAnalysis);
+
+            Log::info('TextProcessingStrategy: Usando conteúdo original como fallback', [
+                'micro_id' => $microAnalysis->id,
+                'mimetype' => $microAnalysis->mimetype,
+                'text_length' => mb_strlen($text),
+            ]);
+        }
+
+        $textLength = mb_strlen($text);
+
+        if ($textLength === 0) {
+            throw new \RuntimeException("Documento sem texto para análise (micro_id: {$microAnalysis->id})");
+        }
 
         Log::info('TextProcessingStrategy: Usando análise por texto extraído', [
             'micro_id' => $microAnalysis->id,
@@ -37,7 +77,7 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
             try {
                 return $aiService->analyzeSingleDocumentStructured(
                     $documentPrompt,
-                    $microAnalysis->extracted_text ?? '',
+                    $text,
                     $this->mapAnalysisSchema,
                     $deepThinkingEnabled,
                     $systemPrompt
@@ -52,9 +92,67 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
 
         return $aiService->analyzeSingleDocument(
             $documentPrompt,
-            $microAnalysis->extracted_text ?? '',
+            $text,
             $deepThinkingEnabled,
             $systemPrompt
         );
+    }
+
+    /**
+     * Verifica se o mimetype é baseado em texto (pode ser lido como string).
+     */
+    private function isTextBasedMimetype(?string $mimetype): bool
+    {
+        if (!$mimetype) {
+            return false;
+        }
+
+        $mimetype = strtolower($mimetype);
+
+        foreach (self::TEXT_BASED_MIMETYPES as $textMime) {
+            if ($mimetype === $textMime || str_contains($mimetype, $textMime)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Lê o conteúdo original do disco como texto.
+     * Para HTML, remove tags desnecessárias (script, style) para limpar o conteúdo.
+     */
+    private function readOriginalAsText(DocumentMicroAnalysis $microAnalysis): string
+    {
+        try {
+            $rawContent = Storage::disk('local')->get($microAnalysis->original_content_path);
+
+            if ($rawContent === null) {
+                return '';
+            }
+
+            $mimetype = strtolower($microAnalysis->mimetype ?? '');
+
+            // Para HTML, faz limpeza básica de tags não-textuais
+            if (str_contains($mimetype, 'html')) {
+                // Remove scripts e styles
+                $rawContent = preg_replace('/<script[^>]*>[\s\S]*?<\/script>/i', '', $rawContent);
+                $rawContent = preg_replace('/<style[^>]*>[\s\S]*?<\/style>/i', '', $rawContent);
+                // Remove tags HTML, mantém conteúdo
+                $rawContent = strip_tags($rawContent);
+                // Normaliza espaços
+                $rawContent = preg_replace('/\s+/', ' ', $rawContent);
+                $rawContent = trim($rawContent);
+            }
+
+            return $rawContent;
+        } catch (\Exception $e) {
+            Log::warning('TextProcessingStrategy: Falha ao ler conteúdo original', [
+                'micro_id' => $microAnalysis->id,
+                'path' => $microAnalysis->original_content_path,
+                'error' => $e->getMessage(),
+            ]);
+            return '';
+        }
     }
 }

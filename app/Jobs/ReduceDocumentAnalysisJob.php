@@ -11,6 +11,7 @@ use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use App\Traits\HandlesJsonOutput;
+use App\Traits\InjectsUpstreamInputs;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -31,7 +32,7 @@ use Filament\Notifications\Notification as FilamentNotification;
  */
 class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 {
-    use Queueable, HandlesJsonOutput;
+    use Queueable, HandlesJsonOutput, InjectsUpstreamInputs;
 
     public int $timeout;
     public int $tries;
@@ -326,14 +327,33 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
         $aiService->setInputCharLimit(null);
 
-        // Monta o texto consolidado
-        $consolidatedText = $this->buildBatchText($microAnalyses);
+        $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
 
-        // Injeta bloco de entidades agregadas (partes, valores, pontos-chave)
-        $consolidatedText .= $this->buildEntitiesBlock($this->aggregateEntitiesFromMicros($microAnalyses));
+        // Busca o prompt de parecer final do banco
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+        $basePromptContent = $promptFromDb?->content ?? $this->promptTemplate;
 
-        // Monta prompt final
-        $prompt = $this->buildFinalPrompt();
+        // Verifica se o prompt é JSON com estrutura META (suporta injeção de upstream_inputs)
+        if ($this->isJsonPromptWithMeta($basePromptContent)) {
+            // Opção B: Injeta análises diretamente no JSON do prompt
+            $upstreamInputs = $this->buildUpstreamInputsFromMicroAnalyses($microAnalyses);
+            $prompt = $this->injectUpstreamInputs(
+                $basePromptContent,
+                $upstreamInputs,
+                $aggregatedEntities
+            );
+            $consolidatedText = ''; // Conteúdo já injetado em META.upstream_inputs
+
+            Log::info('ReduceDocumentAnalysisJob: Prompt JSON com upstream_inputs injetados', [
+                'analysis_id' => $documentAnalysis->id,
+                'total_inputs' => count($upstreamInputs),
+            ]);
+        } else {
+            // Fluxo original para prompts em texto puro
+            $prompt = str_replace(':basePrompt', $basePromptContent, config('prompts.final_opinion'));
+            $consolidatedText = $this->buildBatchText($microAnalyses);
+            $consolidatedText .= $this->buildEntitiesBlock($aggregatedEntities);
+        }
 
         // Chama a IA para gerar análise final (rate limiting aplicado internamente)
         $finalAnalysis = $aiService->analyzeSingleDocument(

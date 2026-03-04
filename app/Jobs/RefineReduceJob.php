@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Mail\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
+use App\Traits\InjectsUpstreamInputs;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
@@ -34,7 +35,7 @@ use Illuminate\Support\Facades\Mail;
  */
 class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 {
-    use Queueable;
+    use Queueable, InjectsUpstreamInputs;
 
     public int $timeout;
     public int $tries;
@@ -267,12 +268,35 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
             'reduce_total_batches' => $totalDocs,
         ]);
 
-        $nomeClasse = $this->contextoDados['classeProcessualNome']
-            ?? $this->contextoDados['classeProcessual']
-            ?? 'Não informada';
+        $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
 
-        // Monta prompt com todas as análises + parecer final
-        $prompt = <<<PROMPT
+        // Verifica se o prompt é JSON com estrutura META (suporta injeção de upstream_inputs)
+        if ($this->isJsonPromptWithMeta($finalOpinionPrompt)) {
+            // Opção B: Injeta análises diretamente no JSON do prompt
+            $upstreamInputs = $this->buildUpstreamInputsFromMicroAnalyses($microAnalyses);
+            $injectedPrompt = $this->injectUpstreamInputs(
+                $finalOpinionPrompt,
+                $upstreamInputs,
+                $aggregatedEntities
+            );
+
+            Log::info('RefineReduceJob: Prompt JSON com upstream_inputs injetados', [
+                'analysis_id' => $this->documentAnalysisId,
+                'total_inputs' => count($upstreamInputs),
+            ]);
+
+            $result = $aiService->analyzeSingleDocument(
+                $injectedPrompt,
+                '', // Conteúdo já injetado em META.upstream_inputs
+                $this->deepThinkingEnabled
+            );
+        } else {
+            // Fluxo original para prompts em texto puro
+            $nomeClasse = $this->contextoDados['classeProcessualNome']
+                ?? $this->contextoDados['classeProcessual']
+                ?? 'Não informada';
+
+            $prompt = <<<PROMPT
 # PARECER FINAL DO PROCESSO
 
 **Classe Processual:** {$nomeClasse}
@@ -301,22 +325,21 @@ Com base em todas as análises abaixo, gere o parecer final solicitado:
 Responda com o parecer final completo.
 PROMPT;
 
-        // Concatena todas as micro-análises como conteúdo
-        $content = '';
-        foreach ($microAnalyses as $index => $microAnalysis) {
-            $docNum = $index + 1;
-            $content .= "# DOCUMENTO {$docNum}/{$totalDocs}: {$microAnalysis->descricao}\n\n";
-            $content .= $microAnalysis->micro_analysis . "\n\n---\n\n";
+            $content = '';
+            foreach ($microAnalyses as $index => $microAnalysis) {
+                $docNum = $index + 1;
+                $content .= "# DOCUMENTO {$docNum}/{$totalDocs}: {$microAnalysis->descricao}\n\n";
+                $content .= $microAnalysis->micro_analysis . "\n\n---\n\n";
+            }
+
+            $content .= $this->buildEntitiesBlock($aggregatedEntities);
+
+            $result = $aiService->analyzeSingleDocument(
+                $prompt,
+                $content,
+                $this->deepThinkingEnabled
+            );
         }
-
-        // Injeta bloco de entidades agregadas (partes, valores, pontos-chave)
-        $content .= $this->buildEntitiesBlock($this->aggregateEntitiesFromMicros($microAnalyses));
-
-        $result = $aiService->analyzeSingleDocument(
-            $prompt,
-            $content,
-            $this->deepThinkingEnabled
-        );
 
         // Salva o resumo evolutivo (é a consolidação completa neste caso)
         $documentAnalysis->update([
@@ -379,30 +402,56 @@ PROMPT;
                 'reduce_total_batches' => $totalDocs,
             ]);
 
-            $prompt = $this->buildRefinePrompt(
-                $microAnalysis,
-                $docNum,
-                $totalDocs,
-                !empty($evolutiveSummary),
-                $isLast ? $finalOpinionPrompt : null
-            );
+            // Último documento + prompt JSON: injeta upstream_inputs no JSON
+            if ($isLast && $this->isJsonPromptWithMeta($finalOpinionPrompt)) {
+                $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
+                $upstreamInputs = $this->buildUpstreamInputsForSequentialFinal(
+                    $evolutiveSummary,
+                    $microAnalysis
+                );
+                $injectedPrompt = $this->injectUpstreamInputs(
+                    $finalOpinionPrompt,
+                    $upstreamInputs,
+                    $aggregatedEntities
+                );
 
-            $content = $this->buildRefineContent(
-                $evolutiveSummary,
-                $microAnalysis,
-                $docNum
-            );
+                Log::info('RefineReduceJob: Prompt JSON final com upstream_inputs (sequencial)', [
+                    'analysis_id' => $this->documentAnalysisId,
+                    'doc_num' => $docNum,
+                ]);
 
-            // No último documento, injeta entidades agregadas de todo o processo
-            if ($isLast) {
-                $content .= $this->buildEntitiesBlock($this->aggregateEntitiesFromMicros($microAnalyses));
+                $evolutiveSummary = $aiService->analyzeSingleDocument(
+                    $injectedPrompt,
+                    '', // Conteúdo já injetado em META.upstream_inputs
+                    $this->deepThinkingEnabled
+                );
+            } else {
+                // Fluxo original para prompts em texto ou documentos intermediários
+                $prompt = $this->buildRefinePrompt(
+                    $microAnalysis,
+                    $docNum,
+                    $totalDocs,
+                    !empty($evolutiveSummary),
+                    $isLast ? $finalOpinionPrompt : null
+                );
+
+                $content = $this->buildRefineContent(
+                    $evolutiveSummary,
+                    $microAnalysis,
+                    $docNum
+                );
+
+                // No último documento, injeta entidades agregadas de todo o processo
+                if ($isLast) {
+                    $content .= $this->buildEntitiesBlock($this->aggregateEntitiesFromMicros($microAnalyses));
+                }
+
+                $evolutiveSummary = $aiService->analyzeSingleDocument(
+                    $prompt,
+                    $content,
+                    $this->deepThinkingEnabled && $isLast
+                );
             }
-
-            $evolutiveSummary = $aiService->analyzeSingleDocument(
-                $prompt,
-                $content,
-                $this->deepThinkingEnabled && $isLast
-            );
 
             $this->saveCheckpoint($documentAnalysis, $index, $evolutiveSummary);
         }

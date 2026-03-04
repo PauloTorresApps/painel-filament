@@ -382,8 +382,49 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $processingStrategy = 'vision';
             $texto = $this->extractTextFromImage($conteudoBase64, $mimetype, $idDocumento);
         } elseif ($isHtml) {
-            $processingStrategy = 'text';
-            $texto = $this->extractTextFromHtml($conteudoBase64, $idDocumento);
+            // HTMLs do e-Proc frequentemente são wrappers de documentos escaneados
+            // (imagens embutidas em data:image/...;base64,...).
+            // Nesses casos, o conteúdo textual do HTML é irrelevante — o documento
+            // real é a imagem. Devemos enviá-la diretamente para a IA via vision.
+            $htmlService = new HtmlToTextService();
+            $embeddedImages = $htmlService->extractEmbeddedImages($conteudoBase64);
+
+            if (!empty($embeddedImages)) {
+                // HTML é wrapper de imagem/scan — tratar como documento visual
+                $primaryImage = $embeddedImages[0];
+                $processingStrategy = 'vision';
+
+                // Salva a imagem principal como conteúdo original (substituindo o HTML)
+                $imagePath = $this->saveOriginalContent(
+                    $documentAnalysis->id,
+                    $primaryImage['content'],
+                    $primaryImage['mimetype'],
+                    $idDocumento . '_img'
+                );
+
+                if ($imagePath) {
+                    $originalContentPath = $imagePath;
+                    $mimetype = $primaryImage['mimetype'];
+                }
+
+                // Tenta extrair texto da imagem via OCR (como complemento, não principal)
+                $texto = $this->extractTextFromImage(
+                    $primaryImage['content'],
+                    $primaryImage['mimetype'],
+                    $idDocumento
+                );
+
+                Log::info('AnalyzeProcessDocuments: HTML com imagem embutida → vision', [
+                    'id_documento' => $idDocumento,
+                    'total_images' => count($embeddedImages),
+                    'image_mimetype' => $primaryImage['mimetype'],
+                    'ocr_chars' => mb_strlen($texto),
+                ]);
+            } else {
+                // HTML puro (sem imagens embutidas) — extrair texto normalmente
+                $processingStrategy = 'text';
+                $texto = $this->extractTextFromHtml($conteudoBase64, $idDocumento);
+            }
         } else {
             // PDF e outros
             $pdfResult = $pdfService->extractTextWithMetadata(

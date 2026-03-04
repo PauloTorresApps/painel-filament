@@ -27,6 +27,10 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     postgresql-client \
     redis-tools \
+    wkhtmltopdf \
+    xvfb \
+    libxrender1 \
+    libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Verificar instalação do pdftotext e tesseract
