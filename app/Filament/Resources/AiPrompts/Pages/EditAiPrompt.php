@@ -20,10 +20,11 @@ class EditAiPrompt extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Remove HTML tags e scripts para proteção contra XSS
+        // Remove HTML tags e scripts para proteção contra XSS.
+        // ATENÇÃO: htmlspecialchars() NÃO deve ser usado aqui — o dado é texto puro
+        // destinado a APIs de IA, não a renderização HTML. strip_tags() é suficiente.
         if (isset($data['content'])) {
             $data['content'] = strip_tags($data['content']);
-            $data['content'] = htmlspecialchars($data['content'], ENT_QUOTES, 'UTF-8');
         }
 
         // Prompts padrão devem estar sempre ativos

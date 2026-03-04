@@ -101,7 +101,7 @@ class AiPromptForm
                     ->label('Conteúdo do Prompt')
                     ->required()
                     ->rows(8)
-                    ->maxLength(10000)
+                    ->maxLength(20000)
                     ->helperText('Digite o texto do prompt que será enviado para a IA. HTML e scripts serão automaticamente removidos por segurança.')
                     ->columnSpanFull(),
 
