@@ -1,3 +1,0 @@
-[✅] 1 - Select para marcar ou desmarcar todos os documentos de um evento;
-[✅] 2 - Ao enviar o documento para análise, o sistema deverá ser direcionado para a página de visualização do processo de análise dos documentos (analises/historico-processos/{id});
-[✅] 3 - Botão com posiução fixa no rodapé da página para envio de documentos para análise para seguir imediatamente para o topo da página;
