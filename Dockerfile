@@ -27,11 +27,23 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     postgresql-client \
     redis-tools \
-    wkhtmltopdf \
     xvfb \
     libxrender1 \
     libfontconfig1 \
+    libxext6 \
+    fontconfig \
+    xfonts-75dpi \
+    xfonts-base \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Instalar wkhtmltopdf a partir do .deb oficial (não disponível nos repos do Debian Bookworm)
+RUN wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb -O /tmp/wkhtmltox.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/wkhtmltox.deb \
+    && rm -f /tmp/wkhtmltox.deb \
+    && rm -rf /var/lib/apt/lists/* \
+    && wkhtmltopdf --version
 
 # Verificar instalação do pdftotext e tesseract
 RUN which pdftotext && pdftotext -v
