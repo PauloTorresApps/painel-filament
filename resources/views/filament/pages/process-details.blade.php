@@ -43,6 +43,33 @@
                 background: linear-gradient(135deg, rgba(51, 65, 85, 0.4) 0%, rgba(71, 85, 105, 0.4) 100%);
                 border: 1px solid rgba(100, 116, 139, 0.3);
             }
+
+            /* Barra Fixa Inferior (Melhoria #3) */
+            .sticky-footer-bar {
+                position: sticky;
+                bottom: 0;
+                z-index: 40;
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                background: rgba(255, 255, 255, 0.85);
+                border-top: 1px solid rgba(209, 213, 219, 0.6);
+                box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+                transition: all 0.3s ease;
+            }
+            .dark .sticky-footer-bar {
+                background: rgba(17, 24, 39, 0.85);
+                border-top: 1px solid rgba(55, 65, 81, 0.6);
+                box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+            }
+
+            /* Toggle checkbox do evento */
+            .event-toggle-checkbox {
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+            .event-toggle-checkbox:hover {
+                transform: scale(1.15);
+            }
         </style>
 
         {{-- Filtro de movimentos e controles de seleção --}}
@@ -354,12 +381,48 @@
                                                 {{-- Documentos --}}
                                                 @if($hasDocuments)
                                                     <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                                                        <h5 class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-                                                            </svg>
-                                                            Documentos Anexados
-                                                        </h5>
+                                                        <div class="flex items-center justify-between mb-3">
+                                                            <h5 class="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                                                                </svg>
+                                                                Documentos Anexados
+                                                            </h5>
+                                                            {{-- Melhoria #1: Toggle de seleção por evento --}}
+                                                            @php
+                                                                $eventDocIds = collect($movimento['documentos'])->pluck('idDocumento')->filter();
+                                                                $eventSelectedCount = $eventDocIds->filter(fn($id) => $selectedDocuments[$id] ?? false)->count();
+                                                                $eventTotalCount = $eventDocIds->count();
+                                                                $allEventSelected = $eventSelectedCount === $eventTotalCount && $eventTotalCount > 0;
+                                                            @endphp
+                                                            <div class="flex items-center gap-2">
+                                                                <span class="text-xs text-gray-500 dark:text-gray-400">
+                                                                    <span class="font-semibold text-primary-600 dark:text-primary-400">{{ $eventSelectedCount }}</span>/{{ $eventTotalCount }}
+                                                                </span>
+                                                                <button
+                                                                    wire:click="toggleEventSelection({{ $index }})"
+                                                                    type="button"
+                                                                    class="event-toggle-checkbox inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition
+                                                                        {{ $allEventSelected
+                                                                            ? 'text-primary-700 bg-primary-50 hover:bg-primary-100 dark:text-primary-300 dark:bg-primary-900/20 dark:hover:bg-primary-900/30'
+                                                                            : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600'
+                                                                        }}"
+                                                                    title="{{ $allEventSelected ? 'Desmarcar todos deste evento' : 'Selecionar todos deste evento' }}"
+                                                                >
+                                                                    @if($allEventSelected)
+                                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                                        </svg>
+                                                                        Desmarcar
+                                                                    @else
+                                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                                                                        </svg>
+                                                                        Selecionar todos
+                                                                    @endif
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                         <div class="space-y-2">
                                                             @foreach($movimento['documentos'] as $documento)
                                                                 @php
@@ -426,28 +489,12 @@
                                                                             @endif
                                                                         </div>
                                                                         <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                                            {{-- DEBUG: Mostra campos disponíveis --}}
-                                                                            @php
-                                                                                // Log para debug
-                                                                                \Log::info('DEBUG Documento na View', [
-                                                                                    'keys' => array_keys($documento),
-                                                                                    'idDocumento' => $documento['idDocumento'] ?? 'N/A',
-                                                                                    'sequencia_analise' => $documento['sequencia_analise'] ?? 'NÃO EXISTE',
-                                                                                    'sequencia_analise_type' => isset($documento['sequencia_analise']) ? gettype($documento['sequencia_analise']) : 'N/A'
-                                                                                ]);
-                                                                            @endphp
-
-                                                                            {{-- Exibe sequência global de análise (1, 2, 3... N) --}}
                                                                             @if(isset($documento['sequencia_analise']))
                                                                                 <span class="flex items-center gap-1 font-mono font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded" title="Sequência: {{ $documento['sequencia_analise'] }}">
                                                                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
                                                                                     </svg>
                                                                                     #{{ $documento['sequencia_analise'] }}
-                                                                                </span>
-                                                                            @else
-                                                                                <span class="flex items-center gap-1 font-mono text-xs text-red-600 dark:text-red-400" title="Campo sequencia_analise não existe">
-                                                                                    ⚠️ SEM SEQUÊNCIA
                                                                                 </span>
                                                                             @endif
                                                                             @if(isset($documento['dataHora']))
@@ -521,6 +568,55 @@
                 @endif
             </div>
         </div>
+
+        {{-- Melhoria #3: Barra sticky fixa no rodapé para enviar para análise --}}
+        @if(!empty($documentos))
+            <div class="sticky-footer-bar px-6 py-3 mt-6 rounded-lg">
+                <div class="flex items-center justify-between max-w-7xl mx-auto">
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                <span class="font-bold text-primary-600 dark:text-primary-400 text-lg">{{ collect($selectedDocuments)->filter()->count() }}</span>
+                                <span class="text-gray-500 dark:text-gray-400">de {{ count($documentos) }}</span> documentos selecionados
+                            </span>
+                        </div>
+                        <div class="hidden sm:flex items-center gap-2">
+                            <button
+                                wire:click="selectAll"
+                                type="button"
+                                class="text-xs font-medium text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 underline underline-offset-2 transition"
+                            >
+                                Selecionar todos
+                            </button>
+                            <span class="text-gray-300 dark:text-gray-600">|</span>
+                            <button
+                                wire:click="deselectAll"
+                                type="button"
+                                class="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 underline underline-offset-2 transition"
+                            >
+                                Desmarcar todos
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"
+                            class="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition shadow-sm"
+                            title="Voltar ao topo"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+                            </svg>
+                            <span class="hidden sm:inline">Topo</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        @endif
 
         {{-- Modal para visualização de documento --}}
         <div id="documentModal" class="hidden fixed inset-0 z-50 overflow-y-auto">

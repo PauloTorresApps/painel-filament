@@ -37,7 +37,10 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
             return true;
         }
 
-        return false;
+        // Último recurso: aceita qualquer documento para evitar RuntimeException
+        // na cadeia de estratégias. O process() gerará uma nota descritiva
+        // informando que o conteúdo não pôde ser extraído.
+        return true;
     }
 
     public function process(
@@ -62,9 +65,26 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
 
         $textLength = mb_strlen($text);
 
+        // Se o texto ainda está vazio (ex.: HTML contendo apenas imagens escaneadas),
+        // gera uma nota descritiva para a IA em vez de lançar exceção.
+        // Isso permite que o documento seja registrado no parecer final,
+        // mesmo que não haja conteúdo textual extraível.
         if ($textLength === 0) {
-            throw new \RuntimeException("Documento sem texto para análise (micro_id: {$microAnalysis->id})");
+            $descricao = $microAnalysis->descricao ?? 'Documento sem descrição';
+            $mimetype = $microAnalysis->mimetype ?? 'desconhecido';
+
+            Log::warning('TextProcessingStrategy: Documento sem texto extraível, usando nota descritiva', [
+                'micro_id' => $microAnalysis->id,
+                'descricao' => $descricao,
+                'mimetype' => $mimetype,
+            ]);
+
+            $text = "[NOTA: Este documento ({$descricao}) é do tipo {$mimetype} e não foi possível extrair texto do seu conteúdo. "
+                  . "O documento pode conter imagens escaneadas ou conteúdo visual que não pôde ser processado como texto. "
+                  . "Registre a existência deste documento no parecer, mencionando que seu conteúdo não pôde ser analisado textualmente.]";
         }
+
+        $textLength = mb_strlen($text);
 
         Log::info('TextProcessingStrategy: Usando análise por texto extraído', [
             'micro_id' => $microAnalysis->id,

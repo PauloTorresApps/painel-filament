@@ -124,6 +124,69 @@ class ProcessDetails extends Page
     }
 
     /**
+     * Seleciona todos os documentos de um evento (movimento) específico.
+     */
+    public function selectAllByEvent(int $movimentoIndex): void
+    {
+        $movimento = $this->movimentos[$movimentoIndex] ?? null;
+        if (!$movimento || empty($movimento['documentos'])) {
+            return;
+        }
+
+        foreach ($movimento['documentos'] as $doc) {
+            $idDoc = $doc['idDocumento'] ?? null;
+            if ($idDoc !== null && isset($this->selectedDocuments[$idDoc])) {
+                $this->selectedDocuments[$idDoc] = true;
+            }
+        }
+    }
+
+    /**
+     * Desmarca todos os documentos de um evento (movimento) específico.
+     */
+    public function deselectAllByEvent(int $movimentoIndex): void
+    {
+        $movimento = $this->movimentos[$movimentoIndex] ?? null;
+        if (!$movimento || empty($movimento['documentos'])) {
+            return;
+        }
+
+        foreach ($movimento['documentos'] as $doc) {
+            $idDoc = $doc['idDocumento'] ?? null;
+            if ($idDoc !== null && isset($this->selectedDocuments[$idDoc])) {
+                $this->selectedDocuments[$idDoc] = false;
+            }
+        }
+    }
+
+    /**
+     * Alterna seleção de todos os documentos de um evento.
+     * Se todos estão selecionados, desmarca todos. Caso contrário, seleciona todos.
+     */
+    public function toggleEventSelection(int $movimentoIndex): void
+    {
+        $movimento = $this->movimentos[$movimentoIndex] ?? null;
+        if (!$movimento || empty($movimento['documentos'])) {
+            return;
+        }
+
+        $allSelected = true;
+        foreach ($movimento['documentos'] as $doc) {
+            $idDoc = $doc['idDocumento'] ?? null;
+            if ($idDoc !== null && !($this->selectedDocuments[$idDoc] ?? false)) {
+                $allSelected = false;
+                break;
+            }
+        }
+
+        if ($allSelected) {
+            $this->deselectAllByEvent($movimentoIndex);
+        } else {
+            $this->selectAllByEvent($movimentoIndex);
+        }
+    }
+
+    /**
      * Garante que todos os documentos têm o campo sequencia_analise
      * Útil para processos consultados antes desta feature ser implementada
      */
@@ -433,7 +496,7 @@ class ProcessDetails extends Page
 
             \Filament\Notifications\Notification::make()
                 ->title('🚀 Análise Iniciada')
-                ->body("**Etapa 1/2:** Baixando {$totalDocs} documento(s) do e-Proc...\n\n**Etapa 2/2:** Em seguida, os documentos serão analisados pelo modelo **{$modelName}** ({$providerName}).\n\n⏱️ Este processo pode levar alguns minutos. Você será notificado quando concluir.\n\nAcompanhe o progresso no painel acima.")
+                ->body("**Etapa 1/2:** Baixando {$totalDocs} documento(s) do e-Proc...\n\n**Etapa 2/2:** Em seguida, os documentos serão analisados pelo modelo **{$modelName}** ({$providerName}).\n\n⏱️ Este processo pode levar alguns minutos. Você será notificado quando concluir.")
                 ->info()
                 ->persistent()
                 ->send();
@@ -443,6 +506,12 @@ class ProcessDetails extends Page
                 'numero_processo' => $this->numeroProcesso,
                 'total_documentos' => count($documentosParaAnalise)
             ]);
+
+            // Redireciona para a página de histórico de análises (melhoria #2)
+            $this->redirect(
+                route('filament.analises.resources.historico-processos.index'),
+                navigate: true
+            );
 
         } catch (\Exception $e) {
             \Filament\Notifications\Notification::make()
