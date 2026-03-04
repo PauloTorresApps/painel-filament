@@ -27,6 +27,7 @@ class DocumentMicroAnalysis extends Model
         'token_count',
         'processing_time_ms',
         'timeline_events',
+        'aggregated_entities',
     ];
 
     protected $casts = [
@@ -36,6 +37,7 @@ class DocumentMicroAnalysis extends Model
         'token_count' => 'integer',
         'processing_time_ms' => 'integer',
         'timeline_events' => 'array',
+        'aggregated_entities' => 'array',
         'is_scanned' => 'boolean',
     ];
 
@@ -45,6 +47,19 @@ class DocumentMicroAnalysis extends Model
     public function documentAnalysis(): BelongsTo
     {
         return $this->belongsTo(DocumentAnalysis::class);
+    }
+
+    /**
+     * Retorna as entidades agregadas (partes, valores, pontos-chave).
+     * Sempre retorna arrays, mesmo se aggregated_entities for null.
+     */
+    public function getEntities(): array
+    {
+        return $this->aggregated_entities ?? [
+            'partes_mencionadas' => [],
+            'valores_monetarios' => [],
+            'pontos_chave' => [],
+        ];
     }
 
     /**

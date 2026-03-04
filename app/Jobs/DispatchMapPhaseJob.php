@@ -11,6 +11,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\NotificationService;
 use Filament\Notifications\Notification as FilamentNotification;
 
 /**
@@ -200,7 +201,7 @@ class DispatchMapPhaseJob implements ShouldQueue
                 ->name("map_analysis_{$analysisId}")
                 ->onQueue('analysis')
                 ->allowFailures()
-                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $aiModelId, $useRefineStrategy, $contextoDados) {
+                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $aiModelId, $useRefineStrategy, $contextoDados, $userId) {
                     // Callback de sucesso: todos os MAPs concluídos
                     Log::info('DispatchMapPhaseJob: Batch de MAPs concluído', [
                         'analysis_id' => $analysisId,
@@ -209,6 +210,42 @@ class DispatchMapPhaseJob implements ShouldQueue
                         'failed_jobs' => $batch->failedJobs,
                         'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
                     ]);
+
+                    // Circuit breaker: aborta se taxa de falha exceder limite
+                    $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+                    $minJobs = config('analysis.circuit_breaker.min_jobs', 4);
+
+                    if ($batch->totalJobs >= $minJobs && $batch->totalJobs > 0) {
+                        $failureRate = $batch->failedJobs / $batch->totalJobs;
+
+                        if ($failureRate > $threshold) {
+                            $failedPct = round($failureRate * 100);
+                            $thresholdPct = round($threshold * 100);
+
+                            Log::error('DispatchMapPhaseJob: Circuit breaker ativado', [
+                                'analysis_id' => $analysisId,
+                                'failed_jobs' => $batch->failedJobs,
+                                'total_jobs' => $batch->totalJobs,
+                                'failure_rate' => "{$failedPct}%",
+                                'threshold' => "{$thresholdPct}%",
+                            ]);
+
+                            $documentAnalysis = DocumentAnalysis::find($analysisId);
+                            if ($documentAnalysis) {
+                                $documentAnalysis->markAsFailed(
+                                    "Análise abortada: {$batch->failedJobs} de {$batch->totalJobs} documentos falharam ({$failedPct}%). Limite tolerado: {$thresholdPct}%."
+                                );
+
+                                NotificationService::error(
+                                    User::find($userId),
+                                    'Análise Abortada',
+                                    "A análise do processo {$documentAnalysis->numero_processo} foi abortada: {$failedPct}% dos documentos falharam na fase MAP (limite: {$thresholdPct}%). Verifique a conectividade com a API e tente novamente."
+                                );
+                            }
+
+                            return;
+                        }
+                    }
 
                     // Escolhe a estratégia de REDUCE
                     if ($useRefineStrategy) {

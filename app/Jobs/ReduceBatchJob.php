@@ -95,6 +95,9 @@ class ReduceBatchJob implements ShouldQueue
                 'micro_analyses_count' => $microAnalyses->count(),
             ]);
 
+            // Agrega entidades "duras" (partes, valores, pontos-chave) das micro-análises filhas
+            $aggregatedEntities = $this->aggregateEntities($microAnalyses);
+
             // Verifica se já existe registro para este batch (evita duplicação em retry)
             $reduceMicro = DocumentMicroAnalysis::where('document_analysis_id', $this->documentAnalysisId)
                 ->where('document_index', $this->batchIndex)
@@ -118,6 +121,7 @@ class ReduceBatchJob implements ShouldQueue
                     'status' => $reduceMicro->status,
                 ]);
                 $reduceMicro->markAsProcessing();
+                $reduceMicro->update(['aggregated_entities' => $aggregatedEntities]);
             } else {
                 // Cria novo registro para o resultado do reduce
                 $reduceMicro = DocumentMicroAnalysis::create([
@@ -127,6 +131,7 @@ class ReduceBatchJob implements ShouldQueue
                     'reduce_level' => $this->reduceLevel,
                     'parent_ids' => $this->microAnalysisIds,
                     'status' => 'processing',
+                    'aggregated_entities' => $aggregatedEntities,
                 ]);
             }
 
@@ -389,6 +394,32 @@ MD;
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Agrega entidades "duras" de todas as micro-análises filhas.
+     * Usa array_unique para deduplicar e array_values para reindexar.
+     *
+     * @param \Illuminate\Support\Collection $microAnalyses
+     */
+    private function aggregateEntities($microAnalyses): array
+    {
+        $partes = [];
+        $valores = [];
+        $pontos = [];
+
+        foreach ($microAnalyses as $micro) {
+            $entities = $micro->getEntities();
+            array_push($partes, ...$entities['partes_mencionadas']);
+            array_push($valores, ...$entities['valores_monetarios']);
+            array_push($pontos, ...$entities['pontos_chave']);
+        }
+
+        return [
+            'partes_mencionadas' => array_values(array_unique($partes)),
+            'valores_monetarios' => array_values(array_unique($valores)),
+            'pontos_chave' => array_values(array_unique($pontos)),
+        ];
     }
 
     /**

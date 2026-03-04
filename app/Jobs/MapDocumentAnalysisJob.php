@@ -159,11 +159,21 @@ class MapDocumentAnalysisJob implements ShouldQueue
                     $processingTimeMs
                 );
 
-                // Sobrescreve timeline com dados estruturados (mais confiáveis que regex)
+                // Persiste dados estruturados: timeline e entidades agregadas
+                $structuredUpdate = [];
+
                 $timelineData = $structuredData['timeline'] ?? null;
                 if ($timelineData) {
-                    $microAnalysis->update(['timeline_events' => $timelineData]);
+                    $structuredUpdate['timeline_events'] = $timelineData;
                 }
+
+                $structuredUpdate['aggregated_entities'] = [
+                    'partes_mencionadas' => $structuredData['partes_mencionadas'] ?? [],
+                    'valores_monetarios' => $structuredData['valores_monetarios'] ?? [],
+                    'pontos_chave' => $structuredData['pontos_chave'] ?? [],
+                ];
+
+                $microAnalysis->update($structuredUpdate);
 
                 Log::info('MapDocumentAnalysisJob: Resultado estruturado processado', [
                     'micro_id' => $this->microAnalysisId,

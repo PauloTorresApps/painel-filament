@@ -219,6 +219,43 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
                     'failed_jobs' => $batch->failedJobs,
                 ]);
 
+                // Circuit breaker: aborta se taxa de falha exceder limite
+                $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+                $minJobs = config('analysis.circuit_breaker.min_jobs', 4);
+
+                if ($batch->totalJobs >= $minJobs && $batch->totalJobs > 0) {
+                    $failureRate = $batch->failedJobs / $batch->totalJobs;
+
+                    if ($failureRate > $threshold) {
+                        $failedPct = round($failureRate * 100);
+                        $thresholdPct = round($threshold * 100);
+
+                        Log::error('ReduceDocumentAnalysisJob: Circuit breaker ativado no REDUCE', [
+                            'analysis_id' => $analysisId,
+                            'reduce_level' => $currentReduceLevel,
+                            'failed_jobs' => $batch->failedJobs,
+                            'total_jobs' => $batch->totalJobs,
+                            'failure_rate' => "{$failedPct}%",
+                            'threshold' => "{$thresholdPct}%",
+                        ]);
+
+                        $documentAnalysis = DocumentAnalysis::find($analysisId);
+                        if ($documentAnalysis) {
+                            $documentAnalysis->markAsFailed(
+                                "Consolidação abortada no nível {$currentReduceLevel}: {$batch->failedJobs} de {$batch->totalJobs} batches falharam ({$failedPct}%). Limite tolerado: {$thresholdPct}%."
+                            );
+
+                            NotificationService::error(
+                                User::find($documentAnalysis->user_id),
+                                'Consolidação Abortada',
+                                "A consolidação do processo {$documentAnalysis->numero_processo} foi abortada no nível {$currentReduceLevel}: {$failedPct}% dos batches falharam (limite: {$thresholdPct}%)."
+                            );
+                        }
+
+                        return;
+                    }
+                }
+
                 // Dispara job para verificar próximo nível ou finalizar
                 CheckReduceLevelCompletionJob::dispatch(
                     $analysisId,
@@ -291,6 +328,9 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 
         // Monta o texto consolidado
         $consolidatedText = $this->buildBatchText($microAnalyses);
+
+        // Injeta bloco de entidades agregadas (partes, valores, pontos-chave)
+        $consolidatedText .= $this->buildEntitiesBlock($this->aggregateEntitiesFromMicros($microAnalyses));
 
         // Monta prompt final
         $prompt = $this->buildFinalPrompt();
@@ -635,6 +675,73 @@ MD;
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Agrega entidades "duras" de todas as micro-análises para injeção no parecer final.
+     *
+     * @param \Illuminate\Support\Collection $microAnalyses
+     */
+    private function aggregateEntitiesFromMicros($microAnalyses): array
+    {
+        $partes = [];
+        $valores = [];
+        $pontos = [];
+
+        foreach ($microAnalyses as $micro) {
+            $entities = $micro->getEntities();
+            array_push($partes, ...$entities['partes_mencionadas']);
+            array_push($valores, ...$entities['valores_monetarios']);
+            array_push($pontos, ...$entities['pontos_chave']);
+        }
+
+        return [
+            'partes_mencionadas' => array_values(array_unique($partes)),
+            'valores_monetarios' => array_values(array_unique($valores)),
+            'pontos_chave' => array_values(array_unique($pontos)),
+        ];
+    }
+
+    /**
+     * Monta bloco markdown de entidades para injeção no texto consolidado.
+     */
+    private function buildEntitiesBlock(array $entities): string
+    {
+        $hasAny = !empty($entities['partes_mencionadas'])
+            || !empty($entities['valores_monetarios'])
+            || !empty($entities['pontos_chave']);
+
+        if (!$hasAny) {
+            return '';
+        }
+
+        $block = "\n\n---\n\n## ENTIDADES EXTRAÍDAS (dados consolidados pelo sistema - NÃO omitir)\n\n";
+
+        if (!empty($entities['partes_mencionadas'])) {
+            $block .= "### Partes Mencionadas\n";
+            foreach ($entities['partes_mencionadas'] as $parte) {
+                $block .= "- {$parte}\n";
+            }
+            $block .= "\n";
+        }
+
+        if (!empty($entities['valores_monetarios'])) {
+            $block .= "### Valores Monetários\n";
+            foreach ($entities['valores_monetarios'] as $valor) {
+                $block .= "- {$valor}\n";
+            }
+            $block .= "\n";
+        }
+
+        if (!empty($entities['pontos_chave'])) {
+            $block .= "### Pontos-Chave\n";
+            foreach ($entities['pontos_chave'] as $ponto) {
+                $block .= "- {$ponto}\n";
+            }
+            $block .= "\n";
+        }
+
+        return $block;
     }
 
 }

@@ -99,6 +99,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Circuit Breaker
+    |--------------------------------------------------------------------------
+    |
+    | Se a taxa de falha de um batch exceder o threshold, o pipeline é abortado
+    | para evitar pareceres finais incompletos/enganosos.
+    | min_jobs: mínimo de jobs para ativar o circuit breaker (evita falsos positivos).
+    |
+    */
+
+    'circuit_breaker' => [
+        'failure_threshold' => (float) env('ANALYSIS_FAILURE_THRESHOLD', 0.25),
+        'min_jobs' => (int) env('ANALYSIS_MIN_JOBS_CB', 4),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Token Estimation
     |--------------------------------------------------------------------------
     |
