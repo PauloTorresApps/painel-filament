@@ -102,4 +102,18 @@ return [
         'top_p' => env('OPENROUTER_TOP_P', 0.2),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | wkhtmltopdf Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Usado para converter HTML do e-Proc em PDF antes da análise.
+    |
+    */
+
+    'wkhtmltopdf' => [
+        'binary' => env('WKHTMLTOPDF_BINARY', '/usr/bin/wkhtmltopdf'),
+        'timeout' => env('WKHTMLTOPDF_TIMEOUT', 30),
+    ],
+
 ];

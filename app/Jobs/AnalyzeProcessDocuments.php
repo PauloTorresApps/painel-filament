@@ -6,6 +6,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use App\Services\EprocService;
+use App\Services\HtmlToPdfService;
 use App\Services\HtmlToTextService;
 use App\Services\NotificationService;
 use App\Services\OcrService;
@@ -382,46 +383,57 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $processingStrategy = 'vision';
             $texto = $this->extractTextFromImage($conteudoBase64, $mimetype, $idDocumento);
         } elseif ($isHtml) {
-            // HTMLs do e-Proc frequentemente são wrappers de documentos escaneados
-            // (imagens embutidas em data:image/...;base64,...).
-            // Nesses casos, o conteúdo textual do HTML é irrelevante — o documento
-            // real é a imagem. Devemos enviá-la diretamente para a IA via vision.
-            $htmlService = new HtmlToTextService();
-            $embeddedImages = $htmlService->extractEmbeddedImages($conteudoBase64);
+            // HTMLs do e-Proc frequentemente são wrappers de documentos escaneados.
+            // Renderizar o HTML completo para PDF captura a visualização real do documento
+            // (imagens, CSS, layout) e permite processá-lo pelo pipeline de PDF.
+            $htmlToPdfService = new HtmlToPdfService();
 
-            if (!empty($embeddedImages)) {
-                // HTML é wrapper de imagem/scan — tratar como documento visual
-                $primaryImage = $embeddedImages[0];
-                $processingStrategy = 'vision';
+            if ($htmlToPdfService->isAvailable()) {
+                $pdfBase64 = $htmlToPdfService->convertFromBase64($conteudoBase64, "doc_{$idDocumento}");
 
-                // Salva a imagem principal como conteúdo original (substituindo o HTML)
-                $imagePath = $this->saveOriginalContent(
-                    $documentAnalysis->id,
-                    $primaryImage['content'],
-                    $primaryImage['mimetype'],
-                    $idDocumento . '_img'
-                );
+                if ($pdfBase64) {
+                    // Salva o PDF renderizado como conteúdo original (substituindo o HTML)
+                    $pdfPath = $this->saveOriginalContent(
+                        $documentAnalysis->id,
+                        $pdfBase64,
+                        'application/pdf',
+                        $idDocumento . '_rendered'
+                    );
 
-                if ($imagePath) {
-                    $originalContentPath = $imagePath;
-                    $mimetype = $primaryImage['mimetype'];
+                    if ($pdfPath) {
+                        $originalContentPath = $pdfPath;
+                        $mimetype = 'application/pdf';
+                    }
+
+                    // Processa como PDF (extrai texto ou detecta escaneamento)
+                    $pdfResult = $pdfService->extractTextWithMetadata(
+                        $pdfBase64,
+                        "doc_{$idDocumento}_rendered.pdf"
+                    );
+
+                    $texto = $pdfResult['text'];
+                    $isScanned = $pdfResult['is_scanned'];
+                    $processingStrategy = $isScanned ? 'pdf_ocr' : 'pdf_text';
+
+                    Log::info('AnalyzeProcessDocuments: HTML convertido para PDF via wkhtmltopdf', [
+                        'id_documento' => $idDocumento,
+                        'chars_extracted' => mb_strlen($texto),
+                        'is_scanned' => $isScanned,
+                        'strategy' => $processingStrategy,
+                    ]);
+                } else {
+                    // wkhtmltopdf falhou na conversão — fallback para extração de texto
+                    Log::warning('AnalyzeProcessDocuments: wkhtmltopdf falhou, usando extração de texto', [
+                        'id_documento' => $idDocumento,
+                    ]);
+                    $processingStrategy = 'text';
+                    $texto = $this->extractTextFromHtml($conteudoBase64, $idDocumento);
                 }
-
-                // Tenta extrair texto da imagem via OCR (como complemento, não principal)
-                $texto = $this->extractTextFromImage(
-                    $primaryImage['content'],
-                    $primaryImage['mimetype'],
-                    $idDocumento
-                );
-
-                Log::info('AnalyzeProcessDocuments: HTML com imagem embutida → vision', [
-                    'id_documento' => $idDocumento,
-                    'total_images' => count($embeddedImages),
-                    'image_mimetype' => $primaryImage['mimetype'],
-                    'ocr_chars' => mb_strlen($texto),
-                ]);
             } else {
-                // HTML puro (sem imagens embutidas) — extrair texto normalmente
+                // wkhtmltopdf não disponível — fallback para extração de texto
+                Log::warning('AnalyzeProcessDocuments: wkhtmltopdf não disponível, usando extração de texto', [
+                    'id_documento' => $idDocumento,
+                ]);
                 $processingStrategy = 'text';
                 $texto = $this->extractTextFromHtml($conteudoBase64, $idDocumento);
             }
