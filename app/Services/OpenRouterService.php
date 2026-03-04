@@ -636,20 +636,34 @@ class OpenRouterService extends AbstractAIService
     /**
      * Monta a mensagem system para o payload da API.
      * Usa content blocks com cache_control para habilitar prompt caching.
-     * O cache_control é ignorado por providers que não o suportam.
+     * O cache_control só é incluído para modelos Anthropic, pois é um parâmetro
+     * específico desse provider e causa erro 404 com require_parameters=true
+     * em outros providers (OpenAI, DeepSeek, etc.).
      */
     private function buildSystemMessage(string $content): array
     {
+        $contentBlock = [
+            'type' => 'text',
+            'text' => $content,
+        ];
+
+        // cache_control é específico da Anthropic — só incluir para modelos Claude
+        if ($this->isAnthropicModel()) {
+            $contentBlock['cache_control'] = ['type' => 'ephemeral'];
+        }
+
         return [
             'role' => 'system',
-            'content' => [
-                [
-                    'type' => 'text',
-                    'text' => $content,
-                    'cache_control' => ['type' => 'ephemeral'],
-                ],
-            ],
+            'content' => [$contentBlock],
         ];
+    }
+
+    /**
+     * Verifica se o modelo atual é da Anthropic (Claude).
+     */
+    private function isAnthropicModel(): bool
+    {
+        return str_starts_with($this->model, 'anthropic/');
     }
 
     /**
