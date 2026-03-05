@@ -152,7 +152,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>RELATÓRIO DE ANÁLISE PROCESSUAL</h1>
+        <h1>PARECER JURÍDICO</h1>
         <p class="subtitle">Processo: <strong>{{ $analysis->numero_processo }}</strong></p>
         <p class="subtitle">Documento: {{ $analysis->descricao_documento ?? 'Não especificado' }}</p>
         <p class="subtitle">Data da Análise: {{ $analysis->created_at->format('d/m/Y H:i:s') }}</p>

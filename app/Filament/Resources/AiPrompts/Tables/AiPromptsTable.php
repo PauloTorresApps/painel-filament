@@ -124,6 +124,14 @@ class AiPromptsTable
                     DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->modifyQueryUsing(fn ($query) => $query
+                ->orderBy('is_active', 'desc')
+                ->orderByRaw("CASE
+                    WHEN prompt_type = 'document_analysis' THEN 0
+                    WHEN prompt_type = 'final_opinion' THEN 1
+                    ELSE 2
+                END")
+                ->orderBy('created_at', 'desc')
+            );
     }
 }
