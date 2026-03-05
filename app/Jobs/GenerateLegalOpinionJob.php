@@ -8,12 +8,10 @@ use App\Models\System;
 use App\Models\User;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
-use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Filament\Notifications\Notification as FilamentNotification;
 
 class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
 {
@@ -145,6 +143,12 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
                 $aiService->setModel($prompt->aiModel->model_id);
             }
+
+            $aiService->setTemperature(
+                !is_null($prompt->temperature)
+                    ? (float) $prompt->temperature
+                    : (float) config('services.openrouter.temperature_final', 0.4)
+            );
 
             Log::info('Gerando parecer jurídico com IA', [
                 'id' => $analysis->id,

@@ -16,10 +16,10 @@ use Filament\Tables\Table;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Hidden;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Actions\EditAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\BulkActionGroup;
@@ -84,7 +84,26 @@ class ContractPromptResource extends Resource
                     ->default(AiPrompt::TYPE_ANALYSIS)
                     ->required()
                     ->native(false)
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                        if (!blank($get('temperature'))) {
+                            return;
+                        }
+
+                        $set(
+                            'temperature',
+                            $state === AiPrompt::TYPE_LEGAL_OPINION ? 0.4 : 0.3
+                        );
+                    })
                     ->helperText('Selecione o tipo de prompt: Análise de Contrato ou Parecer Jurídico'),
+
+                Slider::make('temperature')
+                    ->label('Temperatura')
+                    ->range(0, 2)
+                    ->step(0.1)
+                    ->default(0.3)
+                    ->required()
+                    ->helperText('Define a criatividade da IA para este prompt (0.0 = mais determinístico, 2.0 = mais criativo).'),
 
                 TextInput::make('title')
                     ->label('Título')
@@ -186,6 +205,11 @@ class ContractPromptResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->placeholder('Padrão (.env)')
+                    ->sortable(),
+
+                TextColumn::make('temperature')
+                    ->label('Temp.')
+                    ->formatStateUsing(fn ($state) => is_null($state) ? '-' : number_format((float) $state, 1, ',', '.'))
                     ->sortable(),
 
                 TextColumn::make('content')

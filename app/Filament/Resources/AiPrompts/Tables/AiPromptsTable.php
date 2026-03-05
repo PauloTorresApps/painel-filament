@@ -20,13 +20,15 @@ class AiPromptsTable
                     ->label('Sistema')
                     ->searchable()
                     ->sortable()
-                    ->badge(),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('title')
                     ->label('Título')
                     ->searchable()
                     ->sortable()
-                    ->limit(50),
+                    ->limit(50)
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('prompt_type_label')
                     ->label('Finalidade')
@@ -36,27 +38,42 @@ class AiPromptsTable
                         'final_opinion' => 'success',
                         default => 'gray',
                     })
-                    ->sortable(query: fn ($query, string $direction) => $query->orderBy('prompt_type', $direction)),
+                    ->sortable(query: fn ($query, string $direction) => $query->orderBy('prompt_type', $direction))
+                    ->toggleable(isToggledHiddenByDefault: false),
+
+                TextColumn::make('aiModel.name')
+                    ->label('Modelo')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('ai_provider')
                     ->label('IA')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => \App\Models\AiPrompt::getAvailableProviders()[$state] ?? $state)
                     ->color(fn ($record) => $record->provider_badge_color)
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('temperature')
+                    ->label('Temp.')
+                    ->formatStateUsing(fn ($state) => is_null($state) ? '-' : number_format((float) $state, 1, ',', '.'))
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 IconColumn::make('deep_thinking_enabled')
                     ->label('Deep Think')
                     ->boolean()
                     ->sortable()
                     ->tooltip('Modo de Pensamento Profundo ativado')
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('content')
                     ->label('Conteúdo')
                     ->searchable()
                     ->limit(100)
-                    ->wrap(),
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 ToggleColumn::make('is_active')
                     ->label('Ativo')
@@ -70,7 +87,8 @@ class AiPromptsTable
                                 ->body('Você desativou um prompt que era padrão.')
                                 ->send();
                         }
-                    }),
+                    })
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 ToggleColumn::make('is_default')
                     ->label('Padrão')
@@ -80,7 +98,8 @@ class AiPromptsTable
                         if ($state && !$record->is_active) {
                             $record->update(['is_active' => true]);
                         }
-                    }),
+                    })
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('created_at')
                     ->label('Criado em')

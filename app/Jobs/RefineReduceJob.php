@@ -146,7 +146,7 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             // Desativa limite de caracteres para evitar sumarização desnecessária
             $aiService->setInputCharLimit(null);
-            $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
+            $aiService->setTemperature($this->getFinalOpinionTemperature());
 
             // Busca o prompt do parecer final
             $finalOpinionPrompt = $this->getFinalOpinionPrompt();
@@ -616,6 +616,20 @@ CONTENT;
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         return $promptFromDb?->content ?? $this->promptTemplate;
+    }
+
+    /**
+     * Obtém a temperatura do prompt final com fallback para configuração global.
+     */
+    private function getFinalOpinionTemperature(): float
+    {
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        if (!is_null($promptFromDb?->temperature)) {
+            return (float) $promptFromDb->temperature;
+        }
+
+        return (float) config('services.openrouter.temperature_final', 0.4);
     }
 
     /**

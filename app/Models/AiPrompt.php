@@ -27,6 +27,7 @@ class AiPrompt extends Model
         'ai_model_id',
         'deep_thinking_enabled',
         'analysis_strategy',
+        'temperature',
         'is_active',
         'is_default',
     ];
@@ -35,6 +36,7 @@ class AiPrompt extends Model
         'is_active' => 'boolean',
         'is_default' => 'boolean',
         'deep_thinking_enabled' => 'boolean',
+        'temperature' => 'float',
     ];
 
     protected $attributes = [

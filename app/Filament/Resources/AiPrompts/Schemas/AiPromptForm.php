@@ -6,6 +6,7 @@ use Filament\Schemas\Schema;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Toggle;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -40,7 +41,26 @@ class AiPromptForm
                     ->options(\App\Models\AiPrompt::getJudicialPromptTypes())
                     ->required()
                     ->native(false)
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                        if (!blank($get('temperature'))) {
+                            return;
+                        }
+
+                        $set(
+                            'temperature',
+                            $state === \App\Models\AiPrompt::TYPE_FINAL_OPINION ? 0.4 : 0.3
+                        );
+                    })
                     ->helperText('Análise de Documentos: usado na fase MAP para analisar cada documento individualmente. Parecer Final: usado na fase REDUCE para gerar a consolidação final.'),
+
+                Slider::make('temperature')
+                    ->label('Temperatura')
+                    ->range(0, 2)
+                    ->step(0.1)
+                    ->default(0.3)
+                    ->required()
+                    ->helperText('Define a criatividade da IA para este prompt (0.0 = mais determinístico, 2.0 = mais criativo).'),
 
                 Select::make('ai_model_id')
                     ->label('Modelo de IA')

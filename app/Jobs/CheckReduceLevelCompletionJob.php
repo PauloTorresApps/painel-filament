@@ -156,14 +156,18 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
             $aiService->setModel($this->aiModelId);
         }
 
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+        $temperature = !is_null($promptFromDb?->temperature)
+            ? (float) $promptFromDb->temperature
+            : (float) config('services.openrouter.temperature_final', 0.4);
+
         // Parecer final precisa de mais tokens de saída
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
-        $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
+        $aiService->setTemperature($temperature);
 
         $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
 
         // Busca o prompt de parecer final do banco
-        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
         $basePromptContent = $promptFromDb?->content ?? $this->promptTemplate;
 
         // Verifica se o prompt é JSON com estrutura META (suporta injeção de upstream_inputs)

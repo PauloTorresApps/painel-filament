@@ -10,15 +10,12 @@ use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use App\Services\DocumentTextExtractor;
 use App\Services\ContractFileManager;
-use App\Contracts\AIProviderInterface;
 use App\Mail\ContractAnalysisCompleted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Storage;
-use Filament\Notifications\Notification as FilamentNotification;
 
 class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
 {
@@ -164,6 +161,11 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
 
             // Análise de contrato único pode ser vasta dependendo do tamanho das páginas, tolerar maior tempo
             $aiService->setTimeout(1200);
+            $aiService->setTemperature(
+                !is_null($prompt->temperature)
+                    ? (float) $prompt->temperature
+                    : (float) config('services.openrouter.temperature', 0.3)
+            );
 
             Log::info('Iniciando análise do contrato com IA', [
                 'id' => $analysis->id,

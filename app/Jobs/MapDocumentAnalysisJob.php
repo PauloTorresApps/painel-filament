@@ -153,6 +153,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             }
 
             $aiService->setModel($resolvedModelId);
+            $aiService->setTemperature($this->resolveMapTemperature());
 
             // Define o modelo: usa o modelo do prompt como base,
             // e sobrescreve com o modelo de purpose apenas se houver um cadastrado
@@ -298,6 +299,20 @@ class MapDocumentAnalysisJob implements ShouldQueue
         $finalPrompt = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         return $finalPrompt?->aiModel?->model_id;
+    }
+
+    /**
+     * Resolve a temperatura da fase MAP com fallback seguro.
+     */
+    private function resolveMapTemperature(): float
+    {
+        $mapPrompt = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_DOCUMENT_ANALYSIS);
+
+        if (!is_null($mapPrompt?->temperature)) {
+            return (float) $mapPrompt->temperature;
+        }
+
+        return (float) config('services.openrouter.temperature', 0.3);
     }
 
     /**

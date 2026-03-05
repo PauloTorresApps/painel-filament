@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\AiPrompt;
-use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Models\User;
@@ -20,7 +19,6 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
-use Filament\Notifications\Notification as FilamentNotification;
 
 /**
  * Job responsável pela fase REDUCE do map-reduce.
@@ -359,15 +357,19 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
         // Estende bastante o timeout para a consolidação final (pode ser muito demorado)
         $aiService->setTimeout(1800); 
 
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+        $temperature = !is_null($promptFromDb?->temperature)
+            ? (float) $promptFromDb->temperature
+            : (float) config('services.openrouter.temperature_final', 0.4);
+
         // Parecer final precisa de mais tokens de saída e não deve resumir a entrada
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
-        $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
+        $aiService->setTemperature($temperature);
         $aiService->setInputCharLimit(null);
 
         $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
 
         // Busca o prompt de parecer final do banco
-        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
         $basePromptContent = $promptFromDb?->content ?? $this->promptTemplate;
 
         // Verifica se o prompt é JSON com estrutura META (suporta injeção de upstream_inputs)
