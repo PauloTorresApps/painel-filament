@@ -134,17 +134,6 @@ class OpenRouterService extends AbstractAIService
                 'max_tokens' => $this->getMaxTokens($useReasoning),
             ];
 
-            if (!$useReasoning) {
-                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
-            }
-
-            if ($useReasoning) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
-
             return $this->executeAPICall($payload, 'texto', $useReasoning);
         });
     }
@@ -195,17 +184,6 @@ class OpenRouterService extends AbstractAIService
                 ],
                 'max_tokens' => $this->getMaxTokens($useReasoning),
             ];
-
-            if (!$useReasoning) {
-                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
-            }
-
-            if ($useReasoning) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
 
             return $this->executeAPICall($payload, 'imagem', $useReasoning);
         });
@@ -259,17 +237,6 @@ class OpenRouterService extends AbstractAIService
                 ),
             ];
 
-            if (!$useReasoning) {
-                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
-            }
-
-            if ($useReasoning) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
-
             return $this->executeAPICall($payload, "PDF ({$pdfEngine})", $useReasoning);
         });
     }
@@ -315,17 +282,6 @@ class OpenRouterService extends AbstractAIService
                     [['id' => 'response-healing']],
                 ),
             ];
-
-            if (!$useReasoning) {
-                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
-            }
-
-            if ($useReasoning) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
 
             return $this->executeAPICall($payload, 'JSON estruturado', $useReasoning);
         });
@@ -417,6 +373,19 @@ class OpenRouterService extends AbstractAIService
     {
         if (empty($payload['model'])) {
             throw new \RuntimeException('OpenRouter: modelo não definido no payload. A aplicação deve definir o modelo vinculado ao prompt antes da chamada.');
+        }
+
+        // Injeta temperature (apenas quando NÃO usa reasoning)
+        if (!$useReasoning && !isset($payload['temperature'])) {
+            $payload['temperature'] = $this->temperatureOverride ?? config('services.openrouter.temperature', 0.3);
+        }
+
+        // Injeta configuração de reasoning
+        if ($useReasoning && !isset($payload['reasoning'])) {
+            $payload['reasoning'] = [
+                'effort' => 'high',
+                'exclude' => true,
+            ];
         }
 
         // Injeta provider routing (fallbacks, ordenação, teto de preço)
@@ -623,17 +592,6 @@ class OpenRouterService extends AbstractAIService
                 'max_tokens' => $this->getMaxTokens($useReasoning),
                 'plugins' => $this->buildPlugins([], true),
             ];
-
-            if (!$useReasoning) {
-                $payload['temperature'] = config('services.openrouter.temperature', 0.3);
-            }
-
-            if ($useReasoning) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
 
             return $this->executeAPICall($payload, 'texto+websearch', $useReasoning);
         });

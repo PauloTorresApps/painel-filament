@@ -98,6 +98,18 @@ interface AIProviderInterface
     public function setInputCharLimit(?int $limit): self;
 
     /**
+     * Define override de max_tokens de saída para a próxima chamada.
+     * null = usa default do provider.
+     */
+    public function setMaxTokens(?int $maxTokens): self;
+
+    /**
+     * Define override de temperature para a próxima chamada.
+     * null = usa default do provider.
+     */
+    public function setTemperature(?float $temperature): self;
+
+    /**
      * Retorna o modelo atual
      */
     public function getModel(): string;

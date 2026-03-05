@@ -146,6 +146,7 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             // Desativa limite de caracteres para evitar sumarização desnecessária
             $aiService->setInputCharLimit(null);
+            $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
 
             // Busca o prompt do parecer final
             $finalOpinionPrompt = $this->getFinalOpinionPrompt();

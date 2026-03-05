@@ -158,6 +158,7 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
 
         // Parecer final precisa de mais tokens de saída
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
+        $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
 
         $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);
 

@@ -361,6 +361,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 
         // Parecer final precisa de mais tokens de saída e não deve resumir a entrada
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));
+        $aiService->setTemperature((float) config('services.openrouter.temperature_final', 0.4));
         $aiService->setInputCharLimit(null);
 
         $aggregatedEntities = $this->aggregateEntitiesFromMicros($microAnalyses);

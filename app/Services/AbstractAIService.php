@@ -28,6 +28,11 @@ abstract class AbstractAIService implements AIProviderInterface
     protected ?int $inputCharLimit = null;
 
     /**
+     * Override de temperature para a próxima chamada (null = usa default do provider)
+     */
+    protected ?float $temperatureOverride = null;
+
+    /**
      * Timeout da requisição HTTP em segundos
      */
     protected int $timeout = 300;
@@ -59,6 +64,16 @@ abstract class AbstractAIService implements AIProviderInterface
     public function setInputCharLimit(?int $limit): self
     {
         $this->inputCharLimit = $limit;
+        return $this;
+    }
+
+    /**
+     * Define override de temperature para a próxima chamada.
+     * null = usa default do config (services.openrouter.temperature).
+     */
+    public function setTemperature(?float $temperature): self
+    {
+        $this->temperatureOverride = $temperature;
         return $this;
     }
 
@@ -148,6 +163,7 @@ abstract class AbstractAIService implements AIProviderInterface
             'finished_at' => null,
             'max_tokens_override' => $this->maxTokensOverride,
             'input_char_limit' => $this->inputCharLimit,
+            'temperature_override' => $this->temperatureOverride,
         ];
     }
 

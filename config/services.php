@@ -99,6 +99,7 @@ return [
         'web_search_enabled' => env('OPENROUTER_WEB_SEARCH_ENABLED', false),
         'web_search_max_results' => env('OPENROUTER_WEB_SEARCH_MAX_RESULTS', 3),
         'temperature' => env('OPENROUTER_TEMPERATURE', 0.3),
+        'temperature_final' => (float) env('OPENROUTER_TEMPERATURE_FINAL', 0.4),
         'top_p' => env('OPENROUTER_TOP_P', 0.2),
     ],
 
