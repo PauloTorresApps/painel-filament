@@ -144,17 +144,48 @@ class DocumentAnalysesTable
                     ->label('Reprocessar')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
-                    ->requiresConfirmation()
+                    ->form([
+                        \Filament\Forms\Components\Radio::make('retry_mode')
+                            ->label('Modo de Reprocessamento')
+                            ->options([
+                                'only_failed' => 'Reprocessar apenas arquivos com falha (Recomendado)',
+                                'all' => 'Reprocessar TUDO desde o início',
+                            ])
+                            ->default('only_failed')
+                            ->required()
+                    ])
                     ->modalHeading('Reprocessar Análise')
-                    ->modalDescription(fn ($record) => "Isso irá reiniciar completamente a análise do processo {$record->numero_processo}. Deseja continuar?")
+                    ->modalDescription(fn ($record) => "Escolha como deseja reprocessar a análise do processo {$record->numero_processo}.")
                     ->modalSubmitActionLabel('Sim, reprocessar')
-                    ->action(function ($record) {
-                        // Reset micro analyses to pending
+                    ->action(function ($record, array $data) {
+                        $analysis = $record;
+                        $retryMode = $data['retry_mode'];
+
+                        if ($retryMode === 'all') {
+                            DocumentMicroAnalysis::where('document_analysis_id', $record->id)
+                                ->update([
+                                    'status' => 'pending',
+                                    'error_message' => null,
+                                ]);
+                        } else {
+                            DocumentMicroAnalysis::where('document_analysis_id', $record->id)
+                                ->whereIn('status', ['failed', 'cancelled', 'processing'])
+                                ->where('reduce_level', 0)
+                                ->update([
+                                    'status' => 'pending',
+                                    'error_message' => null,
+                                ]);
+                        }
+
+                        // Limpa os levels progressivos
                         DocumentMicroAnalysis::where('document_analysis_id', $record->id)
-                            ->update([
-                                'status' => 'pending',
-                                'error_message' => null,
-                            ]);
+                            ->where('reduce_level', '>', 0)
+                            ->delete();
+
+                        $completedCount = DocumentMicroAnalysis::where('document_analysis_id', $record->id)
+                            ->where('status', 'completed')
+                            ->where('reduce_level', 0)
+                            ->count();
 
                         // Reset analysis status
                         $record->update([
@@ -162,7 +193,7 @@ class DocumentAnalysesTable
                             'error_message' => null,
                             'ai_analysis' => null,
                             'current_phase' => 'map',
-                            'processed_documents_count' => 0,
+                            'processed_documents_count' => $completedCount,
                             'progress_message' => 'Reiniciando processamento...',
                         ]);
 

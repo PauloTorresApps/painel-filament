@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\Log;
 
 class OpenRouterService extends AbstractAIService
 {
-    protected int $timeout;
-
     public function __construct()
     {
         $this->apiKey = config('services.openrouter.api_key') ?? config('laravel-openrouter.api_key');

@@ -46,6 +46,36 @@ class DispatchMapPhaseJob implements ShouldQueue
         $this->tries = config('analysis.jobs.dispatch_map.tries', 3);
     }
 
+    private function dispatchReducePhase(bool $useRefineStrategy, int $analysisId, string $aiProvider, bool $deepThinkingEnabled, ?string $aiModelId, array $contextoDados): void
+    {
+        if ($useRefineStrategy) {
+            // Estratégia de Refinamento Sequencial (narrativa melhor)
+            $documentAnalysis = DocumentAnalysis::find($analysisId);
+            $promptTemplate = $documentAnalysis->job_parameters['promptTemplate'] ?? '';
+
+            $refineJob = new RefineReduceJob(
+                $analysisId,
+                $aiProvider,
+                $deepThinkingEnabled,
+                $promptTemplate,
+                $aiModelId
+            );
+            $refineJob->setContextoDados($contextoDados);
+
+            dispatch($refineJob)->onQueue('analysis');
+        } else {
+            // Estratégia de Batch Paralelo (mais rápido para muitos docs)
+            ReduceDocumentAnalysisJob::dispatch(
+                $analysisId,
+                $aiProvider,
+                $deepThinkingEnabled,
+                '', // promptTemplate será obtido do job_parameters
+                $aiModelId,
+                1   // Primeiro nível de reduce
+            )->onQueue('analysis');
+        }
+    }
+
     /**
      * Execute the job.
      */
@@ -86,7 +116,12 @@ class DispatchMapPhaseJob implements ShouldQueue
                 'failed_downloads' => $failedDownloads,
             ]);
 
-            if ($microAnalysesCount === 0) {
+            $completedMicroAnalysesCount = $documentAnalysis->microAnalyses()
+                ->where('status', 'completed')
+                ->where('reduce_level', 0)
+                ->count();
+
+            if ($microAnalysesCount === 0 && $completedMicroAnalysesCount === 0) {
                 $documentAnalysis->update([
                     'status' => 'failed',
                     'error_message' => 'Nenhum documento pôde ser baixado com sucesso'
@@ -97,6 +132,20 @@ class DispatchMapPhaseJob implements ShouldQueue
                     'Nenhum documento pôde ser baixado com sucesso',
                     'danger'
                 );
+                return;
+            }
+
+            // Descobre estratégia antecipadamente
+            $originalTotalDocs = $microAnalysesCount + $completedMicroAnalysesCount + $failedDownloads;
+            $useRefineStrategy = $this->shouldUseRefineStrategy($originalTotalDocs);
+
+            // Se não há jobs Map pendentes, mas existem os completados (Ex: Reprocessar apenas Reduce), dispara logo o Reduce
+            if ($microAnalysesCount === 0 && $completedMicroAnalysesCount > 0) {
+                Log::info('DispatchMapPhaseJob: Pulando fase MAP e indo direto para REDUCE', [
+                    'analysis_id' => $this->analysisId,
+                    'completed_count' => $completedMicroAnalysesCount
+                ]);
+                $this->dispatchReducePhase($useRefineStrategy, $this->analysisId, $this->aiProvider, $this->deepThinkingEnabled, $this->aiModelId, $this->contextoDados);
                 return;
             }
 
@@ -176,9 +225,6 @@ class DispatchMapPhaseJob implements ShouldQueue
                 );
             }
 
-            // Determina estratégia de REDUCE
-            $useRefineStrategy = $this->shouldUseRefineStrategy($microAnalysesCount);
-
             Log::info('DispatchMapPhaseJob: Estratégias selecionadas', [
                 'analysis_id' => $this->analysisId,
                 'regular_docs' => count($regularDocs),
@@ -248,32 +294,10 @@ class DispatchMapPhaseJob implements ShouldQueue
                     }
 
                     // Escolhe a estratégia de REDUCE
-                    if ($useRefineStrategy) {
-                        // Estratégia de Refinamento Sequencial (narrativa melhor)
-                        $documentAnalysis = DocumentAnalysis::find($analysisId);
-                        $promptTemplate = $documentAnalysis->job_parameters['promptTemplate'] ?? '';
-
-                        $refineJob = new RefineReduceJob(
-                            $analysisId,
-                            $aiProvider,
-                            $deepThinkingEnabled,
-                            $promptTemplate,
-                            $aiModelId
-                        );
-                        $refineJob->setContextoDados($contextoDados);
-
-                        dispatch($refineJob)->onQueue('analysis');
-                    } else {
-                        // Estratégia de Batch Paralelo (mais rápido para muitos docs)
-                        ReduceDocumentAnalysisJob::dispatch(
-                            $analysisId,
-                            $aiProvider,
-                            $deepThinkingEnabled,
-                            '', // promptTemplate será obtido do job_parameters
-                            $aiModelId,
-                            1   // Primeiro nível de reduce
-                        )->onQueue('analysis');
-                    }
+                    $dispatchJob = new DispatchMapPhaseJob(
+                        $analysisId, $aiProvider, $deepThinkingEnabled, $contextoDados, $aiModelId, $userId, 'auto'
+                    );
+                    $dispatchJob->dispatchReducePhase($useRefineStrategy, $analysisId, $aiProvider, $deepThinkingEnabled, $aiModelId, $contextoDados);
                 })
                 ->catch(function (Batch $batch, \Throwable $e) use ($analysisId) {
                     Log::error('DispatchMapPhaseJob: Erro no batch de MAPs', [
@@ -290,13 +314,35 @@ class DispatchMapPhaseJob implements ShouldQueue
                         $documentAnalysis->updateMapProgress($completed);
                     }
                 })
-                ->finally(function (Batch $batch) use ($analysisId) {
+                ->finally(function (Batch $batch) use ($analysisId, $userId) {
                     Log::info('DispatchMapPhaseJob: Batch de MAPs finalizado', [
                         'analysis_id' => $analysisId,
                         'batch_id' => $batch->id,
                         'pending_jobs' => $batch->pendingJobs,
                         'failed_jobs' => $batch->failedJobs,
                     ]);
+
+                    if ($batch->cancelled()) {
+                        $documentAnalysis = DocumentAnalysis::find($analysisId);
+                        if ($documentAnalysis) {
+                            $failedPct = $batch->totalJobs > 0 ? round(($batch->failedJobs / $batch->totalJobs) * 100) : 0;
+                            $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+                            $thresholdPct = round($threshold * 100);
+
+                            // Atualiza caso n˜ão tenha sido atualizado por um Catch/Failure manual
+                            if ($documentAnalysis->status !== 'failed') {
+                                $documentAnalysis->markAsFailed(
+                                    "Análise abortada antecipadamente: Limite dinâmico de falhas excedido ({$failedPct}% falharam). Limite tolerado: {$thresholdPct}%."
+                                );
+                            }
+
+                            NotificationService::error(
+                                User::find($userId),
+                                'Análise Abortada (Circuit Breaker)',
+                                "A análise do processo {$documentAnalysis->numero_processo} foi interrompida antecipadamente devido à alta taxa de erros da IA ({$failedPct}% de falhas). Verifique a conectividade da API ou seu limite de créditos."
+                            );
+                        }
+                    }
                 })
                 ->dispatch();
 

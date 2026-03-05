@@ -44,13 +44,36 @@ class ReduceBatchJob implements ShouldQueue
      */
     public function handle(): void
     {
+        $batch = $this->batch();
+
         // Verifica se o batch foi cancelado
-        if ($this->batch()?->cancelled()) {
+        if ($batch?->cancelled()) {
             Log::info('ReduceBatchJob: Batch cancelado', [
                 'analysis_id' => $this->documentAnalysisId,
                 'batch_index' => $this->batchIndex,
             ]);
             return;
+        }
+
+        // Validação dinâmica do Circuit Breaker no início da execução
+        if ($batch) {
+            $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+            $minJobs = config('analysis.circuit_breaker.min_jobs', 4);
+
+            if ($batch->totalJobs >= $minJobs && $batch->totalJobs > 0) {
+                $failureRate = $batch->failedJobs / $batch->totalJobs;
+                if ($failureRate > $threshold) {
+                    Log::warning('ReduceBatchJob: Circuit breaker acionado dinamicamente, cancelando lote.', [
+                        'analysis_id' => $this->documentAnalysisId,
+                        'batch_index' => $this->batchIndex,
+                        'failed_jobs' => $batch->failedJobs,
+                        'total_jobs' => $batch->totalJobs,
+                        'failure_rate' => ($failureRate * 100) . '%',
+                    ]);
+                    $batch->cancel();
+                    return;
+                }
+            }
         }
 
         $startTime = microtime(true);
@@ -142,6 +165,9 @@ class ReduceBatchJob implements ShouldQueue
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
             }
+
+            // Aumenta o tempo limite tolerado, consolidar lotes leva mais tempo da API
+            $aiService->setTimeout(1200);
 
             // REDUCE precisa de mais tokens de saída e não deve resumir a entrada
             $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_reduce', 16384));

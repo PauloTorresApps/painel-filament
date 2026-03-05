@@ -54,12 +54,34 @@ class MapDocumentAnalysisJob implements ShouldQueue
      */
     public function handle(): void
     {
+        $batch = $this->batch();
+
         // Verifica se o batch foi cancelado
-        if ($this->batch()?->cancelled()) {
+        if ($batch?->cancelled()) {
             Log::info('MapDocumentAnalysisJob: Batch cancelado, pulando', [
                 'micro_id' => $this->microAnalysisId
             ]);
             return;
+        }
+
+        // Validação dinâmica do Circuit Breaker no início da execução
+        if ($batch) {
+            $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+            $minJobs = config('analysis.circuit_breaker.min_jobs', 4);
+
+            if ($batch->totalJobs >= $minJobs && $batch->totalJobs > 0) {
+                $failureRate = $batch->failedJobs / $batch->totalJobs;
+                if ($failureRate > $threshold) {
+                    Log::warning('MapDocumentAnalysisJob: Circuit breaker acionado dinamicamente, cancelando lote.', [
+                        'micro_id' => $this->microAnalysisId,
+                        'failed_jobs' => $batch->failedJobs,
+                        'total_jobs' => $batch->totalJobs,
+                        'failure_rate' => ($failureRate * 100) . '%',
+                    ]);
+                    $batch->cancel();
+                    return;
+                }
+            }
         }
 
         $startTime = microtime(true);
@@ -213,14 +235,24 @@ class MapDocumentAnalysisJob implements ShouldQueue
             ]);
 
         } catch (\Exception $e) {
+            $isRateLimit = (
+                str_contains(strtolower($e->getMessage()), '429') || 
+                str_contains(strtolower($e->getMessage()), 'rate limit') || 
+                str_contains(strtolower($e->getMessage()), 'too many requests')
+            );
+
             Log::error('MapDocumentAnalysisJob: Erro no processamento', [
                 'micro_id' => $this->microAnalysisId,
                 'error' => $e->getMessage(),
+                'is_rate_limit' => $isRateLimit,
                 'trace' => $e->getTraceAsString()
             ]);
 
             if (isset($microAnalysis)) {
-                $microAnalysis->markAsFailed($e->getMessage());
+                $errorMessage = $isRateLimit 
+                    ? "Limite de requisições da API atingido. Falhou ao processar." 
+                    : $e->getMessage();
+                $microAnalysis->markAsFailed($errorMessage);
             }
 
             throw $e;

@@ -162,6 +162,9 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 $aiService->setModel($prompt->aiModel->model_id);
             }
 
+            // Análise de contrato único pode ser vasta dependendo do tamanho das páginas, tolerar maior tempo
+            $aiService->setTimeout(1200);
+
             Log::info('Iniciando análise do contrato com IA', [
                 'id' => $analysis->id,
                 'provider' => $prompt->ai_provider,

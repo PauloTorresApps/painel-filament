@@ -87,6 +87,11 @@ interface AIProviderInterface
     public function setModel(string $model): self;
 
     /**
+     * Define o limite de timeout para chamadas HTTP
+     */
+    public function setTimeout(int $seconds): self;
+
+    /**
      * Define limite de caracteres de entrada para summarização.
      * null = sem limite (texto completo é enviado).
      */

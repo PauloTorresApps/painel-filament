@@ -291,6 +291,35 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
                     'pending_jobs' => $batch->pendingJobs,
                     'failed_jobs' => $batch->failedJobs,
                 ]);
+
+                if ($batch->cancelled()) {
+                    $documentAnalysis = DocumentAnalysis::find($analysisId);
+                    if ($documentAnalysis) {
+                        $failedPct = $batch->totalJobs > 0 ? round(($batch->failedJobs / $batch->totalJobs) * 100) : 0;
+                        $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
+                        $thresholdPct = round($threshold * 100);
+
+                        if ($documentAnalysis->status !== 'failed') {
+                            $documentAnalysis->update([
+                                'status' => 'failed',
+                                'error_message' => "Consolidação abortada dinamicamente no nível {$currentReduceLevel}: Limite de falhas excedido ({$failedPct}% falharam). Limite tolerado: {$thresholdPct}%."
+                            ]);
+                        }
+
+                        // Busca usuário para notificar
+                        $user = User::find($documentAnalysis->user_id);
+                        if ($user) {
+                            try {
+                                \App\Services\NotificationService::send(
+                                    $user,
+                                    'Análise Abortada (Circuit Breaker)',
+                                    "A análise do processo {$documentAnalysis->numero_processo} foi interrompida na fase de consolidação devido à alta taxa de erros da IA ({$failedPct}% de falhas).",
+                                    'danger'
+                                );
+                            } catch (\Exception $e) {}
+                        }
+                    }
+                }
             })
             ->dispatch();
 
@@ -322,6 +351,9 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
         if ($this->aiModelId) {
             $aiService->setModel($this->aiModelId);
         }
+
+        // Estende bastante o timeout para a consolidação final (pode ser muito demorado)
+        $aiService->setTimeout(1800); 
 
         // Parecer final precisa de mais tokens de saída e não deve resumir a entrada
         $aiService->setMaxTokens((int) config('services.openrouter.max_tokens_final', 16384));

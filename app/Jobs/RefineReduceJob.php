@@ -137,6 +137,9 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                 $aiService->setModel($this->aiModelId);
             }
 
+            // Permite um limite estendido de tempo para chamadas pesadas de IA
+            $aiService->setTimeout(1800);
+
             // Desativa limite de caracteres para evitar sumarização desnecessária
             $aiService->setInputCharLimit(null);
 

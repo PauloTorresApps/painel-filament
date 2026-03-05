@@ -28,6 +28,20 @@ abstract class AbstractAIService implements AIProviderInterface
     protected ?int $inputCharLimit = null;
 
     /**
+     * Timeout da requisição HTTP em segundos
+     */
+    protected int $timeout = 300;
+
+    /**
+     * Define o timeout para a chamada HTTP.
+     */
+    public function setTimeout(int $seconds): self
+    {
+        $this->timeout = $seconds;
+        return $this;
+    }
+
+    /**
      * Define override de max_tokens de saída para a próxima chamada.
      * Resetado automaticamente no início de cada análise (resetAnalysisMetadata).
      */

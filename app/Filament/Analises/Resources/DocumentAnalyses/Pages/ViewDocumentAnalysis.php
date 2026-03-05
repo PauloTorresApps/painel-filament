@@ -158,19 +158,51 @@ class ViewDocumentAnalysis extends ViewRecord
                 ->icon('heroicon-o-arrow-path')
                 ->color('warning')
                 ->visible(fn () => in_array($this->record->status, ['failed', 'processing', 'cancelled']))
-                ->requiresConfirmation()
+                ->form([
+                    \Filament\Forms\Components\Radio::make('retry_mode')
+                        ->label('Modo de Reprocessamento')
+                        ->options([
+                            'only_failed' => 'Reprocessar apenas arquivos/etapas com falha (Recomendado)',
+                            'all' => 'Reprocessar TUDO desde o início',
+                        ])
+                        ->default('only_failed')
+                        ->required()
+                ])
                 ->modalHeading('Reprocessar Análise')
-                ->modalDescription('Isso irá reiniciar o processamento desta análise. Todas as análises parciais serão refeitas. Deseja continuar?')
+                ->modalDescription('Escolha como deseja reprocessar esta análise processual.')
                 ->modalSubmitActionLabel('Sim, reprocessar')
-                ->action(function () {
+                ->action(function (array $data) {
                     $analysis = $this->record;
+                    $retryMode = $data['retry_mode'];
 
-                    // Reset micro analyses to pending
+                    if ($retryMode === 'all') {
+                        // Reseta TUDO para pending
+                        DocumentMicroAnalysis::where('document_analysis_id', $analysis->id)
+                            ->update([
+                                'status' => 'pending',
+                                'error_message' => null,
+                            ]);
+                    } else {
+                        // Reseta apenas o que falhou, cancelou ou ficou processando.
+                        DocumentMicroAnalysis::where('document_analysis_id', $analysis->id)
+                            ->whereIn('status', ['failed', 'cancelled', 'processing'])
+                            ->where('reduce_level', 0)
+                            ->update([
+                                'status' => 'pending',
+                                'error_message' => null,
+                            ]);
+                    }
+
+                    // Apaga os sub-níveis de resume sempre caso existam falhas, para re-construir a pipeline de forma limpa.
                     DocumentMicroAnalysis::where('document_analysis_id', $analysis->id)
-                        ->update([
-                            'status' => 'pending',
-                            'error_message' => null,
-                        ]);
+                        ->where('reduce_level', '>', 0)
+                        ->delete();
+
+                    // Prepara contagem para "already completed"
+                    $completedCount = DocumentMicroAnalysis::where('document_analysis_id', $analysis->id)
+                        ->where('status', 'completed')
+                        ->where('reduce_level', 0)
+                        ->count();
 
                     // Reset analysis status
                     $analysis->update([
@@ -178,7 +210,7 @@ class ViewDocumentAnalysis extends ViewRecord
                         'error_message' => null,
                         'ai_analysis' => null,
                         'current_phase' => 'map',
-                        'processed_documents_count' => 0,
+                        'processed_documents_count' => $completedCount,
                         'progress_message' => 'Reiniciando processamento...',
                     ]);
 
