@@ -144,22 +144,22 @@ class DocumentAnalysesTable
                     ->label('Reprocessar')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
-                    ->form([
-                        \Filament\Forms\Components\Radio::make('retry_mode')
-                            ->label('Modo de Reprocessamento')
-                            ->options([
-                                'only_failed' => 'Reprocessar apenas arquivos com falha (Recomendado)',
-                                'all' => 'Reprocessar TUDO desde o início',
-                            ])
-                            ->default('only_failed')
-                            ->required()
-                    ])
+                    ->requiresConfirmation()
                     ->modalHeading('Reprocessar Análise')
-                    ->modalDescription(fn ($record) => "Escolha como deseja reprocessar a análise do processo {$record->numero_processo}.")
-                    ->modalSubmitActionLabel('Sim, reprocessar')
-                    ->action(function ($record, array $data) {
+                    ->modalDescription(fn ($record) => "Processo {$record->numero_processo}: escolha entre Reanalisar Completamente ou Reanalisar somente etapas com erros.")
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Cancelar')
+                    ->extraModalFooterActions(fn (Action $action): array => [
+                        $action->makeModalSubmitAction('retry_only_failed', arguments: ['retry_mode' => 'only_failed'])
+                            ->label('Reanalisar somente etapas com erros')
+                            ->color('warning'),
+                        $action->makeModalSubmitAction('retry_all', arguments: ['retry_mode' => 'all'])
+                            ->label('Reanalisar Completamente')
+                            ->color('danger'),
+                    ])
+                    ->action(function ($record, array $arguments) {
                         $analysis = $record;
-                        $retryMode = $data['retry_mode'];
+                        $retryMode = $arguments['retry_mode'] ?? 'only_failed';
 
                         if ($retryMode === 'all') {
                             DocumentMicroAnalysis::where('document_analysis_id', $record->id)
@@ -203,16 +203,17 @@ class DocumentAnalysesTable
                         // Dispatch the job
                         DispatchMapPhaseJob::dispatch(
                             $record->id,
-                            $jobParams['ai_provider'] ?? 'openrouter',
-                            $jobParams['deep_thinking_enabled'] ?? true,
-                            [
+                            $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
+                            $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,
+                            $jobParams['contextoDados'] ?? [
                                 'numero_processo' => $record->numero_processo,
                                 'classe_processual' => $record->classe_processual ?? 'Não informada',
                                 'assuntos' => $record->assuntos ?? 'Não informados',
                             ],
-                            $jobParams['ai_model_id'] ?? null,
+                            $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null,
                             $record->user_id,
-                            'auto'
+                            $jobParams['reduceStrategy'] ?? $jobParams['reduce_strategy'] ?? 'auto',
+                            $jobParams['mapModelId'] ?? $jobParams['map_model_id'] ?? null
                         );
 
                         Notification::make()
@@ -284,10 +285,10 @@ class DocumentAnalysesTable
                         // Dispara fase REDUCE
                         ReduceDocumentAnalysisJob::dispatch(
                             $record->id,
-                            $jobParams['ai_provider'] ?? 'openrouter',
-                            $jobParams['deep_thinking_enabled'] ?? true,
+                            $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
+                            $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,
                             $jobParams['promptTemplate'] ?? '',
-                            $jobParams['ai_model_id'] ?? null,
+                            $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null,
                             1 // Começa do nível 1
                         )->onQueue('analysis');
 

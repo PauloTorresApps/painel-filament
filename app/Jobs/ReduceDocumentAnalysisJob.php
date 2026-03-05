@@ -347,9 +347,13 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 
         $aiService = AIServiceFactory::make($this->aiProvider);
 
+        $resolvedModelId = $this->resolveReduceModelId($documentAnalysis);
+
         // Define o modelo específico se configurado
-        if ($this->aiModelId) {
-            $aiService->setModel($this->aiModelId);
+        if (!empty($resolvedModelId)) {
+            $aiService->setModel($resolvedModelId);
+        } else {
+            throw new \RuntimeException('ReduceDocumentAnalysisJob: nenhum modelo resolvido para geração final. Verifique o vínculo do prompt final_opinion com um modelo ativo.');
         }
 
         // Estende bastante o timeout para a consolidação final (pode ser muito demorado)
@@ -639,7 +643,6 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
         if (!Setting::isDebugAnalysisFilesEnabled()) {
             return;
         }
-
         try {
             $numeroProcesso = preg_replace('/[^0-9]/', '', $documentAnalysis->numero_processo ?? 'unknown');
             $analysisId = $documentAnalysis->id;
@@ -727,6 +730,27 @@ MD;
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Resolve o modelo do REDUCE com fallback seguro para evitar model vazio.
+     */
+    private function resolveReduceModelId(DocumentAnalysis $documentAnalysis): ?string
+    {
+        if (!empty($this->aiModelId)) {
+            return $this->aiModelId;
+        }
+
+        $jobParams = is_array($documentAnalysis->job_parameters) ? $documentAnalysis->job_parameters : [];
+
+        $modelFromJob = $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null;
+        if (!empty($modelFromJob)) {
+            return $modelFromJob;
+        }
+
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        return $promptFromDb?->aiModel?->model_id;
     }
 
     /**

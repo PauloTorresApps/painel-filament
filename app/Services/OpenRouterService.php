@@ -107,6 +107,8 @@ class OpenRouterService extends AbstractAIService
         return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
             RateLimiterService::apply($this->getRateLimiterKey());
 
+            $this->ensureModelIsConfigured();
+
             $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
             Log::info('OpenRouter API - Iniciando chamada', [
@@ -157,6 +159,7 @@ class OpenRouterService extends AbstractAIService
             Log::warning('OpenRouter: Modelo não suporta visão, usando fallback', [
                 'model' => $this->model,
             ]);
+            $this->ensureModelIsConfigured();
             return parent::callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt);
         }
 
@@ -216,6 +219,7 @@ class OpenRouterService extends AbstractAIService
     {
         return $this->withRetry(function () use ($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt) {
             RateLimiterService::apply($this->getRateLimiterKey());
+            $this->ensureModelIsConfigured();
 
             $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
             $pdfEngine = $isScanned ? 'mistral-ocr' : 'pdf-text';
@@ -278,6 +282,8 @@ class OpenRouterService extends AbstractAIService
     {
         return $this->withRetry(function () use ($prompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt) {
             RateLimiterService::apply($this->getRateLimiterKey());
+
+            $this->ensureModelIsConfigured();
 
             $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
@@ -409,6 +415,10 @@ class OpenRouterService extends AbstractAIService
      */
     private function executeAPICall(array $payload, string $callType, bool $useReasoning): string
     {
+        if (empty($payload['model'])) {
+            throw new \RuntimeException('OpenRouter: modelo não definido no payload. A aplicação deve definir o modelo vinculado ao prompt antes da chamada.');
+        }
+
         // Injeta provider routing (fallbacks, ordenação, teto de preço)
         if (!isset($payload['provider'])) {
             $providerRouting = $this->buildProviderRouting();
@@ -587,6 +597,8 @@ class OpenRouterService extends AbstractAIService
         $result = $this->withRetry(function () use ($fullPrompt, $deepThinkingEnabled) {
             RateLimiterService::apply($this->getRateLimiterKey());
 
+            $this->ensureModelIsConfigured();
+
             $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
             Log::info('OpenRouter API - Iniciando chamada com web search', [
@@ -629,6 +641,18 @@ class OpenRouterService extends AbstractAIService
         $this->finalizeMetadata(1);
 
         return $result;
+    }
+
+    /**
+     * Garante que o modelo foi explicitamente definido pela aplicação.
+     */
+    private function ensureModelIsConfigured(): void
+    {
+        if (blank($this->model)) {
+            throw new \RuntimeException(
+                'OpenRouter: nenhum modelo foi definido na aplicação. Configure um AiModel vinculado ao prompt antes de executar a análise.'
+            );
+        }
     }
 
     /**

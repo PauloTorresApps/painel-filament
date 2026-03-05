@@ -136,10 +136,10 @@ class ViewDocumentAnalysis extends ViewRecord
                     // Dispara fase REDUCE
                     ReduceDocumentAnalysisJob::dispatch(
                         $analysis->id,
-                        $jobParams['ai_provider'] ?? 'openrouter',
-                        $jobParams['deep_thinking_enabled'] ?? true,
+                        $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
+                        $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,
                         $jobParams['promptTemplate'] ?? '',
-                        $jobParams['ai_model_id'] ?? null,
+                        $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null,
                         1 // Começa do nível 1
                     )->onQueue('analysis');
 
@@ -158,22 +158,22 @@ class ViewDocumentAnalysis extends ViewRecord
                 ->icon('heroicon-o-arrow-path')
                 ->color('warning')
                 ->visible(fn () => in_array($this->record->status, ['failed', 'processing', 'cancelled']))
-                ->form([
-                    \Filament\Forms\Components\Radio::make('retry_mode')
-                        ->label('Modo de Reprocessamento')
-                        ->options([
-                            'only_failed' => 'Reprocessar apenas arquivos/etapas com falha (Recomendado)',
-                            'all' => 'Reprocessar TUDO desde o início',
-                        ])
-                        ->default('only_failed')
-                        ->required()
-                ])
+                ->requiresConfirmation()
                 ->modalHeading('Reprocessar Análise')
-                ->modalDescription('Escolha como deseja reprocessar esta análise processual.')
-                ->modalSubmitActionLabel('Sim, reprocessar')
-                ->action(function (array $data) {
+                ->modalDescription('Escolha uma opção: Reanalisar Completamente ou Reanalisar somente etapas com erros.')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Cancelar')
+                ->extraModalFooterActions(fn (Action $action): array => [
+                    $action->makeModalSubmitAction('retry_only_failed', arguments: ['retry_mode' => 'only_failed'])
+                        ->label('Reanalisar somente etapas com erros')
+                        ->color('warning'),
+                    $action->makeModalSubmitAction('retry_all', arguments: ['retry_mode' => 'all'])
+                        ->label('Reanalisar Completamente')
+                        ->color('danger'),
+                ])
+                ->action(function (array $arguments) {
                     $analysis = $this->record;
-                    $retryMode = $data['retry_mode'];
+                    $retryMode = $arguments['retry_mode'] ?? 'only_failed';
 
                     if ($retryMode === 'all') {
                         // Reseta TUDO para pending
@@ -220,16 +220,17 @@ class ViewDocumentAnalysis extends ViewRecord
                     // Dispatch the job
                     DispatchMapPhaseJob::dispatch(
                         $analysis->id,
-                        $jobParams['ai_provider'] ?? 'openrouter',
-                        $jobParams['deep_thinking_enabled'] ?? true,
-                        [
+                        $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
+                        $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,
+                        $jobParams['contextoDados'] ?? [
                             'numero_processo' => $analysis->numero_processo,
                             'classe_processual' => $analysis->classe_processual ?? 'Não informada',
                             'assuntos' => $analysis->assuntos ?? 'Não informados',
                         ],
-                        $jobParams['ai_model_id'] ?? null,
+                        $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null,
                         $analysis->user_id,
-                        'auto'
+                        $jobParams['reduceStrategy'] ?? $jobParams['reduce_strategy'] ?? 'auto',
+                        $jobParams['mapModelId'] ?? $jobParams['map_model_id'] ?? null
                     );
 
                     Notification::make()

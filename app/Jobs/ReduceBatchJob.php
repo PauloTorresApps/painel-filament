@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
+use App\Models\AiPrompt;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
 use App\Traits\HandlesJsonOutput;
@@ -161,9 +162,13 @@ class ReduceBatchJob implements ShouldQueue
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
+            $resolvedModelId = $this->resolveReduceModelId($documentAnalysis);
+
             // Define o modelo específico se configurado
-            if ($this->aiModelId) {
-                $aiService->setModel($this->aiModelId);
+            if (!empty($resolvedModelId)) {
+                $aiService->setModel($resolvedModelId);
+            } else {
+                throw new \RuntimeException('ReduceBatchJob: nenhum modelo resolvido para consolidação do batch. Verifique o vínculo do prompt final_opinion com um modelo ativo.');
             }
 
             // Aumenta o tempo limite tolerado, consolidar lotes leva mais tempo da API
@@ -454,6 +459,27 @@ MD;
     private function formatCount(int $count): string
     {
         return "{$count} documento(s)";
+    }
+
+    /**
+     * Resolve o modelo do REDUCE com fallback seguro para evitar model vazio.
+     */
+    private function resolveReduceModelId(DocumentAnalysis $documentAnalysis): ?string
+    {
+        if (!empty($this->aiModelId)) {
+            return $this->aiModelId;
+        }
+
+        $jobParams = is_array($documentAnalysis->job_parameters) ? $documentAnalysis->job_parameters : [];
+
+        $modelFromJob = $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null;
+        if (!empty($modelFromJob)) {
+            return $modelFromJob;
+        }
+
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        return $promptFromDb?->aiModel?->model_id;
     }
 
 }

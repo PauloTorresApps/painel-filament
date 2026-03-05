@@ -133,8 +133,12 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
             );
 
             $aiService = AIServiceFactory::make($this->aiProvider);
-            if ($this->aiModelId) {
-                $aiService->setModel($this->aiModelId);
+            $resolvedModelId = $this->resolveReduceModelId($documentAnalysis);
+
+            if (!empty($resolvedModelId)) {
+                $aiService->setModel($resolvedModelId);
+            } else {
+                throw new \RuntimeException('RefineReduceJob: nenhum modelo resolvido para a consolidação. Verifique o vínculo do prompt final_opinion com um modelo ativo.');
             }
 
             // Permite um limite estendido de tempo para chamadas pesadas de IA
@@ -611,6 +615,27 @@ CONTENT;
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         return $promptFromDb?->content ?? $this->promptTemplate;
+    }
+
+    /**
+     * Resolve o modelo do REDUCE com fallback seguro para evitar model vazio.
+     */
+    private function resolveReduceModelId(DocumentAnalysis $documentAnalysis): ?string
+    {
+        if (!empty($this->aiModelId)) {
+            return $this->aiModelId;
+        }
+
+        $jobParams = is_array($documentAnalysis->job_parameters) ? $documentAnalysis->job_parameters : [];
+
+        $modelFromJob = $jobParams['aiModelId'] ?? $jobParams['ai_model_id'] ?? null;
+        if (!empty($modelFromJob)) {
+            return $modelFromJob;
+        }
+
+        $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        return $promptFromDb?->aiModel?->model_id;
     }
 
     /**

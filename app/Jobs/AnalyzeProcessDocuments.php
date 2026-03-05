@@ -132,7 +132,15 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                     'promptTemplate' => $this->promptTemplate,
                     'documentAnalysisPrompt' => $this->documentAnalysisPrompt,
                     'aiProvider' => $this->aiProvider,
+                    'ai_provider' => $this->aiProvider,
                     'deepThinkingEnabled' => $this->deepThinkingEnabled,
+                    'deep_thinking_enabled' => $this->deepThinkingEnabled,
+                    'aiModelId' => $this->aiModelId,
+                    'ai_model_id' => $this->aiModelId,
+                    'mapModelId' => $this->mapModelId,
+                    'map_model_id' => $this->mapModelId,
+                    'reduceStrategy' => 'auto',
+                    'reduce_strategy' => 'auto',
                 ],
             ]);
 

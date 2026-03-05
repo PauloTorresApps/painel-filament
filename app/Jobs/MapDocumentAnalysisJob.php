@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\AiModel;
 use App\Models\AiPrompt;
+use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
@@ -14,6 +15,7 @@ use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -144,12 +146,16 @@ class MapDocumentAnalysisJob implements ShouldQueue
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
-            // Define o modelo: usa o modelo do prompt como base,
-            // e sobrescreve com o modelo de purpose apenas se houver um cadastrado
-            if ($this->aiModelId) {
-                $aiService->setModel($this->aiModelId);
+            $resolvedModelId = $this->resolveMapModelId($documentAnalysis);
+
+            if (empty($resolvedModelId)) {
+                throw new \RuntimeException('MapDocumentAnalysisJob: nenhum modelo resolvido para fase MAP. Verifique o vínculo do prompt document_analysis com um modelo ativo.');
             }
 
+            $aiService->setModel($resolvedModelId);
+
+            // Define o modelo: usa o modelo do prompt como base,
+            // e sobrescreve com o modelo de purpose apenas se houver um cadastrado
             // Override por purpose: se houver um modelo específico cadastrado para
             // o tipo de documento (pdf_text, pdf_ocr, vision, etc.), usa esse modelo
             if ($microAnalysis->processing_strategy) {
@@ -234,6 +240,10 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 'strategy_used' => $microAnalysis->processing_strategy,
             ]);
 
+            // Mitigação self-healing: se callbacks do batch não dispararem,
+            // este job garante a transição MAP -> REDUCE quando o último MAP finalizar.
+            $this->ensureMapToReduceTransition($microAnalysis);
+
         } catch (\Exception $e) {
             $isRateLimit = (
                 str_contains(strtolower($e->getMessage()), '429') || 
@@ -256,6 +266,164 @@ class MapDocumentAnalysisJob implements ShouldQueue
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * Resolve o modelo da fase MAP com fallback seguro para evitar model vazio.
+     */
+    private function resolveMapModelId(DocumentAnalysis $documentAnalysis): ?string
+    {
+        if (!empty($this->aiModelId)) {
+            return $this->aiModelId;
+        }
+
+        $jobParams = is_array($documentAnalysis->job_parameters) ? $documentAnalysis->job_parameters : [];
+
+        $modelFromJob = $jobParams['mapModelId']
+            ?? $jobParams['map_model_id']
+            ?? $jobParams['aiModelId']
+            ?? $jobParams['ai_model_id']
+            ?? null;
+
+        if (!empty($modelFromJob)) {
+            return $modelFromJob;
+        }
+
+        $mapPrompt = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_DOCUMENT_ANALYSIS);
+        if (!empty($mapPrompt?->aiModel?->model_id)) {
+            return $mapPrompt->aiModel->model_id;
+        }
+
+        $finalPrompt = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
+
+        return $finalPrompt?->aiModel?->model_id;
+    }
+
+    /**
+     * Garante transição idempotente da fase MAP para REDUCE.
+     *
+     * Cenário coberto: batch finaliza, mas callbacks then/finally não executam
+     * (ex.: restart de worker no momento da conclusão).
+     */
+    private function ensureMapToReduceTransition(DocumentMicroAnalysis $microAnalysis): void
+    {
+        $documentAnalysis = $microAnalysis->documentAnalysis;
+
+        if (!$documentAnalysis) {
+            return;
+        }
+
+        if ($documentAnalysis->status !== 'processing' || $documentAnalysis->current_phase !== DocumentAnalysis::PHASE_MAP) {
+            return;
+        }
+
+        $lock = Cache::lock("map_to_reduce_transition_{$documentAnalysis->id}", 300);
+
+        if (!$lock->get()) {
+            return;
+        }
+
+        try {
+            $documentAnalysis = DocumentAnalysis::find($documentAnalysis->id);
+            if (!$documentAnalysis) {
+                return;
+            }
+
+            if ($documentAnalysis->status !== 'processing' || $documentAnalysis->current_phase !== DocumentAnalysis::PHASE_MAP) {
+                return;
+            }
+
+            $levelZero = $documentAnalysis->microAnalyses()->where('reduce_level', 0);
+
+            $pendingOrProcessing = (clone $levelZero)
+                ->whereIn('status', ['pending', 'processing'])
+                ->count();
+
+            if ($pendingOrProcessing > 0) {
+                return;
+            }
+
+            $completedCount = (clone $levelZero)->where('status', 'completed')->count();
+            $failedCount = (clone $levelZero)->whereIn('status', ['failed', 'cancelled'])->count();
+            $totalCount = $completedCount + $failedCount;
+
+            if ($completedCount === 0) {
+                $documentAnalysis->markAsFailed('Todos os documentos falharam na fase MAP.');
+                return;
+            }
+
+            // Corrige progresso exibido caso callback de progress não tenha rodado.
+            $documentAnalysis->updateMapProgress($completedCount);
+
+            $params = is_array($documentAnalysis->job_parameters) ? $documentAnalysis->job_parameters : [];
+
+            $aiProvider = $params['aiProvider']
+                ?? $params['ai_provider']
+                ?? $this->aiProvider
+                ?? 'openrouter';
+
+            $deepThinkingEnabled = (bool) (
+                $params['deepThinkingEnabled']
+                ?? $params['deep_thinking_enabled']
+                ?? $this->deepThinkingEnabled
+                ?? true
+            );
+
+            $aiModelId = $params['aiModelId']
+                ?? $params['ai_model_id']
+                ?? null;
+
+            $contextoDados = $params['contextoDados']
+                ?? [
+                    'numero_processo' => $documentAnalysis->numero_processo,
+                    'classe_processual' => $documentAnalysis->classe_processual ?? 'Não informada',
+                    'assuntos' => $documentAnalysis->assuntos ?? 'Não informados',
+                ];
+
+            $reduceStrategy = $params['reduceStrategy']
+                ?? $params['reduce_strategy']
+                ?? 'auto';
+
+            $docCount = $documentAnalysis->total_documents ?? $totalCount;
+            $useRefineStrategy = match ($reduceStrategy) {
+                'refine' => true,
+                'batch' => false,
+                default => $docCount <= config('analysis.thresholds.refine_max_documents', 20),
+            };
+
+            Log::warning('MapDocumentAnalysisJob: Self-healing ativado para transição MAP -> REDUCE', [
+                'analysis_id' => $documentAnalysis->id,
+                'completed_docs' => $completedCount,
+                'failed_docs' => $failedCount,
+                'strategy' => $useRefineStrategy ? 'refine' : 'batch',
+            ]);
+
+            if ($useRefineStrategy) {
+                $promptTemplate = $params['promptTemplate'] ?? '';
+
+                $refineJob = new RefineReduceJob(
+                    $documentAnalysis->id,
+                    $aiProvider,
+                    $deepThinkingEnabled,
+                    $promptTemplate,
+                    $aiModelId
+                );
+                $refineJob->setContextoDados($contextoDados);
+
+                dispatch($refineJob)->onQueue('analysis');
+            } else {
+                ReduceDocumentAnalysisJob::dispatch(
+                    $documentAnalysis->id,
+                    $aiProvider,
+                    $deepThinkingEnabled,
+                    '',
+                    $aiModelId,
+                    1
+                )->onQueue('analysis');
+            }
+        } finally {
+            $lock->release();
         }
     }
 
