@@ -413,7 +413,7 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Filtra documentos selecionados pelo usuário via checkboxes
+            // Filtra documentos selecionados pelo usuário via controles de seleção da interface
             $selectedIds = collect($this->selectedDocuments)
                 ->filter(fn ($selected) => $selected)
                 ->keys()
@@ -447,7 +447,7 @@ class ProcessDetails extends Page
             if (empty($documentosParaAnalise)) {
                 \Filament\Notifications\Notification::make()
                     ->title('📋 Nenhum Documento Selecionado')
-                    ->body('Selecione pelo menos um documento para enviar para análise. Use os checkboxes ao lado de cada documento na lista de eventos.')
+                    ->body('Selecione pelo menos um documento para enviar para análise. Use os controles de marcação ao lado de cada documento na lista de eventos.')
                     ->warning()
                     ->persistent()
                     ->send();

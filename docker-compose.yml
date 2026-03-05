@@ -31,6 +31,17 @@ services:
     networks:
       - painel_network
 
+  # Node.js (build de assets frontend)
+  node:
+    image: node:22.22.0-alpine
+    container_name: painel_node
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    command: sh -c "tail -f /dev/null"
+    networks:
+      - painel_network
+
   # Nginx Web Server
   nginx:
     image: nginx:alpine

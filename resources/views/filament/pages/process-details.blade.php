@@ -1,6 +1,8 @@
 <x-filament-panels::page>
-    <div>
+    <div x-data="{ hideEmpty: true, totalMovimentos: {{ count($movimentos ?? []) }}, movimentosComDocs: {{ collect($movimentos ?? [])->filter(fn($m) => !empty($m['documentos']))->count() }} }">
         <style>
+            [x-cloak] { display: none !important; }
+
             /* Smooth transitions */
             .movimento-item {
                 transition: all 0.2s ease-in-out !important;
@@ -70,6 +72,67 @@
             .event-toggle-checkbox:hover {
                 transform: scale(1.15);
             }
+
+            /* Microanimação dos toggles de seleção */
+            .a11y-toggle-input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                margin: -1px;
+                padding: 0;
+                border: 0;
+                overflow: hidden;
+                clip: rect(0 0 0 0);
+                clip-path: inset(50%);
+                white-space: nowrap;
+                opacity: 0;
+                pointer-events: none;
+            }
+
+            .a11y-toggle-track {
+                display: inline-block;
+                width: 3rem;
+                height: 1.75rem;
+                border-radius: 9999px;
+                background-color: #9ca3af;
+                transition: background-color 0.22s ease, box-shadow 0.22s ease;
+            }
+            .dark .a11y-toggle-track {
+                background-color: #4b5563;
+            }
+            .a11y-toggle-knob {
+                display: block;
+                transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.2, 1), box-shadow 0.22s ease;
+                will-change: transform;
+            }
+            .a11y-toggle-input:checked + .a11y-toggle-track {
+                background-color: #22c55e;
+            }
+            .dark .a11y-toggle-input:checked + .a11y-toggle-track {
+                background-color: #16a34a;
+            }
+            .a11y-toggle-input:checked + .a11y-toggle-track .a11y-toggle-knob {
+                transform: translateX(1.25rem) scale(1.04);
+                animation: a11y-toggle-pop 220ms ease-out;
+            }
+            .a11y-toggle-input:focus-visible + .a11y-toggle-track {
+                box-shadow: 0 0 0 2px rgb(var(--primary-500));
+            }
+
+            @keyframes a11y-toggle-pop {
+                0% { transform: translateX(0) scale(1); }
+                55% { transform: translateX(1.25rem) scale(1.1); }
+                100% { transform: translateX(1.25rem) scale(1.04); }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .a11y-toggle-track,
+                .a11y-toggle-knob,
+                .a11y-toggle-input:checked + .a11y-toggle-track .a11y-toggle-knob {
+                    transition: none !important;
+                    animation: none !important;
+                }
+            }
         </style>
 
         {{-- Filtro de movimentos e controles de seleção --}}
@@ -99,16 +162,25 @@
                 </div>
             @endif
 
-            <div class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <input
-                    type="checkbox"
-                    id="hideEmptyMovements"
-                    class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-gray-600"
-                    onchange="toggleEmptyMovements(this.checked)"
-                    checked
+            <div class="inline-flex items-center px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                <label
+                    for="hideEmptyMovements"
+                    class="inline-flex items-center gap-2 cursor-pointer select-none rounded-lg px-1 py-1 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition"
+                    title="Ocultar ou exibir movimentos sem documentos"
                 >
-                <label for="hideEmptyMovements" class="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                    Ocultar movimentos sem documentos
+                    <input
+                        type="checkbox"
+                        id="hideEmptyMovements"
+                        class="a11y-toggle-input"
+                        x-model="hideEmpty"
+                        aria-label="Ocultar movimentos sem documentos"
+                    >
+                    <span class="a11y-toggle-track relative peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary-500 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-gray-800">
+                        <span class="a11y-toggle-knob absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-sm"></span>
+                    </span>
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Ocultar movimentos sem documentos
+                    </span>
                 </label>
             </div>
         </div>
@@ -313,7 +385,7 @@
                                 </svg>
                                 Movimentos Processuais
                             </h3>
-                            <span class="text-sm font-medium text-gray-500 dark:text-gray-400" id="visibleCount">
+                            <span class="text-sm font-medium text-gray-500 dark:text-gray-400" x-text="`Exibindo ${hideEmpty ? movimentosComDocs : totalMovimentos} de ${totalMovimentos}`">
                                 Exibindo {{ count($movimentos) }} de {{ count($movimentos) }}
                             </span>
                         </div>
@@ -324,7 +396,7 @@
                                     $hasDocuments = !empty($movimento['documentos']);
                                 @endphp
 
-                                <div class="movimento-item {{ $hasDocuments ? 'has-documents' : 'no-documents' }}" data-has-docs="{{ $hasDocuments ? 'true' : 'false' }}">
+                                <div class="movimento-item {{ $hasDocuments ? 'has-documents' : 'no-documents' }}" x-show="!hideEmpty || {{ $hasDocuments ? 'true' : 'false' }}" x-cloak>
                                     <div class="p-6 rounded-lg border {{ $hasDocuments ? 'border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/40 dark:bg-indigo-900/5' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} shadow-sm hover:shadow-md transition-all">
                                         <div class="flex items-start gap-4">
                                             {{-- ID do Evento --}}
@@ -452,14 +524,24 @@
                                                                     }
                                                                 @endphp
                                                                 <div class="documento-card flex items-center gap-3 p-3 rounded-lg border {{ $isSigiloso ? 'border-amber-200 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-900/5' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' }} hover:border-indigo-300 dark:hover:border-indigo-700/40 hover:shadow-md">
-                                                                    {{-- Checkbox de seleção para análise --}}
+                                                                    {{-- Toggle de seleção para análise (acessível e com área de clique ampliada) --}}
                                                                     <div class="flex-shrink-0">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            wire:model.live="selectedDocuments.{{ $documento['idDocumento'] }}"
-                                                                            class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-gray-600 cursor-pointer"
+                                                                        <label
+                                                                            for="doc-toggle-{{ $documento['idDocumento'] }}"
+                                                                            class="inline-flex items-center gap-2 cursor-pointer select-none rounded-lg px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition"
                                                                             title="{{ ($selectedDocuments[$documento['idDocumento']] ?? false) ? 'Selecionado para análise' : 'Não selecionado para análise' }}"
                                                                         >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                id="doc-toggle-{{ $documento['idDocumento'] }}"
+                                                                                wire:model.live="selectedDocuments.{{ $documento['idDocumento'] }}"
+                                                                                class="a11y-toggle-input"
+                                                                                aria-label="Selecionar documento {{ $documento['descricao'] ?? $documento['idDocumento'] }} para análise"
+                                                                            >
+                                                                            <span class="a11y-toggle-track relative peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary-500 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-gray-800">
+                                                                                <span class="a11y-toggle-knob absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-sm"></span>
+                                                                            </span>
+                                                                        </label>
                                                                     </div>
                                                                     <div class="flex-shrink-0">
                                                                         <div class="w-10 h-10 {{ $isSigiloso ? 'bg-amber-100 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-800' }} rounded-lg flex items-center justify-center">
@@ -711,20 +793,6 @@
                 'text/html': 'html'
             };
             return mimeMap[mimetype?.toLowerCase()] || 'bin';
-        }
-
-        function toggleEmptyMovements(hide) {
-            const items = document.querySelectorAll('.movimento-item');
-            const visibleCount = document.getElementById('visibleCount');
-            if (!items.length) return;
-
-            let visible = 0;
-            items.forEach(item => {
-                const hasDocs = item.dataset.hasDocs === 'true';
-                if (hide && !hasDocs) { item.style.display = 'none'; }
-                else { item.style.display = 'block'; visible++; }
-            });
-            if(visibleCount) visibleCount.textContent = `Exibindo ${visible} de ${items.length}`;
         }
 
         // Função para fechar o modal (garante que limpa a memória)
@@ -1031,22 +1099,6 @@
                 renderizarPaginas();
             }
         }
-
-        function reapplyMovementFilter() {
-            const checkbox = document.getElementById('hideEmptyMovements');
-            if (checkbox) {
-                toggleEmptyMovements(checkbox.checked);
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            reapplyMovementFilter();
-        });
-
-        // Reaplica o filtro após o Livewire re-renderizar o DOM
-        document.addEventListener('livewire:morphed', function() {
-            reapplyMovementFilter();
-        });
     </script>
 @endpush
 </x-filament-panels::page>

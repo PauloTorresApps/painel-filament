@@ -1,6 +1,6 @@
 # Makefile para facilitar gerenciamento do Docker
 
-.PHONY: help build up down restart logs shell db-shell queue-logs clear-cache migrate seed install
+.PHONY: help build up down restart logs shell db-shell queue-logs clear-cache migrate seed install frontend-refresh frontend-audit frontend-audit-fix frontend-dev
 
 # Cores para output
 GREEN=\033[0;32m
@@ -113,10 +113,38 @@ composer-update: ## Atualiza dependências do Composer
 	docker compose exec app composer update
 
 npm-install: ## Instala dependências do NPM
-	docker compose exec app npm install
+	docker compose run --rm node npm install
 
 npm-build: ## Builda assets do frontend
-	docker compose exec app npm run build
+	docker compose run --rm node npm run build
+
+frontend-refresh: ## Regera frontend (Filament + Vite) totalmente via containers
+	@echo "${YELLOW}🔄 Regenerando frontend (Filament + Vite) via Docker...${NC}"
+	docker compose exec app php artisan optimize:clear
+	docker compose exec app php artisan view:clear
+	docker compose exec app php artisan filament:optimize-clear
+	docker compose exec app php artisan icons:clear
+	docker compose exec app php artisan filament:assets
+	docker compose run --rm node npm install
+	docker compose run --rm node npm run build
+	docker compose exec app php artisan filament:optimize
+	@echo "${GREEN}✅ Frontend regenerado com sucesso!${NC}"
+
+frontend-audit: ## Audita vulnerabilidades das dependências frontend (sem alterar lockfile)
+	@echo "${YELLOW}🔎 Auditando dependências frontend...${NC}"
+	@docker compose run --rm node npm audit || true
+	@echo "${YELLOW}ℹ️ Se houver vulnerabilidades, execute: make frontend-audit-fix${NC}"
+
+frontend-audit-fix: ## Aplica correções seguras (sem --force) e recompila frontend
+	@echo "${YELLOW}🛡️ Aplicando correções seguras nas dependências frontend...${NC}"
+	docker compose run --rm node npm audit fix
+	docker compose run --rm node npm run build
+	@echo "${GREEN}✅ Correções aplicadas e build concluído!${NC}"
+
+frontend-dev: ## Inicia Vite com hot reload em container (sem reiniciar containers)
+	@echo "${GREEN}⚡ Iniciando frontend dev com HMR em http://localhost:5173 ...${NC}"
+	@echo "${YELLOW}ℹ️ Pressione Ctrl+C para parar.${NC}"
+	docker compose run --rm -p 5173:5173 node sh -lc "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
 
 clean: ## Remove containers, volumes e imagens
 	@echo "${YELLOW}🗑️  Removendo tudo (containers, volumes, imagens)...${NC}"

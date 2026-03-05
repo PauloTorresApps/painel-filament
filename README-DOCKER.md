@@ -12,7 +12,7 @@ Documentação completa para executar o sistema com Docker.
 
 ## 🏗️ Arquitetura
 
-O ambiente Docker é composto por 5 containers:
+O ambiente Docker é composto por 5 containers principais:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -39,6 +39,10 @@ O ambiente Docker é composto por 5 containers:
 3. **postgres** - Banco de dados PostgreSQL 16
 4. **redis** - Cache e gerenciamento de filas
 5. **queue** - Worker para processar análises de IA
+
+### Container utilitário (sob demanda):
+
+- **node** - Usado para instalar dependências NPM e buildar assets do Vite via `docker compose run --rm node ...` (versão fixa: `22.22.0-alpine`)
 
 ## 🚀 Instalação Rápida
 
@@ -148,9 +152,47 @@ make optimize          # Otimiza para produção
 make queue-restart     # Reinicia workers da fila
 make composer-install  # Instala dependências PHP
 make npm-build         # Builda assets do frontend
+make frontend-dev      # Inicia Vite com hot reload (HMR) no container
+make frontend-refresh  # Regera frontend completo (Filament + Vite)
+make frontend-audit    # Audita vulnerabilidades de dependências frontend
+make frontend-audit-fix # Aplica correções seguras e recompila frontend
 make status            # Mostra status dos containers
 make stats             # Mostra estatísticas de uso
 ```
+
+### Regenerar frontend (padrão recomendado)
+
+Para atualizações visuais em Filament/Livewire + assets Vite:
+
+```bash
+make frontend-refresh
+```
+
+Esse comando executa:
+- `php artisan` dentro do container `app`
+- `npm install` e `npm run build` no container `node`
+
+### Desenvolvimento frontend com hot reload (sem restart)
+
+Para desenvolvimento contínuo de CSS/JS sem reiniciar containers:
+
+```bash
+make frontend-dev
+```
+
+- Vite sobe em `http://localhost:5173`
+- alterações em `resources/css` e `resources/js` atualizam automaticamente
+- para parar, use `Ctrl+C`
+
+### Auditoria de segurança do frontend
+
+```bash
+make frontend-audit
+make frontend-audit-fix
+```
+
+- `frontend-audit`: apenas diagnóstico (`npm audit`)
+- `frontend-audit-fix`: aplica somente correções seguras (`npm audit fix`, sem `--force`) e roda novo build
 
 ## 🔍 Comandos Docker Compose (Manual)
 
