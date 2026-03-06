@@ -347,6 +347,55 @@ services:
     networks:
       - painel_network
 
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: unless-stopped
+    environment:
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5000
+      - REGISTRY_HTTP_DEBUG_ADDR=0.0.0.0:5001
+      - REGISTRY_HTTP_DEBUG_PROMETHEUS_ENABLED=true
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./storage/registry:/var/lib/registry
+    networks:
+      - painel_network
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - painel_network
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${DB_USERNAME:-painel_user}:${DB_PASSWORD:-secret}@postgres:5432/${DB_DATABASE:-painel}?sslmode=disable
+      - PG_EXPORTER_DISABLE_SETTINGS_METRICS=false
+      - PG_EXPORTER_EXTEND_QUERY_PATH=
+    depends_on:
+      - postgres
+    ports:
+      - "9187:9187"
+    networks:
+      - painel_network
+
 networks:
   painel_network:
     driver: bridge

@@ -727,6 +727,6 @@
   "timezone": "browser",
   "title": "Laravel Observability (OTel + Loki + Tempo)",
   "uid": "laravel-observability-otel",
-  "version": 2,
+  "version": 1,
   "weekStart": ""
 }
