@@ -21,3 +21,10 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Ignora o conteúdo, mas mantém as pastas (opcional)
+storage/grafana/*
+storage/prometheus/*
+storage/loki/*
+storage/tempo/*
+!storage/**/.gitkeep
