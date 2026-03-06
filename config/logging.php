@@ -52,6 +52,12 @@ return [
 
     'channels' => [
 
+        'loki' => [
+            'driver' => 'custom',
+            'via' => \App\Logging\LokiLogger::class, // Você precisará de um handler HTTP simples
+            'url' => 'http://loki:3100/loki/api/v1/push',
+        ],
+
         'stack' => [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),

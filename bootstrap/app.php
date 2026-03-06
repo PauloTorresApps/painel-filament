@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\OtelHttpTelemetryMiddleware;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -12,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->append(OtelHttpTelemetryMiddleware::class);
     })
     ->withSchedule(function (Schedule $schedule): void {
         // DESABILITADO: Cleanup automático de análises travadas

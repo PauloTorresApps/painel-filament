@@ -25,6 +25,13 @@ services:
       - QUEUE_CONNECTION=redis
       - CACHE_DRIVER=redis
       - SESSION_DRIVER=redis
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-painel-laravel}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://opentelemetry-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER:-otlp}
+      - OTEL_METRICS_EXPORTER=${OTEL_METRICS_EXPORTER:-otlp}
+      - OTEL_LOGS_EXPORTER=${OTEL_LOGS_EXPORTER:-otlp}
+      - OTEL_PHP_AUTOLOAD_ENABLED=${OTEL_PHP_AUTOLOAD_ENABLED:-true}
     depends_on:
       - postgres
       - redis
@@ -133,6 +140,13 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - QUEUE_CONNECTION=redis
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-painel-laravel}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://opentelemetry-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER:-otlp}
+      - OTEL_METRICS_EXPORTER=${OTEL_METRICS_EXPORTER:-otlp}
+      - OTEL_LOGS_EXPORTER=${OTEL_LOGS_EXPORTER:-otlp}
+      - OTEL_PHP_AUTOLOAD_ENABLED=${OTEL_PHP_AUTOLOAD_ENABLED:-true}
     depends_on:
       - postgres
       - redis
@@ -142,23 +156,26 @@ services:
 
   opentelemetry-collector:
     hostname: opentelemetry-collector
-    image: otel/opentelemetry-collector:0.140.0
+    image: otel/opentelemetry-collector-contrib:0.140.0
     command: ["--config=/etc/otel-collector-config.yml", "--feature-gates=pkg.translator.prometheus.NormalizeName"]
     volumes:
       - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yml
+      - ./storage/logs:/var/log/laravel:ro
     restart: unless-stopped
     ports:
       - "8889:8889"   # Prometheus exporter metrics
       - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
     environment:
       - TEMPO_ENDPOINT=${TEMPO_ENDPOINT:-tempo:4317}
       - PROM_ENDPOINT=${PROM_ENDPOINT:-0.0.0.0:9090}
       - LOKI_ENDPOINT=${LOKI_ENDPOINT:-http://loki:3100/otlp}
-
     depends_on:
       - tempo
       - prometheus
       - loki
+    networks:
+      - painel_network
 
   blackbox:
     image: prom/blackbox-exporter:v0.27.0
@@ -177,6 +194,8 @@ services:
       - tempo
       - loki
       - opentelemetry-collector
+    networks:
+      - painel_network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9115/-/healthy"]
       interval: 10s
@@ -209,6 +228,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    networks:
+      - painel_network
 
   prometheus:
     image: prom/prometheus:v3.7.3
@@ -231,6 +252,8 @@ services:
       start_period: 15s
     ports:
       - "9090:9090"
+    networks:
+      - painel_network
 
   loki:
     image: grafana/loki:3.5.8
@@ -249,6 +272,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    networks:
+      - painel_network  
 
   tempo:
     image: grafana/tempo:main-6fc8947
@@ -260,6 +285,8 @@ services:
     ports:
       - 3200:3200   # tempo
       - 4317  # otlp grpc
+    networks:
+      - painel_network
 
   # Tempo healthcheck sidecar (since tempo image has no shell/curl/wget)
   tempo-healthcheck:
@@ -281,6 +308,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - painel_network
 
   mcp-grafana:
     image: mcp/grafana@sha256:bd85b2644ea409ce8222088a20fd01b132047f3dcb85240bbce2b2030872a4f7
@@ -296,6 +325,27 @@ services:
     depends_on:
       grafana:
         condition: service_healthy
+    networks:
+      - painel_network
+
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    networks:
+      - painel_network
 
 networks:
   painel_network:

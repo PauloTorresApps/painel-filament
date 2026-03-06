@@ -17,6 +17,7 @@ scrape_configs:
   - job_name: 'otel-collector-metrics'
     static_configs:
       - targets: ['opentelemetry-collector:8889']
+      - targets: ['node-exporter:9100']
 
   - job_name: 'tempo'
     static_configs:
@@ -33,6 +34,11 @@ scrape_configs:
   - job_name: 'blackbox'
     static_configs:
       - targets: [ 'blackbox:9115' ]
+
+  - job_name: 'laravel'
+    metrics_path: '/prometheus' # Endpoint ativo no app
+    static_configs:
+      - targets: ['nginx:80'] # Nome do serviço Docker Compose : Porta interna
 
   # Blackbox monitoring for HTTP services
   - job_name: 'blackbox-http'
