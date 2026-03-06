@@ -15,14 +15,16 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        // First, create permissions and roles
+        // Primeiro, cria dados base e catálogos
         $this->call([
             PermissionSeeder::class,
             SystemSeeder::class,
             AiModelsSeeder::class,
+            ContractSystemSeeder::class,
+            SettingsSeeder::class,
         ]);
 
-        // Then create user and assign Admin role
+        // Depois cria/garante usuário admin
         $user = User::firstOrCreate(
             ['email' => 'admin@admin.com'],
             [
@@ -32,7 +34,12 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Assign Admin role to the user
+        // Vincula role Admin
         $user->assignRole('Admin');
+
+        // Por fim, cria usuários judiciais de teste
+        $this->call([
+            \Database\Seeders\JudicialUsersSeeder::class,
+        ]);
     }
 }
