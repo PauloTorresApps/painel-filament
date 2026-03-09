@@ -1,8 +1,9 @@
 {
-  "mcpServers": {
-    "grafana": {
-        "url": "http://localhost:8001/mcp",
-        "type": "see"
-    }
-  }
+	"servers": {
+		"grafana": {
+			"url": "http://localhost:8001/mcp",
+			"type": "sse"
+		}
+	},
+	"inputs": []
 }
