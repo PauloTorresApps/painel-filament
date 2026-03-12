@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
@@ -54,7 +55,8 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         public ?string $aiModelId = null,                 // Modelo para REDUCE (parecer final)
         public ?string $documentAnalysisPrompt = null, // Prompt customizado para análise de documentos (MAP)
         public ?string $chave = null,                  // Chave do processo (para processos sigilosos)
-        public ?string $mapModelId = null              // Modelo para MAP (análise de documentos)
+        public ?string $mapModelId = null,             // Modelo para MAP (análise de documentos)
+        public ?int $documentAnalysisId = null         // Registro pré-criado para acompanhamento imediato
     ) {
         $this->timeout = config('analysis.jobs.analyze_process.timeout', 1800);
         $this->tries = config('analysis.jobs.analyze_process.tries', 2);
@@ -69,16 +71,40 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         return "analyze_process_{$this->userId}_{$this->numeroProcesso}";
     }
 
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
+    }
+
     /**
      * Execute o job.
      */
     public function handle(): void
     {
         try {
+            $documentAnalysis = null;
+
+            if ($this->documentAnalysisId !== null) {
+                $documentAnalysis = DocumentAnalysis::where('id', $this->documentAnalysisId)
+                    ->where('user_id', $this->userId)
+                    ->first();
+
+                if (!$documentAnalysis) {
+                    Log::error('AnalyzeProcessDocuments: Análise pré-criada não encontrada', [
+                        'document_analysis_id' => $this->documentAnalysisId,
+                        'user_id' => $this->userId,
+                    ]);
+                    return;
+                }
+            }
+
             // Proteção contra duplicação
             $analiseEmAndamento = DocumentAnalysis::where('user_id', $this->userId)
                 ->where('numero_processo', $this->numeroProcesso)
                 ->where('status', 'processing')
+                ->when($this->documentAnalysisId !== null, function ($query) {
+                    $query->where('id', '!=', $this->documentAnalysisId);
+                })
                 ->first();
 
             if ($analiseEmAndamento) {
@@ -117,32 +143,34 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                 ?? null;
             $assuntos = $this->formatAssuntosString($this->contextoDados['assunto'] ?? []);
 
-            // Cria registro principal da análise
-            $documentAnalysis = DocumentAnalysis::create([
-                'user_id' => $this->userId,
-                'numero_processo' => $this->numeroProcesso,
-                'classe_processual' => $classeProcessual,
-                'assuntos' => $assuntos,
-                'descricao_documento' => $totalDocs . ' documento(s) do processo',
-                'status' => 'processing',
-                'total_documents' => $totalDocs,
-                'job_parameters' => [
-                    'documentos' => $this->documentos,
-                    'contextoDados' => $this->contextoDados,
-                    'promptTemplate' => $this->promptTemplate,
-                    'documentAnalysisPrompt' => $this->documentAnalysisPrompt,
-                    'aiProvider' => $this->aiProvider,
-                    'ai_provider' => $this->aiProvider,
-                    'deepThinkingEnabled' => $this->deepThinkingEnabled,
-                    'deep_thinking_enabled' => $this->deepThinkingEnabled,
-                    'aiModelId' => $this->aiModelId,
-                    'ai_model_id' => $this->aiModelId,
-                    'mapModelId' => $this->mapModelId,
-                    'map_model_id' => $this->mapModelId,
-                    'reduceStrategy' => 'auto',
-                    'reduce_strategy' => 'auto',
-                ],
-            ]);
+            // Cria registro principal da análise quando não houver registro pré-criado.
+            if (!$documentAnalysis) {
+                $documentAnalysis = DocumentAnalysis::create([
+                    'user_id' => $this->userId,
+                    'numero_processo' => $this->numeroProcesso,
+                    'classe_processual' => $classeProcessual,
+                    'assuntos' => $assuntos,
+                    'descricao_documento' => $totalDocs . ' documento(s) do processo',
+                    'status' => 'processing',
+                    'total_documents' => $totalDocs,
+                    'job_parameters' => [
+                        'documentos' => $this->documentos,
+                        'contextoDados' => $this->contextoDados,
+                        'promptTemplate' => $this->promptTemplate,
+                        'documentAnalysisPrompt' => $this->documentAnalysisPrompt,
+                        'aiProvider' => $this->aiProvider,
+                        'ai_provider' => $this->aiProvider,
+                        'deepThinkingEnabled' => $this->deepThinkingEnabled,
+                        'deep_thinking_enabled' => $this->deepThinkingEnabled,
+                        'aiModelId' => $this->aiModelId,
+                        'ai_model_id' => $this->aiModelId,
+                        'mapModelId' => $this->mapModelId,
+                        'map_model_id' => $this->mapModelId,
+                        'reduceStrategy' => 'auto',
+                        'reduce_strategy' => 'auto',
+                    ],
+                ]);
+            }
 
             Log::info('AnalyzeProcessDocuments: Registro de análise criado', [
                 'analysis_id' => $documentAnalysis->id,

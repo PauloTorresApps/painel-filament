@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use Spatie\PdfToText\Pdf;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class PdfToTextService
 {
+    use WithOtelTracing;
+
     /**
      * Mínimo de caracteres por página para considerar que há texto extraível.
      * PDFs escaneados geralmente retornam < 100 caracteres por página.
@@ -31,6 +35,12 @@ class PdfToTextService
     public function extractText(string $pdfContent, ?string $tempFileName = null): string
     {
         $tempPath = null;
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-document', 'document.extract_pdf_text', [
+            'document.format' => 'pdf',
+            'document.identifier' => $tempFileName,
+        ]);
 
         try {
             // Decodifica o base64
@@ -102,9 +112,18 @@ class PdfToTextService
             // Limpa e normaliza o texto
             $text = $this->normalizeText($text);
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_pdf_text', 'pdf', 'success', $durationMs, mb_strlen($text));
+            $span->setAttribute('document.chars_extracted', mb_strlen($text));
+            $span->setStatus(StatusCode::STATUS_OK);
+
             return $text;
 
         } catch (\Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_pdf_text', 'pdf', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro ao extrair texto do PDF', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -113,6 +132,8 @@ class PdfToTextService
         } finally {
             // Sempre limpa o arquivo temporário
             $this->cleanupTempFile($tempPath);
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 
@@ -125,6 +146,12 @@ class PdfToTextService
     public function extractTextWithMetadata(string $pdfContent, ?string $tempFileName = null): array
     {
         $tempPath = null;
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-document', 'document.extract_pdf_text_with_metadata', [
+            'document.format' => 'pdf',
+            'document.identifier' => $tempFileName,
+        ]);
 
         try {
             $decodedContent = base64_decode($pdfContent);
@@ -168,7 +195,7 @@ class PdfToTextService
 
             $text = $this->normalizeText($text);
 
-            return [
+            $result = [
                 'text' => $text,
                 'is_scanned' => $needsOcr,
                 'page_count' => $pageCount,
@@ -176,13 +203,27 @@ class PdfToTextService
                 'chars_per_page' => round($charsPerPage, 2),
             ];
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_pdf_text_with_metadata', 'pdf', 'success', $durationMs, (int) $result['total_chars']);
+            $span->setAttribute('document.page_count', (int) $result['page_count']);
+            $span->setAttribute('document.is_scanned', (bool) $result['is_scanned']);
+            $span->setStatus(StatusCode::STATUS_OK);
+
+            return $result;
+
         } catch (\Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_pdf_text_with_metadata', 'pdf', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro ao extrair texto do PDF com metadados', [
                 'error' => $e->getMessage(),
             ]);
             throw $e;
         } finally {
             $this->cleanupTempFile($tempPath);
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 

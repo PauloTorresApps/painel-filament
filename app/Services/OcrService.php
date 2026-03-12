@@ -2,10 +2,14 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class OcrService
 {
+    use WithOtelTracing;
+
     /**
      * Resolução mínima recomendada para OCR (em pixels de largura)
      * Imagens menores são ampliadas para melhorar a precisão
@@ -25,6 +29,12 @@ class OcrService
     {
         $tempPath = null;
         $preprocessedPath = null;
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-document', 'document.extract_image_text_ocr', [
+            'document.format' => $mimetype,
+            'document.identifier' => $tempFileName,
+        ]);
 
         try {
             // Decodifica o base64
@@ -66,9 +76,19 @@ class OcrService
                 'preprocessed' => $preprocessedPath !== null,
             ]);
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_image_text_ocr', $mimetype, 'success', $durationMs, mb_strlen($text));
+            $span->setAttribute('document.chars_extracted', mb_strlen($text));
+            $span->setAttribute('document.preprocessed', $preprocessedPath !== null);
+            $span->setStatus(StatusCode::STATUS_OK);
+
             return $text;
 
         } catch (\Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_image_text_ocr', $mimetype, 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('OcrService: Erro ao extrair texto da imagem', [
                 'error' => $e->getMessage(),
                 'mimetype' => $mimetype,
@@ -78,6 +98,8 @@ class OcrService
             // Sempre limpa os arquivos temporários
             $this->cleanupTempFile($tempPath);
             $this->cleanupTempFile($preprocessedPath);
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 

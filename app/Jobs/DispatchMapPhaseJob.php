@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentAnalysis;
-use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -44,6 +44,11 @@ class DispatchMapPhaseJob implements ShouldQueue
     ) {
         $this->timeout = config('analysis.jobs.dispatch_map.timeout', 120);
         $this->tries = config('analysis.jobs.dispatch_map.tries', 3);
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     private function dispatchReducePhase(bool $useRefineStrategy, int $analysisId, string $aiProvider, bool $deepThinkingEnabled, ?string $aiModelId, array $contextoDados): void

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
@@ -40,6 +41,11 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.check_reduce_completion.timeout', 600);
         $this->tries = config('analysis.jobs.check_reduce_completion.tries', 3);
         $this->backoff = config('analysis.jobs.check_reduce_completion.backoff', 30);
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**

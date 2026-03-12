@@ -2,18 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiPrompt;
 use App\Models\ContractAnalysis;
 use App\Models\System;
 use App\Models\User;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
-use App\Contracts\AIProviderInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Filament\Notifications\Notification as FilamentNotification;
 
 class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
 {
@@ -39,6 +38,11 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
     }
 
     public int $uniqueFor = 600; // 10 minutos
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
+    }
 
     /**
      * Execute the job.

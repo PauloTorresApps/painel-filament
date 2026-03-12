@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"grafana": {
+			"url": "http://localhost:8001/mcp",
+			"type": "sse"
+		}
+	},
+	"inputs": []
+}

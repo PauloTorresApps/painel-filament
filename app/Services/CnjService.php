@@ -2,13 +2,17 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use SoapClient;
 use SoapFault;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class CnjService
 {
+    use WithOtelTracing;
+
     private string $wsdlUrl;
     private ?SoapClient $soapClient = null;
 
@@ -69,6 +73,15 @@ class CnjService
         $cacheKey = "cnj_{$tipoItem}_{$seqItem}";
 
         return Cache::remember($cacheKey, now()->addDays(30), function () use ($seqItem, $tipoItem) {
+            $operation = $tipoItem === 'C' ? 'getClasseDescricao' : 'getAssuntoDescricao';
+            $start = hrtime(true);
+            $metrics = app(OtelMetricsService::class);
+            [$span, $scope] = $this->startSpan('painel-laravel-cnj', 'cnj.api.call', [
+                'cnj.operation' => $operation,
+                'cnj.item_type' => $tipoItem,
+                'cnj.item_code' => $seqItem,
+            ]);
+
             try {
                 $response = $this->soapClient->getArrayDetalhesItemPublicoWS(
                     (string) $seqItem,
@@ -90,10 +103,22 @@ class CnjService
                     'seq' => $seqItem,
                 ]);
 
+                $durationMs = (hrtime(true) - $start) / 1_000_000;
+                $metrics->recordExternalApiCall('cnj', $operation, 'not_found', $durationMs);
+                $span->setAttribute('cnj.duration_ms', $durationMs);
+                $span->setStatus(StatusCode::STATUS_OK);
+
                 return null;
             } catch (SoapFault $e) {
+                $durationMs = (hrtime(true) - $start) / 1_000_000;
+                $metrics->recordExternalApiCall('cnj', $operation, 'failed', $durationMs);
+                $span->recordException($e);
+                $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
                 Log::error("Erro ao consultar item CNJ (tipo: {$tipoItem}, seq: {$seqItem}): " . $e->getMessage());
                 return null;
+            } finally {
+                $this->detachScope($scope);
+                $span->end();
             }
         });
     }

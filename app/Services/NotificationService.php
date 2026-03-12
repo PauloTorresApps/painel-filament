@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Models\User;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Globals;
+use OpenTelemetry\API\Trace\StatusCode;
 
 /**
  * Serviço centralizado para envio de notificações
- * 
+ *
  * Encapsula a lógica de notificação de usuários via Filament,
  * eliminando duplicação em múltiplos Jobs.
  */
@@ -29,11 +31,54 @@ class NotificationService
         string $body,
         string $status = 'info'
     ): void {
+        $span = null;
+        $scope = null;
+
+        if (class_exists(Globals::class)) {
+            try {
+                $tracer = Globals::tracerProvider()->getTracer('painel-laravel-notification');
+                $span = $tracer->spanBuilder('notification.send')->startSpan();
+                $scope = $span->activate();
+            } catch (\Throwable) {
+                $span = null;
+                $scope = null;
+            }
+        }
+
+        $metrics = app(OtelMetricsService::class);
+
+        if ($span !== null) {
+            $span->setAttribute('notification.status', $status);
+            $span->setAttribute('notification.title', $title);
+            $span->setAttribute('notification.has_user', $user !== null);
+        }
+
         if (!$user) {
+            try {
+                $metrics->recordNotification('ignored', false);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->setStatus(StatusCode::STATUS_OK);
+            }
+
+            if ($scope !== null) {
+                $scope->detach();
+            }
+
+            if ($span !== null) {
+                $span->end();
+            }
+
             Log::debug('NotificationService: Usuário nulo, notificação ignorada', [
                 'title' => $title,
             ]);
             return;
+        }
+
+        if ($span !== null) {
+            $span->setAttribute('app.user_id', $user->id);
         }
 
         try {
@@ -43,17 +88,44 @@ class NotificationService
                 ->status($status)
                 ->sendToDatabase($user);
 
+            try {
+                $metrics->recordNotification($status, true);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->setStatus(StatusCode::STATUS_OK);
+            }
+
             Log::debug('NotificationService: Notificação enviada', [
                 'user_id' => $user->id,
                 'title' => $title,
                 'status' => $status,
             ]);
         } catch (\Exception $e) {
+            try {
+                $metrics->recordNotification('failed', true);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->recordException($e);
+                $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            }
+
             Log::warning('NotificationService: Erro ao enviar notificação', [
                 'user_id' => $user?->id,
                 'title' => $title,
                 'error' => $e->getMessage(),
             ]);
+        } finally {
+            if ($scope !== null) {
+                $scope->detach();
+            }
+
+            if ($span !== null) {
+                $span->end();
+            }
         }
     }
 

@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Traits\WithOtelTracing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class ContractUploadController extends Controller
 {
+    use WithOtelTracing;
+
     /**
      * Diretório temporário para chunks
      */
@@ -30,6 +35,12 @@ class ContractUploadController extends Controller
      */
     public function upload(Request $request): JsonResponse
     {
+        [$span, $scope] = $this->startSpan('painel-laravel-controller', 'controller.contract.upload', [
+            'http.route' => 'contracts.upload',
+            'app.user_id' => Auth::id(),
+            'http.method' => $request->method(),
+        ]);
+
         try {
             // Debug: log do que está sendo recebido
             Log::info('Upload request recebido', [
@@ -48,19 +59,27 @@ class ContractUploadController extends Controller
 
             // Verifica se é upload chunked
             $isChunked = $request->has('patch') || $request->header('Upload-Length');
+            $span->setAttribute('upload.chunked', $isChunked);
 
             if ($isChunked) {
+                $span->setStatus(StatusCode::STATUS_OK);
                 return $this->handleChunkedUpload($request);
             }
 
+            $span->setStatus(StatusCode::STATUS_OK);
             return $this->handleRegularUpload($request);
         } catch (\Exception $e) {
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro no upload de contrato', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json(['error' => $e->getMessage()], 500);
+        } finally {
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 
@@ -209,17 +228,30 @@ class ContractUploadController extends Controller
      */
     public function delete(Request $request): JsonResponse
     {
+        [$span, $scope] = $this->startSpan('painel-laravel-controller', 'controller.contract.upload_delete', [
+            'http.route' => 'contracts.upload.delete',
+            'app.user_id' => Auth::id(),
+        ]);
+
         $fileId = $request->input('file_id') ?? $request->getContent();
 
         if (!$fileId) {
+            $span->setStatus(StatusCode::STATUS_ERROR, 'File ID não fornecido');
+            $this->detachScope($scope);
+            $span->end();
             return response()->json(['error' => 'File ID não fornecido'], 400);
         }
+
+        $span->setAttribute('upload.file_id', (string) $fileId);
 
         // Tenta remover do diretório de contratos
         $contractPath = self::CONTRACTS_DIR . "/{$fileId}";
         if (Storage::exists($contractPath)) {
             Storage::delete($contractPath);
             Log::info('Contrato removido', ['path' => $contractPath]);
+            $span->setStatus(StatusCode::STATUS_OK);
+            $this->detachScope($scope);
+            $span->end();
             return response()->json(['success' => true]);
         }
 
@@ -233,6 +265,10 @@ class ContractUploadController extends Controller
         if (Storage::exists($metaPath)) {
             Storage::delete($metaPath);
         }
+
+        $span->setStatus(StatusCode::STATUS_OK);
+        $this->detachScope($scope);
+        $span->end();
 
         return response()->json(['success' => true]);
     }

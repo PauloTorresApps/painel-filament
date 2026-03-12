@@ -2,13 +2,17 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use SoapClient;
 use SoapFault;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class EprocService
 {
+    use WithOtelTracing;
+
     protected $client;
     protected $usuario;
     protected $senha;
@@ -125,6 +129,15 @@ class EprocService
         bool $incluirDocumentos = true,
         ?string $chave = null
     ) {
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-eproc', 'eproc.api.call', [
+            'eproc.operation' => 'consultarProcesso',
+            'eproc.process_number' => $numeroProcesso,
+            'eproc.include_documents' => $incluirDocumentos,
+            'eproc.include_movements' => $incluirMovimentos,
+        ]);
+
         try {
             // Remove a máscara do número do processo (pontos e traços)
             $numeroProcessoLimpo = $this->limparNumeroProcesso($numeroProcesso);
@@ -178,6 +191,11 @@ class EprocService
                 'response' => substr($this->client->__getLastResponse() ?? '', 0, 2000)
             ]);
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordExternalApiCall('eproc', 'consultarProcesso', 'success', $durationMs);
+            $span->setAttribute('eproc.duration_ms', $durationMs);
+            $span->setStatus(StatusCode::STATUS_OK);
+
             return $this->processarResposta($response);
 
         } catch (SoapFault $e) {
@@ -185,7 +203,15 @@ class EprocService
             Log::error('Request: ' . $this->client->__getLastRequest());
             Log::error('Response: ' . $this->client->__getLastResponse());
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordExternalApiCall('eproc', 'consultarProcesso', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+
             throw new Exception('Erro ao consultar processo: ' . $e->getMessage());
+        } finally {
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 
@@ -204,6 +230,15 @@ class EprocService
      */
     public function consultarDocumentosProcesso(string $numeroProcesso, array $idsDocumentos, bool $incluirConteudo = true, ?string $chave = null)
     {
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-eproc', 'eproc.api.call', [
+            'eproc.operation' => 'consultarDocumentosProcesso',
+            'eproc.process_number' => $numeroProcesso,
+            'eproc.documents_count' => count($idsDocumentos),
+            'eproc.include_content' => $incluirConteudo,
+        ]);
+
         try {
             // Remove a máscara do número do processo
             $numeroProcessoLimpo = $this->limparNumeroProcesso($numeroProcesso);
@@ -295,11 +330,23 @@ class EprocService
             // Vincula anexos aos documentos
             $resultado = $this->vincularAnexosADocumentos($resultado, $anexos);
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordExternalApiCall('eproc', 'consultarDocumentosProcesso', 'success', $durationMs);
+            $span->setAttribute('eproc.duration_ms', $durationMs);
+            $span->setStatus(StatusCode::STATUS_OK);
+
             return $this->processarResposta($resultado);
 
         } catch (Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordExternalApiCall('eproc', 'consultarDocumentosProcesso', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro ao consultar documentos: ' . $e->getMessage());
             throw $e;
+        } finally {
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 

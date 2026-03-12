@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Services\EprocService;
@@ -38,6 +39,11 @@ class DownloadDocumentJob implements ShouldQueue
         public string $senha,
         public ?string $chave = null
     ) {}
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
+    }
 
     /**
      * Execute the job.

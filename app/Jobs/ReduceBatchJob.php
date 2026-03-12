@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\DocumentAnalysis;
 use App\Models\AiPrompt;
@@ -38,6 +39,11 @@ class ReduceBatchJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.reduce_batch.timeout', 600);
         $this->tries = config('analysis.jobs.reduce_batch.tries', 3);
         $this->backoff = config('analysis.jobs.reduce_batch.backoff', 60);
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**

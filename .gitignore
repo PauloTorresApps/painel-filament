@@ -18,8 +18,10 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 /auth.json
-/.fleet
-/.idea
-/.nova
-/.vscode
-/.zed
+
+# Ignora o conteúdo, mas mantém as pastas (opcional)
+storage/grafana/*
+storage/prometheus/*
+storage/loki/*
+storage/tempo/*
+!storage/**/.gitkeep
