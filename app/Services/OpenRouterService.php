@@ -299,7 +299,7 @@ class OpenRouterService extends AbstractAIService
 
         // Ordem de providers (ex: 'anthropic,google,openai')
         $order = config('services.openrouter.provider_order');
-        if ($order) {
+        if (is_string($order) && $order !== '') {
             $provider['order'] = array_map('trim', explode(',', $order));
         }
 
