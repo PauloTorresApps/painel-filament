@@ -552,7 +552,7 @@ class ProcessDetails extends Page
 
             // Redireciona para a análise recém-criada para acompanhamento em tempo real.
             $this->redirect(
-                route('filament.analises.resources.historico-processos.view', $documentAnalysis),
+                route('filament.analises.resources.historico-processos.view', $documentAnalysis->id),
                 navigate: true
             );
 
