@@ -379,14 +379,26 @@ class OpenRouterService extends AbstractAIService
 
         $start = hrtime(true);
         $metrics = app(OtelMetricsService::class);
-        $tracer = Globals::tracerProvider()->getTracer('painel-laravel-ai');
-        $span = $tracer->spanBuilder('ai.api.call')->startSpan();
-        $scope = $span->activate();
+        $span = null;
+        $scope = null;
 
-        $span->setAttribute('ai.provider', 'OpenRouter');
-        $span->setAttribute('ai.model', (string) ($payload['model'] ?? $this->model));
-        $span->setAttribute('ai.call_type', $callType);
-        $span->setAttribute('ai.reasoning_enabled', $useReasoning);
+        if (class_exists(Globals::class)) {
+            try {
+                $tracer = Globals::tracerProvider()->getTracer('painel-laravel-ai');
+                $span = $tracer->spanBuilder('ai.api.call')->startSpan();
+                $scope = $span->activate();
+            } catch (\Throwable) {
+                $span = null;
+                $scope = null;
+            }
+        }
+
+        if ($span !== null) {
+            $span->setAttribute('ai.provider', 'OpenRouter');
+            $span->setAttribute('ai.model', (string) ($payload['model'] ?? $this->model));
+            $span->setAttribute('ai.call_type', $callType);
+            $span->setAttribute('ai.reasoning_enabled', $useReasoning);
+        }
 
         try {
             // Injeta temperature (apenas quando NÃO usa reasoning)
@@ -441,8 +453,10 @@ class OpenRouterService extends AbstractAIService
                     'model' => $this->model,
                 ]);
 
-                $span->setAttribute('http.response.status_code', $statusCode);
-                $span->setStatus(StatusCode::STATUS_ERROR, $errorMessage);
+                if ($span !== null) {
+                    $span->setAttribute('http.response.status_code', $statusCode);
+                    $span->setStatus(StatusCode::STATUS_ERROR, $errorMessage);
+                }
 
                 throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
             }
@@ -474,9 +488,11 @@ class OpenRouterService extends AbstractAIService
                 $totalTokens = (int) $usageArray['total_tokens'];
                 $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
 
-                $span->setAttribute('ai.prompt_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
-                $span->setAttribute('ai.completion_tokens', (int) ($usageArray['completion_tokens'] ?? 0));
-                $span->setAttribute('ai.total_tokens', $totalTokens);
+                if ($span !== null) {
+                    $span->setAttribute('ai.prompt_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
+                    $span->setAttribute('ai.completion_tokens', (int) ($usageArray['completion_tokens'] ?? 0));
+                    $span->setAttribute('ai.total_tokens', $totalTokens);
+                }
 
                 Log::info("OpenRouter API - Resposta recebida ({$callType})", [
                     'model' => $data['model'] ?? $this->model,
@@ -547,19 +563,29 @@ class OpenRouterService extends AbstractAIService
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordAiApiCall('OpenRouter', (string) ($payload['model'] ?? $this->model), $callType, 'success', $durationMs, $totalTokens);
 
-            $span->setStatus(StatusCode::STATUS_OK);
+            if ($span !== null) {
+                $span->setStatus(StatusCode::STATUS_OK);
+            }
 
             return $text;
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordAiApiCall('OpenRouter', (string) ($payload['model'] ?? $this->model), $callType, 'failed', $durationMs);
-            $span->recordException($exception);
-            $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+
+            if ($span !== null) {
+                $span->recordException($exception);
+                $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+            }
 
             throw $exception;
         } finally {
-            $scope->detach();
-            $span->end();
+            if ($scope !== null) {
+                $scope->detach();
+            }
+
+            if ($span !== null) {
+                $span->end();
+            }
         }
     }
 

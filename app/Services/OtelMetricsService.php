@@ -24,25 +24,31 @@ class OtelMetricsService
 
     public function recordJobExecution(string $jobName, string $status, string $queue, float $durationMs): void
     {
-        $attributes = [
-            'job.name' => $jobName,
-            'job.status' => $status,
-            'queue.name' => $queue,
-        ];
+        try {
+            $attributes = [
+                'job.name' => $jobName,
+                'job.status' => $status,
+                'queue.name' => $queue,
+            ];
 
-        $this->getJobExecutionsCounter()->add(1, $attributes);
-        $this->getJobDurationHistogram()->record($durationMs, $attributes);
+            $this->getJobExecutionsCounter()->add(1, $attributes);
+            $this->getJobDurationHistogram()->record($durationMs, $attributes);
 
-        if ($status === 'failed') {
-            $this->getJobFailuresCounter()->add(1, $attributes);
+            if ($status === 'failed') {
+                $this->getJobFailuresCounter()->add(1, $attributes);
+            }
+        } catch (\Throwable) {
         }
     }
 
     public function recordDbQuery(float $durationMs, string $connection): void
     {
-        $this->getDbQueryDurationHistogram()->record($durationMs, [
-            'db.connection' => $connection,
-        ]);
+        try {
+            $this->getDbQueryDurationHistogram()->record($durationMs, [
+                'db.connection' => $connection,
+            ]);
+        } catch (\Throwable) {
+        }
     }
 
     public function recordAiApiCall(
@@ -53,31 +59,37 @@ class OtelMetricsService
         float $durationMs,
         int $totalTokens = 0
     ): void {
-        $attributes = [
-            'ai.provider' => $provider,
-            'ai.model' => $model,
-            'ai.call_type' => $callType,
-            'ai.status' => $status,
-        ];
+        try {
+            $attributes = [
+                'ai.provider' => $provider,
+                'ai.model' => $model,
+                'ai.call_type' => $callType,
+                'ai.status' => $status,
+            ];
 
-        $this->getAiApiCallsCounter()->add(1, $attributes);
-        $this->getAiApiDurationHistogram()->record($durationMs, $attributes);
+            $this->getAiApiCallsCounter()->add(1, $attributes);
+            $this->getAiApiDurationHistogram()->record($durationMs, $attributes);
 
-        if ($totalTokens > 0) {
-            $this->getAiTokensCounter()->add($totalTokens, $attributes);
+            if ($totalTokens > 0) {
+                $this->getAiTokensCounter()->add($totalTokens, $attributes);
+            }
+        } catch (\Throwable) {
         }
     }
 
     public function recordExternalApiCall(string $system, string $operation, string $status, float $durationMs): void
     {
-        $attributes = [
-            'external.system' => $system,
-            'external.operation' => $operation,
-            'external.status' => $status,
-        ];
+        try {
+            $attributes = [
+                'external.system' => $system,
+                'external.operation' => $operation,
+                'external.status' => $status,
+            ];
 
-        $this->getExternalApiCallsCounter()->add(1, $attributes);
-        $this->getExternalApiDurationHistogram()->record($durationMs, $attributes);
+            $this->getExternalApiCallsCounter()->add(1, $attributes);
+            $this->getExternalApiDurationHistogram()->record($durationMs, $attributes);
+        } catch (\Throwable) {
+        }
     }
 
     public function recordDocumentExtraction(
@@ -87,42 +99,55 @@ class OtelMetricsService
         float $durationMs,
         int $charsExtracted = 0
     ): void {
-        $attributes = [
-            'document.operation' => $operation,
-            'document.format' => $format,
-            'document.status' => $status,
-        ];
+        try {
+            $attributes = [
+                'document.operation' => $operation,
+                'document.format' => $format,
+                'document.status' => $status,
+            ];
 
-        $this->getDocumentExtractionCounter()->add(1, $attributes);
-        $this->getDocumentExtractionDurationHistogram()->record($durationMs, $attributes);
+            $this->getDocumentExtractionCounter()->add(1, $attributes);
+            $this->getDocumentExtractionDurationHistogram()->record($durationMs, $attributes);
 
-        if ($charsExtracted > 0) {
-            $this->getDocumentProcessedCharsCounter()->add($charsExtracted, $attributes);
+            if ($charsExtracted > 0) {
+                $this->getDocumentProcessedCharsCounter()->add($charsExtracted, $attributes);
+            }
+        } catch (\Throwable) {
         }
     }
 
     public function recordNotification(string $status, bool $hasUser): void
     {
-        $this->getNotificationCounter()->add(1, [
-            'notification.status' => $status,
-            'notification.has_user' => $hasUser,
-        ]);
+        try {
+            $this->getNotificationCounter()->add(1, [
+                'notification.status' => $status,
+                'notification.has_user' => $hasUser,
+            ]);
+        } catch (\Throwable) {
+        }
     }
 
     public function recordHttpRequest(string $method, string $route, int $statusCode, float $durationMs): void
     {
-        $attributes = [
-            'http.request.method' => $method,
-            'http.route' => $route,
-            'http.response.status_code' => $statusCode,
-        ];
+        try {
+            $attributes = [
+                'http.request.method' => $method,
+                'http.route' => $route,
+                'http.response.status_code' => $statusCode,
+            ];
 
-        $this->getHttpRequestsCounter()->add(1, $attributes);
-        $this->getHttpRequestDurationHistogram()->record($durationMs, $attributes);
+            $this->getHttpRequestsCounter()->add(1, $attributes);
+            $this->getHttpRequestDurationHistogram()->record($durationMs, $attributes);
+        } catch (\Throwable) {
+        }
     }
 
     private function getMeter(): mixed
     {
+        if (!class_exists(Globals::class)) {
+            throw new \RuntimeException('OpenTelemetry indisponivel');
+        }
+
         return Globals::meterProvider()->getMeter('painel-laravel-app');
     }
 

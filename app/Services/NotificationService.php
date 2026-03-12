@@ -31,27 +31,55 @@ class NotificationService
         string $body,
         string $status = 'info'
     ): void {
-        $tracer = Globals::tracerProvider()->getTracer('painel-laravel-notification');
-        $span = $tracer->spanBuilder('notification.send')->startSpan();
-        $scope = $span->activate();
+        $span = null;
+        $scope = null;
+
+        if (class_exists(Globals::class)) {
+            try {
+                $tracer = Globals::tracerProvider()->getTracer('painel-laravel-notification');
+                $span = $tracer->spanBuilder('notification.send')->startSpan();
+                $scope = $span->activate();
+            } catch (\Throwable) {
+                $span = null;
+                $scope = null;
+            }
+        }
+
         $metrics = app(OtelMetricsService::class);
 
-        $span->setAttribute('notification.status', $status);
-        $span->setAttribute('notification.title', $title);
-        $span->setAttribute('notification.has_user', $user !== null);
+        if ($span !== null) {
+            $span->setAttribute('notification.status', $status);
+            $span->setAttribute('notification.title', $title);
+            $span->setAttribute('notification.has_user', $user !== null);
+        }
 
         if (!$user) {
-            $metrics->recordNotification('ignored', false);
-            $span->setStatus(StatusCode::STATUS_OK);
-            $scope->detach();
-            $span->end();
+            try {
+                $metrics->recordNotification('ignored', false);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->setStatus(StatusCode::STATUS_OK);
+            }
+
+            if ($scope !== null) {
+                $scope->detach();
+            }
+
+            if ($span !== null) {
+                $span->end();
+            }
+
             Log::debug('NotificationService: Usuário nulo, notificação ignorada', [
                 'title' => $title,
             ]);
             return;
         }
 
-        $span->setAttribute('app.user_id', $user->id);
+        if ($span !== null) {
+            $span->setAttribute('app.user_id', $user->id);
+        }
 
         try {
             FilamentNotification::make()
@@ -60,8 +88,14 @@ class NotificationService
                 ->status($status)
                 ->sendToDatabase($user);
 
-            $metrics->recordNotification($status, true);
-            $span->setStatus(StatusCode::STATUS_OK);
+            try {
+                $metrics->recordNotification($status, true);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->setStatus(StatusCode::STATUS_OK);
+            }
 
             Log::debug('NotificationService: Notificação enviada', [
                 'user_id' => $user->id,
@@ -69,17 +103,29 @@ class NotificationService
                 'status' => $status,
             ]);
         } catch (\Exception $e) {
-            $metrics->recordNotification('failed', true);
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            try {
+                $metrics->recordNotification('failed', true);
+            } catch (\Throwable) {
+            }
+
+            if ($span !== null) {
+                $span->recordException($e);
+                $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            }
+
             Log::warning('NotificationService: Erro ao enviar notificação', [
                 'user_id' => $user?->id,
                 'title' => $title,
                 'error' => $e->getMessage(),
             ]);
         } finally {
-            $scope->detach();
-            $span->end();
+            if ($scope !== null) {
+                $scope->detach();
+            }
+
+            if ($span !== null) {
+                $span->end();
+            }
         }
     }
 

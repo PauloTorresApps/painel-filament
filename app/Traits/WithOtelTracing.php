@@ -12,8 +12,16 @@ trait WithOtelTracing
      */
     protected function startSpan(string $instrumentationName, string $spanName, array $attributes = []): array
     {
-        $tracer = Globals::tracerProvider()->getTracer($instrumentationName);
-        $span = $tracer->spanBuilder($spanName)->startSpan();
+        if (!class_exists(Globals::class)) {
+            return [null, null];
+        }
+
+        try {
+            $tracer = Globals::tracerProvider()->getTracer($instrumentationName);
+            $span = $tracer->spanBuilder($spanName)->startSpan();
+        } catch (\Throwable) {
+            return [null, null];
+        }
 
         foreach ($attributes as $key => $value) {
             if ($value === null) {
@@ -30,12 +38,20 @@ trait WithOtelTracing
 
     protected function finishSpanSuccess(mixed $span): void
     {
+        if ($span === null) {
+            return;
+        }
+
         $span->setStatus(StatusCode::STATUS_OK);
         $span->end();
     }
 
     protected function finishSpanError(mixed $span, \Throwable $exception): void
     {
+        if ($span === null) {
+            return;
+        }
+
         $span->recordException($exception);
         $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
         $span->end();
@@ -43,6 +59,10 @@ trait WithOtelTracing
 
     protected function detachScope(mixed $scope): void
     {
+        if ($scope === null) {
+            return;
+        }
+
         $scope->detach();
     }
 }
