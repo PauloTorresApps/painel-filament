@@ -24,6 +24,13 @@ class JudicialUsersSeeder extends Seeder
 
         $users = [
             [
+                'name' => 'Vinícius Freitas Damasceno',
+                'email' => 'vini@mail.com',
+                'password' => '123456789',
+                'judicial_login' => 'TO007884',
+                'is_default' => true,
+            ],
+            [
                 'name' => 'Analista Processo 01',
                 'email' => 'analista.processo1@admin.com',
                 'password' => '123456789',

@@ -3,8 +3,11 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
+use Throwable;
 
 class PermissionSeeder extends Seeder
 {
@@ -21,7 +24,7 @@ class PermissionSeeder extends Seeder
     private function createPermission(): void
     {
         // Reset cached roles and permissions
-        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        $this->forgetCachedPermissionsSafely();
 
         $arrPermissions = [
             'access_admin',
@@ -48,7 +51,18 @@ class PermissionSeeder extends Seeder
         }
 
         //update permission cache
-        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        $this->forgetCachedPermissionsSafely();
+    }
+
+    private function forgetCachedPermissionsSafely(): void
+    {
+        try {
+            app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        } catch (Throwable $exception) {
+            Log::warning('Permission cache clear skipped during seeding.', [
+                'exception' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function createRole(): void
