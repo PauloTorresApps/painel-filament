@@ -1,151 +1,168 @@
 services:
-  # Aplicação PHP-FPM
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
-    container_name: painel_app
-    restart: unless-stopped
-    working_dir: /var/www/html
-    volumes:
-      - ./:/var/www/html
-      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
-    environment:
-      - DB_CONNECTION=pgsql
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_DATABASE=${DB_DATABASE:-painel}
-      - DB_USERNAME=${DB_USERNAME:-painel_user}
-      - DB_PASSWORD=${DB_PASSWORD:-secret}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - QUEUE_CONNECTION=redis
-      - CACHE_DRIVER=redis
-      - SESSION_DRIVER=redis
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - painel_network
-
-  # Node.js (build de assets frontend)
-  node:
-    image: node:22.22.0-alpine
-    container_name: painel_node
-    working_dir: /var/www/html
-    volumes:
-      - ./:/var/www/html
-    command: sh -c "tail -f /dev/null"
-    networks:
-      - painel_network
-
-  # Nginx Web Server
-  nginx:
-    image: nginx:alpine
-    container_name: painel_nginx
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8000}:80"
-    volumes:
-      - ./:/var/www/html
-      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./docker/nginx/conf.d:/etc/nginx/conf.d
-    depends_on:
-      - app
-    networks:
-      - painel_network
-
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine
-    container_name: painel_postgres
-    restart: unless-stopped
-    ports:
-      - "${DB_PORT:-5432}:5432"
-    environment:
-      POSTGRES_DB: ${DB_DATABASE:-painel}
-      POSTGRES_USER: ${DB_USERNAME:-painel_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - painel_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-painel_user} -d ${DB_DATABASE:-painel}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis (Cache & Queue)
-  redis:
-    image: redis:7-alpine
-    container_name: painel_redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - painel_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
-  # MailHog (Email Testing)
-  mailhog:
-    image: mailhog/mailhog:latest
-    container_name: painel_mailhog
-    restart: unless-stopped
-    ports:
-      - "${MAILHOG_SMTP_PORT:-1025}:1025"
-      - "${MAILHOG_WEB_PORT:-8025}:8025"
-    networks:
-      - painel_network
-
-  # Queue Worker (Supervisor)
-  queue:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
-    container_name: painel_queue
-    restart: unless-stopped
-    working_dir: /var/www/html
-    volumes:
-      - ./:/var/www/html
-      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
-      - ./docker/supervisor/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf
-    environment:
-      - DB_CONNECTION=pgsql
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_DATABASE=${DB_DATABASE:-painel}
-      - DB_USERNAME=${DB_USERNAME:-painel_user}
-      - DB_PASSWORD=${DB_PASSWORD:-secret}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - QUEUE_CONNECTION=redis
-    depends_on:
-      - postgres
-      - redis
-    command: /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-    networks:
-      - painel_network
-
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+                USER_ID: '${USER_ID:-1000}'
+                GROUP_ID: '${GROUP_ID:-1000}'
+        container_name: painel_app
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - './:/var/www/html'
+            - './docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini'
+        environment:
+            - DB_CONNECTION=pgsql
+            - DB_HOST=postgres
+            - DB_PORT=5432
+            - 'DB_DATABASE=${DB_DATABASE:-painel}'
+            - 'DB_USERNAME=${DB_USERNAME:-painel_user}'
+            - 'DB_PASSWORD=${DB_PASSWORD:-secret}'
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+            - QUEUE_CONNECTION=redis
+            - CACHE_DRIVER=redis
+            - SESSION_DRIVER=redis
+        depends_on:
+            - postgres
+            - redis
+        networks:
+            - painel_network
+    node:
+        image: 'node:22.22.0-alpine'
+        container_name: painel_node
+        working_dir: /var/www/html
+        volumes:
+            - './:/var/www/html'
+        command: 'sh -c "tail -f /dev/null"'
+        networks:
+            - painel_network
+    nginx:
+        image: 'nginx:alpine'
+        container_name: painel_nginx
+        restart: unless-stopped
+        ports:
+            - '${APP_PORT:-8000}:80'
+        volumes:
+            - './:/var/www/html'
+            - './docker/nginx/nginx.conf:/etc/nginx/nginx.conf'
+            - './docker/nginx/conf.d:/etc/nginx/conf.d'
+        depends_on:
+            - app
+        networks:
+            - painel_network
+    postgres:
+        image: 'postgres:16-alpine'
+        container_name: painel_postgres
+        restart: unless-stopped
+        ports:
+            - '${DB_PORT:-5432}:5432'
+        environment:
+            POSTGRES_DB: '${DB_DATABASE:-painel}'
+            POSTGRES_USER: '${DB_USERNAME:-painel_user}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
+            PGDATA: /var/lib/postgresql/data/pgdata
+        volumes:
+            - 'postgres_data:/var/lib/postgresql/data'
+        networks:
+            - painel_network
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - 'pg_isready -U ${DB_USERNAME:-painel_user} -d ${DB_DATABASE:-painel}'
+            interval: 10s
+            timeout: 5s
+            retries: 5
+    redis:
+        image: 'redis:7-alpine'
+        container_name: painel_redis
+        restart: unless-stopped
+        ports:
+            - '${REDIS_PORT:-6379}:6379'
+        volumes:
+            - 'redis_data:/data'
+        networks:
+            - painel_network
+        healthcheck:
+            test:
+                - CMD
+                - redis-cli
+                - ping
+            interval: 10s
+            timeout: 3s
+            retries: 3
+    mailhog:
+        image: 'mailhog/mailhog:latest'
+        container_name: painel_mailhog
+        restart: unless-stopped
+        ports:
+            - '${MAILHOG_SMTP_PORT:-1025}:1025'
+            - '${MAILHOG_WEB_PORT:-8025}:8025'
+        networks:
+            - painel_network
+    queue:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+                USER_ID: '${USER_ID:-1000}'
+                GROUP_ID: '${GROUP_ID:-1000}'
+        container_name: painel_queue
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - './:/var/www/html'
+            - './docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini'
+            - './docker/supervisor/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf'
+        environment:
+            - DB_CONNECTION=pgsql
+            - DB_HOST=postgres
+            - DB_PORT=5432
+            - 'DB_DATABASE=${DB_DATABASE:-painel}'
+            - 'DB_USERNAME=${DB_USERNAME:-painel_user}'
+            - 'DB_PASSWORD=${DB_PASSWORD:-secret}'
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+            - QUEUE_CONNECTION=redis
+        depends_on:
+            - postgres
+            - redis
+        command: '/usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf'
+        networks:
+            - painel_network
+    mysql:
+        image: 'mysql:8.4'
+        ports:
+            - '${FORWARD_DB_PORT:-3306}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 1
+            MYSQL_EXTRA_OPTIONS: '${MYSQL_EXTRA_OPTIONS:-}'
+        volumes:
+            - 'sail-mysql:/var/lib/mysql'
+            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-p${DB_PASSWORD}'
+            retries: 3
+            timeout: 5s
 networks:
-  painel_network:
-    driver: bridge
-
+    painel_network:
+        driver: bridge
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
+    postgres_data:
+        driver: local
+    redis_data:
+        driver: local
+    sail-mysql:
+        driver: local
