@@ -471,6 +471,48 @@ class ProcessDetails extends Page
             $mapModel = $promptAnaliseDocumentos?->aiModel;
             $mapModelId = $mapModel?->model_id ?? $reduceModelId;
 
+            // Cria a análise imediatamente para permitir redirecionamento direto para a página de acompanhamento.
+            $classeProcessual = $this->dadosBasicos['classeProcessualNome']
+                ?? $this->dadosBasicos['classeProcessual']
+                ?? null;
+
+            $assuntos = collect($this->dadosBasicos['assunto'] ?? [])
+                ->map(fn (array $assunto) => $assunto['nomeAssunto']
+                    ?? $assunto['descricao']
+                    ?? $assunto['codigoAssunto']
+                    ?? $assunto['codigoNacional']
+                    ?? null)
+                ->filter()
+                ->implode(', ');
+
+            $documentAnalysis = \App\Models\DocumentAnalysis::create([
+                'user_id' => auth()->user()->id,
+                'numero_processo' => $this->numeroProcesso,
+                'classe_processual' => $classeProcessual,
+                'assuntos' => $assuntos !== '' ? $assuntos : null,
+                'descricao_documento' => count($documentosParaAnalise) . ' documento(s) do processo',
+                'status' => 'processing',
+                'current_phase' => \App\Models\DocumentAnalysis::PHASE_DOWNLOAD,
+                'progress_message' => 'Aguardando início do processamento pelo worker...',
+                'total_documents' => count($documentosParaAnalise),
+                'job_parameters' => [
+                    'documentos' => $documentosParaAnalise,
+                    'contextoDados' => $this->dadosBasicos,
+                    'promptTemplate' => $promptPadrao->content,
+                    'documentAnalysisPrompt' => $promptAnaliseDocumentos?->content,
+                    'aiProvider' => $aiProvider,
+                    'ai_provider' => $aiProvider,
+                    'deepThinkingEnabled' => $promptPadrao->deep_thinking_enabled ?? true,
+                    'deep_thinking_enabled' => $promptPadrao->deep_thinking_enabled ?? true,
+                    'aiModelId' => $reduceModelId,
+                    'ai_model_id' => $reduceModelId,
+                    'mapModelId' => $mapModelId,
+                    'map_model_id' => $mapModelId,
+                    'reduceStrategy' => 'auto',
+                    'reduce_strategy' => 'auto',
+                ],
+            ]);
+
             // Dispara o Job com o provider e modelo de IA selecionados
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
                 auth()->user()->id,
@@ -487,7 +529,8 @@ class ProcessDetails extends Page
                 $reduceModelId,                                      // ID do modelo para REDUCE (parecer final)
                 $promptAnaliseDocumentos?->content,                  // Prompt customizado para análise de documentos (MAP)
                 $this->chave,                                        // Chave do processo (para processos sigilosos)
-                $mapModelId                                          // ID do modelo para MAP (análise de documentos)
+                $mapModelId,                                         // ID do modelo para MAP (análise de documentos)
+                $documentAnalysis->id                                // ID da análise já criada para redirecionamento imediato
             );
 
             $totalDocs = count($documentosParaAnalise);
@@ -507,9 +550,9 @@ class ProcessDetails extends Page
                 'total_documentos' => count($documentosParaAnalise)
             ]);
 
-            // Redireciona para a página de histórico de análises (melhoria #2)
+            // Redireciona para a análise recém-criada para acompanhamento em tempo real.
             $this->redirect(
-                route('filament.analises.resources.historico-processos.index'),
+                route('filament.analises.resources.historico-processos.view', $documentAnalysis),
                 navigate: true
             );
 

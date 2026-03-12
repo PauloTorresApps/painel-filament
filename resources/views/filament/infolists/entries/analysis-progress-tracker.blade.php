@@ -15,6 +15,16 @@
     // Calcula progresso geral (já vem capado em 100 pelo model)
     $overallProgress = $record->getOverallProgressPercentage();
 
+    $isWaitingWorkerStart = $status === 'processing'
+        && empty($progressMessage)
+        && empty($phase)
+        && ($stats['map_completed'] ?? 0) === 0
+        && ($stats['processing'] ?? 0) === 0;
+
+    $effectiveProgressMessage = $isWaitingWorkerStart
+        ? 'Aguardando início do processamento pelo worker...'
+        : ($progressMessage ?? 'Análise em andamento');
+
     // Busca micro-análises do nível MAP ordenadas por índice
     $microAnalyses = $record->microAnalyses()
         ->mapLevel()
@@ -78,7 +88,7 @@
                     </div>
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Processando...</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ $progressMessage ?? 'Análise em andamento' }}</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ $effectiveProgressMessage }}</p>
                     </div>
                 @elseif($status === 'failed')
                     <div class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
