@@ -34,6 +34,13 @@ yarn-error.log
 storage/logs/*
 !storage/logs/.gitignore
 
+# Runtime storage data (not needed in image build context)
+storage/grafana/
+storage/loki/
+storage/prometheus/
+storage/tempo/
+storage/registry/
+
 # Database
 database/database.sqlite
 *.sqlite

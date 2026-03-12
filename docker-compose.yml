@@ -13,6 +13,8 @@ services:
     volumes:
       - ./:/var/www/html
       - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
+      - laravel_bootstrap_cache:/var/www/html/bootstrap/cache
     environment:
       - DB_CONNECTION=pgsql
       - DB_HOST=postgres
@@ -130,6 +132,8 @@ services:
       - ./:/var/www/html
       - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
       - ./docker/supervisor/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf
+      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
+      - laravel_bootstrap_cache:/var/www/html/bootstrap/cache
     environment:
       - DB_CONNECTION=pgsql
       - DB_HOST=postgres
@@ -397,12 +401,14 @@ services:
       - painel_network
       
 networks:
-    painel_network:
-        driver: bridge
+  painel_network:
+    driver: bridge
 volumes:
-    postgres_data:
-        driver: local
-    redis_data:
-        driver: local
-    sail-mysql:
-        driver: local
+  laravel_bootstrap_cache:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  sail-mysql:
+    driver: local

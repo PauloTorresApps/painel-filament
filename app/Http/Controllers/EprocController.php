@@ -51,8 +51,8 @@ class EprocController extends Controller
             $numeroProcesso = $request->input('numero_processo');
             $chave = $request->input('chave');
             $senha = $request->input('password_ws');
-            $span->setAttribute('eproc.process_number', $numeroProcesso);
-            $span->setAttribute('eproc.has_secret_key', !empty($chave));
+            $span?->setAttribute('eproc.process_number', $numeroProcesso);
+            $span?->setAttribute('eproc.has_secret_key', !empty($chave));
 
             // Instancia o serviço com as credenciais do usuário
             $eprocService = new EprocService($judicialUser->user_login, $senha);
@@ -117,19 +117,19 @@ class EprocController extends Controller
                 'chave' => $chave
             ], now()->addMinutes(10));
 
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setStatus(StatusCode::STATUS_OK);
 
             return redirect()->route('filament.analises.pages.process-details', ['key' => $cacheKey]);
 
         } catch (Exception $e) {
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            $span?->recordException($e);
+            $span?->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             return back()
                 ->withInput()
                 ->with('error', $e->getMessage());
         } finally {
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
         }
     }
 
@@ -162,8 +162,8 @@ class EprocController extends Controller
             $numeroProcesso = $request->input('numero_processo');
             $idDocumento = $request->input('id_documento');
             $senha = $request->input('password_ws');
-            $span->setAttribute('eproc.process_number', $numeroProcesso);
-            $span->setAttribute('eproc.document_id', $idDocumento);
+            $span?->setAttribute('eproc.process_number', $numeroProcesso);
+            $span?->setAttribute('eproc.document_id', $idDocumento);
 
             // Instancia o serviço com as credenciais do usuário
             $eprocService = new EprocService($judicialUser->user_login, $senha);
@@ -242,7 +242,7 @@ class EprocController extends Controller
                 $mimetype = $documentoEncontrado['tipoDocumento'];
             }
 
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setStatus(StatusCode::STATUS_OK);
 
             return response()->json([
                 'success' => true,
@@ -254,15 +254,15 @@ class EprocController extends Controller
             ]);
 
         } catch (Exception $e) {
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            $span?->recordException($e);
+            $span?->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
         } finally {
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
         }
     }
 

@@ -19,6 +19,13 @@ until redis-cli -h redis ping > /dev/null 2>&1; do
 done
 echo "✅ Redis está pronto!"
 
+# Remove cache de configuração potencialmente gerado fora do container.
+# Isso evita paths inválidos (/home/...) e hosts errados (127.0.0.1) no runtime Docker.
+if [ -f bootstrap/cache/config.php ]; then
+    echo "🧹 Removendo cache de configuração stale (bootstrap/cache/config.php)..."
+    rm -f bootstrap/cache/config.php
+fi
+
 # Gera APP_KEY se não existir ou estiver vazia
 if [ -f .env ]; then
     # Lê o valor de APP_KEY do arquivo .env
@@ -38,7 +45,12 @@ fi
 
 # Cria link simbólico do storage
 echo "🔗 Criando link simbólico do storage..."
-php artisan storage:link || true
+mkdir -p public storage/app/public
+if [ -L public/storage ]; then
+    echo "✅ Link public/storage já existe"
+else
+    php artisan storage:link || true
+fi
 
 # Executa migrations
 echo "📊 Executando migrations do banco de dados..."
