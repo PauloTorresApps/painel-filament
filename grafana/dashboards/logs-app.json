@@ -14,7 +14,7 @@
     ]
   },
   "description": "Log Viewer Dashboard for Loki",
-  "editable": false,
+  "editable": true,
   "gnetId": 13639,
   "graphTooltip": 0,
   "id": null,
@@ -29,7 +29,7 @@
       "targetBlank": true,
       "title": "View In Explore",
       "type": "link",
-      "url": "/explore?orgId=1&left=[\"now-1h\",\"now\",\"Loki\",{\"expr\":\"{job=\\\"$app\\\"}\"},{\"ui\":[true,true,true,\"none\"]}]"
+      "url": "/explore?orgId=1&left=[\"now-1h\",\"now\",\"Loki\",{\"expr\":\"{service_name=\\\"$app\\\"}\"},{\"ui\":[true,true,true,\"none\"]}]"
     },
     {
       "$$hashKey": "object:61",

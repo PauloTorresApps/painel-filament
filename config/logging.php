@@ -53,9 +53,10 @@ return [
     'channels' => [
 
         'loki' => [
-            'driver' => 'custom',
-            'via' => \App\Logging\LokiLogger::class, // Você precisará de um handler HTTP simples
-            'url' => 'http://loki:3100/loki/api/v1/push',
+            'driver' => 'single',
+            'path' => storage_path('logs/laravel.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
         ],
 
         'stack' => [

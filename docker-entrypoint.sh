@@ -45,7 +45,7 @@ fi
 
 # Cria link simbólico do storage
 echo "🔗 Criando link simbólico do storage..."
-mkdir -p public storage/app/public
+mkdir -p public storage/app/public storage/logs
 if [ -L public/storage ]; then
     echo "✅ Link public/storage já existe"
 else

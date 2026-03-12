@@ -42,7 +42,7 @@
         "#7eb26d",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -125,7 +125,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "description": "start time of the process",
       "format": "dateTimeFromNow",
       "gauge": {
@@ -179,7 +179,7 @@
       "tableColumn": "",
       "targets": [
         {
-          "expr": "pg_postmaster_start_time_seconds{release=\"$release\", instance=\"$instance\"} * 1000",
+          "expr": "process_start_time_seconds{job=\"postgres-exporter\", instance=\"$instance\"} * 1000",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "",
@@ -208,7 +208,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "decbytes",
       "gauge": {
         "maxValue": 100,
@@ -291,7 +291,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "short",
       "gauge": {
         "maxValue": 100,
@@ -374,7 +374,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "short",
       "gauge": {
         "maxValue": 100,
@@ -457,7 +457,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -534,7 +534,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "description": "Average user and system CPU time spent in seconds.",
       "fill": 1,
       "fillGradient": 0,
@@ -625,7 +625,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "description": "Virtual and Resident memory size in bytes, averages over 5 min interval",
       "fill": 1,
       "fillGradient": 0,
@@ -724,7 +724,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "description": "Number of open file descriptors",
       "fill": 1,
       "fillGradient": 0,
@@ -833,7 +833,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "bytes",
       "gauge": {
         "maxValue": 100,
@@ -914,7 +914,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "bytes",
       "gauge": {
         "maxValue": 100,
@@ -995,7 +995,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "bytes",
       "gauge": {
         "maxValue": 100,
@@ -1076,7 +1076,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "bytes",
       "gauge": {
         "maxValue": 100,
@@ -1158,7 +1158,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "decimals": 1,
       "format": "bytes",
       "gauge": {
@@ -1240,7 +1240,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -1321,7 +1321,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -1402,7 +1402,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -1483,7 +1483,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -1573,7 +1573,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -1669,7 +1669,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -1767,7 +1767,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -1862,7 +1862,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -1956,7 +1956,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -2050,7 +2050,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "decimals": 0,
       "fill": 1,
       "fillGradient": 0,
@@ -2147,7 +2147,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -2241,7 +2241,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -2335,7 +2335,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
@@ -2429,7 +2429,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "decimals": 2,
       "fill": 1,
       "gridPos": {
@@ -2518,7 +2518,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "gridPos": {
         "h": 7,
@@ -2633,7 +2633,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "decimals": 0,
       "fill": 1,
       "gridPos": {
@@ -2728,7 +2728,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "description": "Total amount of data written to temporary files by queries in this database. All temporary files are counted, regardless of why the temporary file was created, and regardless of the log_temp_files setting.",
       "fill": 1,
       "gridPos": {
@@ -2816,7 +2816,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "dff7yeh1syi2oa",
+      "datasource": "$DS_PROMETHEUS",
       "fill": 1,
       "gridPos": {
         "h": 7,
@@ -2903,6 +2903,114 @@
         "align": false,
         "alignLevel": null
       }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "$DS_PROMETHEUS",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 72,
+      "legend": {
+        "alignAsTable": true,
+        "avg": true,
+        "current": true,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": true,
+        "values": true
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum(irate(pg_stat_database_xact_commit{instance=\"$instance\", datname=~\"$datname\"}[5m]) + irate(pg_stat_database_xact_rollback{instance=\"$instance\", datname=~\"$datname\"}[5m]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "queries/s (aprox)",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Queries Executadas/s (aprox.)",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      },
+      "description": "Aproximacao baseada em transacoes (commit+rollback) por segundo. Para contagem exata por query, habilite pg_stat_statements no PostgreSQL e no exporter."
+    },
+    {
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 74,
+      "options": {
+        "mode": "markdown",
+        "content": "### Queries Literais (PromQL)\n\n**Transactions**\n```promql\nirate(pg_stat_database_xact_commit{instance=\"$instance\", datname=~\"$datname\"}[5m])\n```\n\n**Queries Executadas/s (aprox.)**\n```promql\nsum(irate(pg_stat_database_xact_commit{instance=\"$instance\", datname=~\"$datname\"}[5m]) + irate(pg_stat_database_xact_rollback{instance=\"$instance\", datname=~\"$datname\"}[5m]))\n```"
+      },
+      "pluginVersion": "12.1.4",
+      "title": "Queries Literais",
+      "type": "text"
     }
   ],
   "refresh": "10s",
@@ -2995,7 +3103,7 @@
           "text": "local",
           "value": "local"
         },
-        "datasource": "dff7yeh1syi2oa",
+        "datasource": "$DS_PROMETHEUS",
         "definition": "",
         "hide": 0,
         "includeAll": false,
@@ -3021,7 +3129,7 @@
           "text": "local",
           "value": "local"
         },
-        "datasource": "dff7yeh1syi2oa",
+        "datasource": "$DS_PROMETHEUS",
         "definition": "",
         "hide": 0,
         "includeAll": false,
@@ -3047,7 +3155,7 @@
           "text": "postgres-exporter:9187",
           "value": "postgres-exporter:9187"
         },
-        "datasource": "dff7yeh1syi2oa",
+        "datasource": "$DS_PROMETHEUS",
         "definition": "",
         "hide": 0,
         "includeAll": false,
@@ -3067,9 +3175,13 @@
         "useTags": false
       },
       {
-        "allValue": null,
-        "current": {},
-        "datasource": "dff7yeh1syi2oa",
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "$DS_PROMETHEUS",
         "definition": "",
         "hide": 0,
         "includeAll": true,
@@ -3089,9 +3201,13 @@
         "useTags": false
       },
       {
-        "allValue": null,
-        "current": {},
-        "datasource": "dff7yeh1syi2oa",
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "$DS_PROMETHEUS",
         "definition": "",
         "hide": 0,
         "includeAll": true,
