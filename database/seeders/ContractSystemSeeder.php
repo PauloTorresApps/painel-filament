@@ -86,7 +86,7 @@ class ContractSystemSeeder extends Seeder
                 'title' => 'Storyboard de Infográfico (JSON)',
                 'content' => self::PROMPT_PLACEHOLDER,
                 'ai_provider' => 'openrouter',
-                'deep_thinking_enabled' => false,
+                'deep_thinking_enabled' => true,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
             ]
@@ -106,6 +106,40 @@ class ContractSystemSeeder extends Seeder
                 'content' => self::PROMPT_PLACEHOLDER,
                 'ai_provider' => 'openrouter',
                 'deep_thinking_enabled' => false,
+                'analysis_strategy' => 'evolutionary',
+                'is_active' => true,
+            ]
+        );
+
+        // 7. Criar AiPrompt padrão para Analise de Documento de Processo
+        $documentAnalysisPrompt = AiPrompt::updateOrCreate(
+            [
+                'system_id' => $system->id,
+                'prompt_type' => AiPrompt::TYPE_DOCUMENT_ANALYSIS,
+                'is_default' => true,
+            ],
+            [
+                'title' => 'Análise de Documento',
+                'content' => self::PROMPT_PLACEHOLDER,
+                'ai_provider' => 'openrouter',
+                'deep_thinking_enabled' => false,
+                'analysis_strategy' => 'evolutionary',
+                'is_active' => true,
+            ]
+        );
+
+        // 8. Criar AiPrompt padrão para Parecer Final de Processo
+        $finalOpinionPrompt = AiPrompt::updateOrCreate(
+            [
+                'system_id' => $system->id,
+                'prompt_type' => AiPrompt::TYPE_FINAL_OPINION,
+                'is_default' => true,
+            ],
+            [
+                'title' => 'Parecer Final de Processo',
+                'content' => self::PROMPT_PLACEHOLDER,
+                'ai_provider' => 'openrouter',
+                'deep_thinking_enabled' => true,
                 'analysis_strategy' => 'evolutionary',
                 'is_active' => true,
             ]
