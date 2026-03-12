@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Models\User;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Globals;
+use OpenTelemetry\API\Trace\StatusCode;
 
 /**
  * Serviço centralizado para envio de notificações
- * 
+ *
  * Encapsula a lógica de notificação de usuários via Filament,
  * eliminando duplicação em múltiplos Jobs.
  */
@@ -29,12 +31,27 @@ class NotificationService
         string $body,
         string $status = 'info'
     ): void {
+        $tracer = Globals::tracerProvider()->getTracer('painel-laravel-notification');
+        $span = $tracer->spanBuilder('notification.send')->startSpan();
+        $scope = $span->activate();
+        $metrics = app(OtelMetricsService::class);
+
+        $span->setAttribute('notification.status', $status);
+        $span->setAttribute('notification.title', $title);
+        $span->setAttribute('notification.has_user', $user !== null);
+
         if (!$user) {
+            $metrics->recordNotification('ignored', false);
+            $span->setStatus(StatusCode::STATUS_OK);
+            $scope->detach();
+            $span->end();
             Log::debug('NotificationService: Usuário nulo, notificação ignorada', [
                 'title' => $title,
             ]);
             return;
         }
+
+        $span->setAttribute('app.user_id', $user->id);
 
         try {
             FilamentNotification::make()
@@ -43,17 +60,26 @@ class NotificationService
                 ->status($status)
                 ->sendToDatabase($user);
 
+            $metrics->recordNotification($status, true);
+            $span->setStatus(StatusCode::STATUS_OK);
+
             Log::debug('NotificationService: Notificação enviada', [
                 'user_id' => $user->id,
                 'title' => $title,
                 'status' => $status,
             ]);
         } catch (\Exception $e) {
+            $metrics->recordNotification('failed', true);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::warning('NotificationService: Erro ao enviar notificação', [
                 'user_id' => $user?->id,
                 'title' => $title,
                 'error' => $e->getMessage(),
             ]);
+        } finally {
+            $scope->detach();
+            $span->end();
         }
     }
 

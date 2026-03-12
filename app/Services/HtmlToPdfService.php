@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
+use OpenTelemetry\API\Trace\StatusCode;
 
 /**
  * Serviço para converter HTML em PDF usando wkhtmltopdf.
@@ -16,6 +18,8 @@ use Symfony\Component\Process\Process;
  */
 class HtmlToPdfService
 {
+    use WithOtelTracing;
+
     /**
      * Timeout padrão para a conversão (em segundos).
      */
@@ -70,7 +74,20 @@ class HtmlToPdfService
      */
     public function convert(string $htmlContent, string $identifier = ''): ?string
     {
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-document', 'document.convert_html_to_pdf', [
+            'document.format' => 'html',
+            'document.target_format' => 'pdf',
+            'document.identifier' => $identifier,
+        ]);
+
         if (!$this->isAvailable()) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.convert_html_to_pdf', 'html', 'failed', $durationMs);
+            $span->setStatus(StatusCode::STATUS_ERROR, 'wkhtmltopdf não está disponível');
+            $this->detachScope($scope);
+            $span->end();
             Log::error('HtmlToPdfService: wkhtmltopdf não está disponível', [
                 'binary' => $this->binary,
                 'identifier' => $identifier,
@@ -111,6 +128,9 @@ class HtmlToPdfService
             $process->run();
 
             if (!file_exists($pdfFile) || filesize($pdfFile) === 0) {
+                $durationMs = (hrtime(true) - $start) / 1_000_000;
+                $metrics->recordDocumentExtraction('document.convert_html_to_pdf', 'html', 'failed', $durationMs);
+                $span->setStatus(StatusCode::STATUS_ERROR, 'PDF não foi gerado ou está vazio');
                 Log::warning('HtmlToPdfService: PDF não foi gerado ou está vazio', [
                     'identifier' => $identifier,
                     'exit_code' => $process->getExitCode(),
@@ -128,9 +148,19 @@ class HtmlToPdfService
                 'pdf_size' => strlen($pdfContent),
             ]);
 
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.convert_html_to_pdf', 'html', 'success', $durationMs, strlen($htmlContent));
+            $span->setAttribute('document.html_size', strlen($htmlContent));
+            $span->setAttribute('document.pdf_size', strlen($pdfContent));
+            $span->setStatus(StatusCode::STATUS_OK);
+
             return $pdfBase64;
 
         } catch (\Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.convert_html_to_pdf', 'html', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('HtmlToPdfService: Erro na conversão', [
                 'identifier' => $identifier,
                 'error' => $e->getMessage(),
@@ -141,6 +171,8 @@ class HtmlToPdfService
             // Limpa arquivos temporários
             @unlink($htmlFile);
             @unlink($pdfFile);
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 }

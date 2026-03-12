@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\AiModel;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Globals;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class OpenRouterService extends AbstractAIService
 {
@@ -375,153 +377,190 @@ class OpenRouterService extends AbstractAIService
             throw new \RuntimeException('OpenRouter: modelo não definido no payload. A aplicação deve definir o modelo vinculado ao prompt antes da chamada.');
         }
 
-        // Injeta temperature (apenas quando NÃO usa reasoning)
-        if (!$useReasoning && !isset($payload['temperature'])) {
-            $payload['temperature'] = $this->temperatureOverride ?? config('services.openrouter.temperature', 0.3);
-        }
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        $tracer = Globals::tracerProvider()->getTracer('painel-laravel-ai');
+        $span = $tracer->spanBuilder('ai.api.call')->startSpan();
+        $scope = $span->activate();
 
-        // Injeta configuração de reasoning
-        if ($useReasoning && !isset($payload['reasoning'])) {
-            $payload['reasoning'] = [
-                'effort' => 'high',
-                'exclude' => true,
-            ];
-        }
+        $span->setAttribute('ai.provider', 'OpenRouter');
+        $span->setAttribute('ai.model', (string) ($payload['model'] ?? $this->model));
+        $span->setAttribute('ai.call_type', $callType);
+        $span->setAttribute('ai.reasoning_enabled', $useReasoning);
 
-        // Injeta provider routing (fallbacks, ordenação, teto de preço)
-        if (!isset($payload['provider'])) {
-            $providerRouting = $this->buildProviderRouting();
-            if ($providerRouting) {
-                $payload['provider'] = $providerRouting;
+        try {
+            // Injeta temperature (apenas quando NÃO usa reasoning)
+            if (!$useReasoning && !isset($payload['temperature'])) {
+                $payload['temperature'] = $this->temperatureOverride ?? config('services.openrouter.temperature', 0.3);
             }
-        }
 
-        // Injeta transforms (middle-out) se não já definido
-        if (!isset($payload['transforms'])) {
-            $transforms = $this->buildTransforms();
-            if ($transforms !== null) {
-                $payload['transforms'] = $transforms;
-            }
-        }
-
-        $baseUrl = rtrim($this->apiUrl ?? 'https://openrouter.ai/api/v1', '/');
-        $chatEndpoint = $baseUrl . '/chat/completions';
-
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->apiKey,
-            'Content-Type' => 'application/json',
-            'HTTP-Referer' => config('app.url'),
-            'X-Title' => config('app.name'),
-        ])
-            ->timeout($this->timeout)
-            ->post($chatEndpoint, $payload);
-
-        if ($response->failed()) {
-            $statusCode = $response->status();
-            $errorData = $response->json();
-            $errorMessage = $errorData['error']['message'] ?? $errorData['message'] ?? 'Erro desconhecido';
-
-            Log::error("OpenRouter API - Erro HTTP ({$callType})", [
-                'status' => $statusCode,
-                'error' => $errorMessage,
-                'model' => $this->model,
-            ]);
-
-            throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
-        }
-
-        $data = $response->json();
-
-        Log::info("OpenRouter API - Body da resposta ({$callType})", [
-            'status' => $response->status(),
-            'body_preview' => mb_substr($response->body(), 0, 1000),
-            'data_keys' => is_array($data) ? array_keys($data) : 'not_array',
-        ]);
-
-        // Extrai informações de uso
-        $usage = $data['usage'] ?? null;
-        if ($usage) {
-            $usageArray = [
-                'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
-                'completion_tokens' => $usage['completion_tokens'] ?? 0,
-                'total_tokens' => ($usage['prompt_tokens'] ?? 0) + ($usage['completion_tokens'] ?? 0),
-            ];
-
-            if (!empty($usage['completion_tokens_details']['reasoning_tokens'])) {
-                $usageArray['completion_tokens_details'] = [
-                    'reasoning_tokens' => $usage['completion_tokens_details']['reasoning_tokens'],
+            // Injeta configuração de reasoning
+            if ($useReasoning && !isset($payload['reasoning'])) {
+                $payload['reasoning'] = [
+                    'effort' => 'high',
+                    'exclude' => true,
                 ];
             }
 
-            $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
-
-            Log::info("OpenRouter API - Resposta recebida ({$callType})", [
-                'model' => $data['model'] ?? $this->model,
-                'reasoning_enabled' => $useReasoning,
-                'usage' => $usageArray,
-                'generation_id' => $data['id'] ?? 'N/A',
-            ]);
-        }
-
-        // Captura annotations para cache (P5)
-        $annotations = $data['annotations'] ?? null;
-        if ($annotations) {
-            $this->lastAnalysisMetadata['file_annotations'] = $annotations;
-        }
-
-        // Extrai o texto da resposta
-        $text = null;
-        $reasoningContent = null;
-
-        if (!empty($data['choices'])) {
-            $choice = $data['choices'][0];
-            $message = $choice['message'] ?? null;
-
-            if ($message) {
-                if ($useReasoning) {
-                    Log::info("OpenRouter - Estrutura da mensagem ({$callType})", [
-                        'message_keys' => array_keys($message),
-                        'content_length' => mb_strlen($message['content'] ?? ''),
-                        'has_reasoning' => isset($message['reasoning']),
-                    ]);
-                }
-
-                $text = $message['content'] ?? null;
-
-                if (is_array($text)) {
-                    $textParts = array_filter($text, fn($part) => is_array($part) && ($part['type'] ?? '') === 'text');
-                    $text = implode("\n", array_map(fn($part) => $part['text'] ?? '', $textParts));
-                }
-
-                $reasoningContent = $message['reasoning'] ?? null;
-
-                if (empty($text) && !empty($reasoningContent)) {
-                    Log::info("OpenRouter - Content vazio, usando reasoning ({$callType})", [
-                        'reasoning_length' => mb_strlen($reasoningContent),
-                    ]);
-                    $text = $reasoningContent;
-                    $reasoningContent = null;
+            // Injeta provider routing (fallbacks, ordenação, teto de preço)
+            if (!isset($payload['provider'])) {
+                $providerRouting = $this->buildProviderRouting();
+                if ($providerRouting) {
+                    $payload['provider'] = $providerRouting;
                 }
             }
-        }
 
-        if ($reasoningContent) {
-            Log::info("OpenRouter - Reasoning separado recebido ({$callType})", [
-                'reasoning_length' => mb_strlen($reasoningContent),
+            // Injeta transforms (middle-out) se não já definido
+            if (!isset($payload['transforms'])) {
+                $transforms = $this->buildTransforms();
+                if ($transforms !== null) {
+                    $payload['transforms'] = $transforms;
+                }
+            }
+
+            $baseUrl = rtrim($this->apiUrl ?? 'https://openrouter.ai/api/v1', '/');
+            $chatEndpoint = $baseUrl . '/chat/completions';
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+                'HTTP-Referer' => config('app.url'),
+                'X-Title' => config('app.name'),
+            ])
+                ->timeout($this->timeout)
+                ->post($chatEndpoint, $payload);
+
+            if ($response->failed()) {
+                $statusCode = $response->status();
+                $errorData = $response->json();
+                $errorMessage = $errorData['error']['message'] ?? $errorData['message'] ?? 'Erro desconhecido';
+
+                Log::error("OpenRouter API - Erro HTTP ({$callType})", [
+                    'status' => $statusCode,
+                    'error' => $errorMessage,
+                    'model' => $this->model,
+                ]);
+
+                $span->setAttribute('http.response.status_code', $statusCode);
+                $span->setStatus(StatusCode::STATUS_ERROR, $errorMessage);
+
+                throw new \Exception($this->translateError($statusCode, $errorMessage), $statusCode);
+            }
+
+            $data = $response->json();
+
+            Log::info("OpenRouter API - Body da resposta ({$callType})", [
+                'status' => $response->status(),
+                'body_preview' => mb_substr($response->body(), 0, 1000),
+                'data_keys' => is_array($data) ? array_keys($data) : 'not_array',
             ]);
-        }
 
-        if (empty($text)) {
-            Log::error("OpenRouter retornou resposta vazia ({$callType})", [
-                'response_id' => $data['id'] ?? 'N/A',
-                'model' => $data['model'] ?? $this->model,
-                'has_reasoning' => !empty($reasoningContent),
-                'choices_count' => count($data['choices'] ?? []),
-            ]);
-            throw new \Exception("A API OpenRouter retornou uma resposta vazia para {$callType}. Tente novamente em alguns instantes.");
-        }
+            // Extrai informações de uso
+            $usage = $data['usage'] ?? null;
+            $totalTokens = 0;
+            if ($usage) {
+                $usageArray = [
+                    'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
+                    'completion_tokens' => $usage['completion_tokens'] ?? 0,
+                    'total_tokens' => ($usage['prompt_tokens'] ?? 0) + ($usage['completion_tokens'] ?? 0),
+                ];
 
-        return $text;
+                if (!empty($usage['completion_tokens_details']['reasoning_tokens'])) {
+                    $usageArray['completion_tokens_details'] = [
+                        'reasoning_tokens' => $usage['completion_tokens_details']['reasoning_tokens'],
+                    ];
+                }
+
+                $totalTokens = (int) $usageArray['total_tokens'];
+                $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
+
+                $span->setAttribute('ai.prompt_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
+                $span->setAttribute('ai.completion_tokens', (int) ($usageArray['completion_tokens'] ?? 0));
+                $span->setAttribute('ai.total_tokens', $totalTokens);
+
+                Log::info("OpenRouter API - Resposta recebida ({$callType})", [
+                    'model' => $data['model'] ?? $this->model,
+                    'reasoning_enabled' => $useReasoning,
+                    'usage' => $usageArray,
+                    'generation_id' => $data['id'] ?? 'N/A',
+                ]);
+            }
+
+            // Captura annotations para cache (P5)
+            $annotations = $data['annotations'] ?? null;
+            if ($annotations) {
+                $this->lastAnalysisMetadata['file_annotations'] = $annotations;
+            }
+
+            // Extrai o texto da resposta
+            $text = null;
+            $reasoningContent = null;
+
+            if (!empty($data['choices'])) {
+                $choice = $data['choices'][0];
+                $message = $choice['message'] ?? null;
+
+                if ($message) {
+                    if ($useReasoning) {
+                        Log::info("OpenRouter - Estrutura da mensagem ({$callType})", [
+                            'message_keys' => array_keys($message),
+                            'content_length' => mb_strlen($message['content'] ?? ''),
+                            'has_reasoning' => isset($message['reasoning']),
+                        ]);
+                    }
+
+                    $text = $message['content'] ?? null;
+
+                    if (is_array($text)) {
+                        $textParts = array_filter($text, fn($part) => is_array($part) && ($part['type'] ?? '') === 'text');
+                        $text = implode("\n", array_map(fn($part) => $part['text'] ?? '', $textParts));
+                    }
+
+                    $reasoningContent = $message['reasoning'] ?? null;
+
+                    if (empty($text) && !empty($reasoningContent)) {
+                        Log::info("OpenRouter - Content vazio, usando reasoning ({$callType})", [
+                            'reasoning_length' => mb_strlen($reasoningContent),
+                        ]);
+                        $text = $reasoningContent;
+                        $reasoningContent = null;
+                    }
+                }
+            }
+
+            if ($reasoningContent) {
+                Log::info("OpenRouter - Reasoning separado recebido ({$callType})", [
+                    'reasoning_length' => mb_strlen($reasoningContent),
+                ]);
+            }
+
+            if (empty($text)) {
+                Log::error("OpenRouter retornou resposta vazia ({$callType})", [
+                    'response_id' => $data['id'] ?? 'N/A',
+                    'model' => $data['model'] ?? $this->model,
+                    'has_reasoning' => !empty($reasoningContent),
+                    'choices_count' => count($data['choices'] ?? []),
+                ]);
+                throw new \Exception("A API OpenRouter retornou uma resposta vazia para {$callType}. Tente novamente em alguns instantes.");
+            }
+
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordAiApiCall('OpenRouter', (string) ($payload['model'] ?? $this->model), $callType, 'success', $durationMs, $totalTokens);
+
+            $span->setStatus(StatusCode::STATUS_OK);
+
+            return $text;
+        } catch (\Throwable $exception) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordAiApiCall('OpenRouter', (string) ($payload['model'] ?? $this->model), $callType, 'failed', $durationMs);
+            $span->recordException($exception);
+            $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+
+            throw $exception;
+        } finally {
+            $scope->detach();
+            $span->end();
+        }
     }
 
     /**

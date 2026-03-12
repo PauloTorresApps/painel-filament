@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\OtelMetricsService;
 use Closure;
 use Illuminate\Http\Request;
 use OpenTelemetry\API\Globals;
@@ -10,8 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class OtelHttpTelemetryMiddleware
 {
-    private static $requestCounter = null;
-    private static $requestDuration = null;
+    public function __construct(private readonly OtelMetricsService $otelMetricsService) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -55,33 +55,7 @@ class OtelHttpTelemetryMiddleware
             throw $exception;
         } finally {
             $durationMs = (hrtime(true) - $start) / 1_000_000;
-
-            $attributes = [
-                'http.request.method' => $method,
-                'http.route' => $routeName,
-                'http.response.status_code' => $statusCode,
-            ];
-
-            $meter = Globals::meterProvider()->getMeter('painel-laravel-http');
-
-            if (self::$requestCounter === null) {
-                self::$requestCounter = $meter->createCounter(
-                    'laravel_http_server_requests_total',
-                    '{request}',
-                    'Total de requisições HTTP no Laravel'
-                );
-            }
-
-            if (self::$requestDuration === null) {
-                self::$requestDuration = $meter->createHistogram(
-                    'laravel_http_server_request_duration_ms',
-                    'ms',
-                    'Duração de requisição HTTP no Laravel'
-                );
-            }
-
-            self::$requestCounter->add(1, $attributes);
-            self::$requestDuration->record($durationMs, $attributes);
+            $this->otelMetricsService->recordHttpRequest($method, $routeName, $statusCode, $durationMs);
 
             $scope->detach();
             $span->end();

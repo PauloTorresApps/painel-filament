@@ -1,0 +1,323 @@
+<?php
+
+namespace App\Services;
+
+use OpenTelemetry\API\Globals;
+
+class OtelMetricsService
+{
+    private mixed $jobExecutionsCounter = null;
+    private mixed $jobDurationHistogram = null;
+    private mixed $jobFailuresCounter = null;
+    private mixed $dbQueryDurationHistogram = null;
+    private mixed $aiApiCallsCounter = null;
+    private mixed $aiApiDurationHistogram = null;
+    private mixed $aiTokensCounter = null;
+    private mixed $externalApiCallsCounter = null;
+    private mixed $externalApiDurationHistogram = null;
+    private mixed $documentExtractionCounter = null;
+    private mixed $documentExtractionDurationHistogram = null;
+    private mixed $documentProcessedCharsCounter = null;
+    private mixed $notificationCounter = null;
+    private mixed $httpRequestsCounter = null;
+    private mixed $httpRequestDurationHistogram = null;
+
+    public function recordJobExecution(string $jobName, string $status, string $queue, float $durationMs): void
+    {
+        $attributes = [
+            'job.name' => $jobName,
+            'job.status' => $status,
+            'queue.name' => $queue,
+        ];
+
+        $this->getJobExecutionsCounter()->add(1, $attributes);
+        $this->getJobDurationHistogram()->record($durationMs, $attributes);
+
+        if ($status === 'failed') {
+            $this->getJobFailuresCounter()->add(1, $attributes);
+        }
+    }
+
+    public function recordDbQuery(float $durationMs, string $connection): void
+    {
+        $this->getDbQueryDurationHistogram()->record($durationMs, [
+            'db.connection' => $connection,
+        ]);
+    }
+
+    public function recordAiApiCall(
+        string $provider,
+        string $model,
+        string $callType,
+        string $status,
+        float $durationMs,
+        int $totalTokens = 0
+    ): void {
+        $attributes = [
+            'ai.provider' => $provider,
+            'ai.model' => $model,
+            'ai.call_type' => $callType,
+            'ai.status' => $status,
+        ];
+
+        $this->getAiApiCallsCounter()->add(1, $attributes);
+        $this->getAiApiDurationHistogram()->record($durationMs, $attributes);
+
+        if ($totalTokens > 0) {
+            $this->getAiTokensCounter()->add($totalTokens, $attributes);
+        }
+    }
+
+    public function recordExternalApiCall(string $system, string $operation, string $status, float $durationMs): void
+    {
+        $attributes = [
+            'external.system' => $system,
+            'external.operation' => $operation,
+            'external.status' => $status,
+        ];
+
+        $this->getExternalApiCallsCounter()->add(1, $attributes);
+        $this->getExternalApiDurationHistogram()->record($durationMs, $attributes);
+    }
+
+    public function recordDocumentExtraction(
+        string $operation,
+        string $format,
+        string $status,
+        float $durationMs,
+        int $charsExtracted = 0
+    ): void {
+        $attributes = [
+            'document.operation' => $operation,
+            'document.format' => $format,
+            'document.status' => $status,
+        ];
+
+        $this->getDocumentExtractionCounter()->add(1, $attributes);
+        $this->getDocumentExtractionDurationHistogram()->record($durationMs, $attributes);
+
+        if ($charsExtracted > 0) {
+            $this->getDocumentProcessedCharsCounter()->add($charsExtracted, $attributes);
+        }
+    }
+
+    public function recordNotification(string $status, bool $hasUser): void
+    {
+        $this->getNotificationCounter()->add(1, [
+            'notification.status' => $status,
+            'notification.has_user' => $hasUser,
+        ]);
+    }
+
+    public function recordHttpRequest(string $method, string $route, int $statusCode, float $durationMs): void
+    {
+        $attributes = [
+            'http.request.method' => $method,
+            'http.route' => $route,
+            'http.response.status_code' => $statusCode,
+        ];
+
+        $this->getHttpRequestsCounter()->add(1, $attributes);
+        $this->getHttpRequestDurationHistogram()->record($durationMs, $attributes);
+    }
+
+    private function getMeter(): mixed
+    {
+        return Globals::meterProvider()->getMeter('painel-laravel-app');
+    }
+
+    private function getJobExecutionsCounter(): mixed
+    {
+        if ($this->jobExecutionsCounter === null) {
+            $this->jobExecutionsCounter = $this->getMeter()->createCounter(
+                'laravel_job_executions_total',
+                '{job}',
+                'Total de execucoes de jobs por status'
+            );
+        }
+
+        return $this->jobExecutionsCounter;
+    }
+
+    private function getJobDurationHistogram(): mixed
+    {
+        if ($this->jobDurationHistogram === null) {
+            $this->jobDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_job_duration_ms',
+                'ms',
+                'Duracao de execucao de jobs em milissegundos'
+            );
+        }
+
+        return $this->jobDurationHistogram;
+    }
+
+    private function getJobFailuresCounter(): mixed
+    {
+        if ($this->jobFailuresCounter === null) {
+            $this->jobFailuresCounter = $this->getMeter()->createCounter(
+                'laravel_job_failures_total',
+                '{job}',
+                'Total de falhas de jobs'
+            );
+        }
+
+        return $this->jobFailuresCounter;
+    }
+
+    private function getDbQueryDurationHistogram(): mixed
+    {
+        if ($this->dbQueryDurationHistogram === null) {
+            $this->dbQueryDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_db_query_duration_ms',
+                'ms',
+                'Duracao de queries de banco de dados'
+            );
+        }
+
+        return $this->dbQueryDurationHistogram;
+    }
+
+    private function getAiApiCallsCounter(): mixed
+    {
+        if ($this->aiApiCallsCounter === null) {
+            $this->aiApiCallsCounter = $this->getMeter()->createCounter(
+                'laravel_ai_api_calls_total',
+                '{call}',
+                'Total de chamadas para APIs de IA'
+            );
+        }
+
+        return $this->aiApiCallsCounter;
+    }
+
+    private function getAiApiDurationHistogram(): mixed
+    {
+        if ($this->aiApiDurationHistogram === null) {
+            $this->aiApiDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_ai_api_duration_ms',
+                'ms',
+                'Duracao de chamadas para APIs de IA'
+            );
+        }
+
+        return $this->aiApiDurationHistogram;
+    }
+
+    private function getAiTokensCounter(): mixed
+    {
+        if ($this->aiTokensCounter === null) {
+            $this->aiTokensCounter = $this->getMeter()->createCounter(
+                'laravel_ai_tokens_used_total',
+                '{token}',
+                'Total de tokens consumidos em chamadas de IA'
+            );
+        }
+
+        return $this->aiTokensCounter;
+    }
+
+    private function getExternalApiCallsCounter(): mixed
+    {
+        if ($this->externalApiCallsCounter === null) {
+            $this->externalApiCallsCounter = $this->getMeter()->createCounter(
+                'laravel_external_api_calls_total',
+                '{call}',
+                'Total de chamadas para APIs externas'
+            );
+        }
+
+        return $this->externalApiCallsCounter;
+    }
+
+    private function getExternalApiDurationHistogram(): mixed
+    {
+        if ($this->externalApiDurationHistogram === null) {
+            $this->externalApiDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_external_api_duration_ms',
+                'ms',
+                'Duracao de chamadas para APIs externas'
+            );
+        }
+
+        return $this->externalApiDurationHistogram;
+    }
+
+    private function getDocumentExtractionCounter(): mixed
+    {
+        if ($this->documentExtractionCounter === null) {
+            $this->documentExtractionCounter = $this->getMeter()->createCounter(
+                'laravel_document_extractions_total',
+                '{extraction}',
+                'Total de extracoes de conteudo por formato e status'
+            );
+        }
+
+        return $this->documentExtractionCounter;
+    }
+
+    private function getDocumentExtractionDurationHistogram(): mixed
+    {
+        if ($this->documentExtractionDurationHistogram === null) {
+            $this->documentExtractionDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_document_extraction_duration_ms',
+                'ms',
+                'Duracao de extracao de conteudo de documentos'
+            );
+        }
+
+        return $this->documentExtractionDurationHistogram;
+    }
+
+    private function getDocumentProcessedCharsCounter(): mixed
+    {
+        if ($this->documentProcessedCharsCounter === null) {
+            $this->documentProcessedCharsCounter = $this->getMeter()->createCounter(
+                'laravel_document_processed_chars_total',
+                '{char}',
+                'Total de caracteres processados na extracao de documentos'
+            );
+        }
+
+        return $this->documentProcessedCharsCounter;
+    }
+
+    private function getNotificationCounter(): mixed
+    {
+        if ($this->notificationCounter === null) {
+            $this->notificationCounter = $this->getMeter()->createCounter(
+                'laravel_notifications_total',
+                '{notification}',
+                'Total de notificacoes enviadas por status'
+            );
+        }
+
+        return $this->notificationCounter;
+    }
+
+    private function getHttpRequestsCounter(): mixed
+    {
+        if ($this->httpRequestsCounter === null) {
+            $this->httpRequestsCounter = $this->getMeter()->createCounter(
+                'laravel_http_server_requests_total',
+                '{request}',
+                'Total de requisições HTTP no Laravel'
+            );
+        }
+
+        return $this->httpRequestsCounter;
+    }
+
+    private function getHttpRequestDurationHistogram(): mixed
+    {
+        if ($this->httpRequestDurationHistogram === null) {
+            $this->httpRequestDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_http_server_request_duration_ms',
+                'ms',
+                'Duração de requisição HTTP no Laravel'
+            );
+        }
+
+        return $this->httpRequestDurationHistogram;
+    }
+}

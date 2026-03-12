@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiModel;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
@@ -39,6 +40,11 @@ class ChunkLargeDocumentJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.chunk_large_document.timeout', 3600);
         $this->tries = config('analysis.jobs.chunk_large_document.tries', 2);
         $this->backoff = config('analysis.jobs.chunk_large_document.backoff', 120);
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiPrompt;
 use App\Models\ContractAnalysis;
 use App\Models\System;
@@ -41,6 +42,11 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
     }
 
     public int $uniqueFor = 600; // 10 minutos
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
+    }
 
     /**
      * Execute the job.

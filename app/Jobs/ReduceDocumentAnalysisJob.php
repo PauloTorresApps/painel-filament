@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\Setting;
@@ -57,6 +58,11 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
     public function uniqueId(): string
     {
         return "reduce_doc_{$this->documentAnalysisId}_level_{$this->currentReduceLevel}";
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**
@@ -355,7 +361,7 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
         }
 
         // Estende bastante o timeout para a consolidação final (pode ser muito demorado)
-        $aiService->setTimeout(1800); 
+        $aiService->setTimeout(1800);
 
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
         $temperature = !is_null($promptFromDb?->temperature)

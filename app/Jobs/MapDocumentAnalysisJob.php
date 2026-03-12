@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiModel;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
@@ -49,6 +50,11 @@ class MapDocumentAnalysisJob implements ShouldQueue
         $this->timeout = config('analysis.jobs.map_document.timeout', 300);
         $this->tries = config('analysis.jobs.map_document.tries', 3);
         $this->backoff = config('analysis.jobs.map_document.backoff', 30);
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**
@@ -247,8 +253,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
         } catch (\Exception $e) {
             $isRateLimit = (
-                str_contains(strtolower($e->getMessage()), '429') || 
-                str_contains(strtolower($e->getMessage()), 'rate limit') || 
+                str_contains(strtolower($e->getMessage()), '429') ||
+                str_contains(strtolower($e->getMessage()), 'rate limit') ||
                 str_contains(strtolower($e->getMessage()), 'too many requests')
             );
 
@@ -260,8 +266,8 @@ class MapDocumentAnalysisJob implements ShouldQueue
             ]);
 
             if (isset($microAnalysis)) {
-                $errorMessage = $isRateLimit 
-                    ? "Limite de requisições da API atingido. Falhou ao processar." 
+                $errorMessage = $isRateLimit
+                    ? "Limite de requisições da API atingido. Falhou ao processar."
                     : $e->getMessage();
                 $microAnalysis->markAsFailed($errorMessage);
             }

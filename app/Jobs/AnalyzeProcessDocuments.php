@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\User;
@@ -67,6 +68,11 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
     public function uniqueId(): string
     {
         return "analyze_process_{$this->userId}_{$this->numeroProcesso}";
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**

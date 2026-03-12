@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Traits\WithOtelTracing;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\API\Trace\StatusCode;
 
 /**
  * Serviço para extrair texto limpo de arquivos HTML.
@@ -12,6 +14,8 @@ use Illuminate\Support\Facades\Log;
  */
 class HtmlToTextService
 {
+    use WithOtelTracing;
+
     /**
      * Extrai texto de conteúdo HTML em base64
      *
@@ -21,25 +25,49 @@ class HtmlToTextService
      */
     public function extractText(string $base64Content, string $identifier = ''): string
     {
+        $start = hrtime(true);
+        $metrics = app(OtelMetricsService::class);
+        [$span, $scope] = $this->startSpan('painel-laravel-document', 'document.extract_html_text', [
+            'document.format' => 'html',
+            'document.identifier' => $identifier,
+        ]);
+
         try {
             // Decodifica o base64
             $htmlContent = base64_decode($base64Content);
 
             if ($htmlContent === false) {
+                $durationMs = (hrtime(true) - $start) / 1_000_000;
+                $metrics->recordDocumentExtraction('document.extract_html_text', 'html', 'failed', $durationMs);
+                $span->setStatus(StatusCode::STATUS_ERROR, 'Falha ao decodificar base64');
                 Log::warning('HtmlToTextService: Falha ao decodificar base64', [
                     'identifier' => $identifier
                 ]);
                 return '';
             }
 
-            return $this->extractTextFromHtml($htmlContent, $identifier);
+            $text = $this->extractTextFromHtml($htmlContent, $identifier);
+
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_html_text', 'html', 'success', $durationMs, mb_strlen($text));
+            $span->setAttribute('document.chars_extracted', mb_strlen($text));
+            $span->setStatus(StatusCode::STATUS_OK);
+
+            return $text;
 
         } catch (\Exception $e) {
+            $durationMs = (hrtime(true) - $start) / 1_000_000;
+            $metrics->recordDocumentExtraction('document.extract_html_text', 'html', 'failed', $durationMs);
+            $span->recordException($e);
+            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('HtmlToTextService: Erro ao extrair texto', [
                 'identifier' => $identifier,
                 'error' => $e->getMessage()
             ]);
             return '';
+        } finally {
+            $this->detachScope($scope);
+            $span->end();
         }
     }
 

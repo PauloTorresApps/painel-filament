@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
@@ -64,6 +65,11 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
     public function uniqueId(): string
     {
         return "refine_reduce_{$this->documentAnalysisId}";
+    }
+
+    public function middleware(): array
+    {
+        return [new OtelJobMiddleware()];
     }
 
     /**
