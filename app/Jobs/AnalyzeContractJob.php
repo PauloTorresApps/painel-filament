@@ -30,8 +30,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
      */
     public function __construct(
         public int $contractAnalysisId
-    ) {
-    }
+    ) {}
 
     /**
      * Chave única para evitar duplicação
@@ -242,7 +241,6 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                     ]);
                 }
             }
-
         } catch (\Exception $e) {
             Log::error('Erro na análise de contrato', [
                 'id' => $this->contractAnalysisId,
