@@ -8,6 +8,7 @@
 /public/css/filament
 /public/js/filament
 /public/hot
+/.vscode
 .env
 .env.backup
 .env.production
