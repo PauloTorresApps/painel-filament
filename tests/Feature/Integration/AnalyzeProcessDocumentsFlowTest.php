@@ -35,14 +35,7 @@ test('analyze process documents creates micro analyses and dispatches map phase'
             ],
         ]);
 
-    $pdfServiceMock = Mockery::mock('overload:App\\Services\\PdfToTextService');
-    $pdfServiceMock->shouldReceive('extractTextWithMetadata')
-        ->once()
-        ->andReturn([
-            'text' => 'Texto extraido do PDF',
-            'is_scanned' => false,
-            'page_count' => 1,
-        ]);
+    mockPdfToTextExtraction('Texto extraido do PDF', false);
 
     $job = new AnalyzeProcessDocuments(
         userId: $user->id,
@@ -87,4 +80,24 @@ test('analyze process documents creates micro analyses and dispatches map phase'
     Queue::assertPushed(DispatchMapPhaseJob::class, function (DispatchMapPhaseJob $dispatched) use ($analysis) {
         return $dispatched->analysisId === $analysis->id;
     });
+});
+
+test('analyze process documents job is configured for retry and uniqueness', function () {
+    $job = new AnalyzeProcessDocuments(
+        userId: 1,
+        numeroProcesso: '5000000-11.2026.4.04.0000',
+        documentos: [],
+        contextoDados: [],
+        promptTemplate: 'Prompt final',
+        aiProvider: 'openrouter',
+        deepThinkingEnabled: false,
+        userLogin: 'usuario',
+        senha: 'senha',
+        judicialUserId: 1,
+    );
+
+    expect($job->tries)->toBeGreaterThan(1);
+    expect($job->timeout)->toBeGreaterThan(0);
+    expect($job->uniqueFor)->toBeGreaterThan(0);
+    expect($job->uniqueId())->toContain('analyze_process_');
 });
