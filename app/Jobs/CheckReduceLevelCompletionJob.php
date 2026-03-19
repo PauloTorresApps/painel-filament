@@ -71,6 +71,14 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
                 return;
             }
 
+            // Proteção de não reentrância: retries concorrentes não devem regenerar parecer final.
+            if ($documentAnalysis->status === 'completed' || $documentAnalysis->current_phase === DocumentAnalysis::PHASE_COMPLETED) {
+                Log::info('CheckReduceLevelCompletionJob: Análise já concluída, pulando reprocessamento', [
+                    'id' => $this->analysisId,
+                ]);
+                return;
+            }
+
             // Busca micro-análises completadas no nível atual
             $completedReduces = $documentAnalysis->microAnalyses()
                 ->reduceLevel($this->completedReduceLevel)

@@ -128,4 +128,32 @@ return [
         'word_multiplier' => (float) env('ANALYSIS_TOKEN_MULTIPLIER', 1.3),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Benchmark Snapshot & SLO
+    |--------------------------------------------------------------------------
+    |
+    | Limites de SLO para monitoramento contínuo do pipeline.
+    | Valor <= 0 desabilita a verificação da métrica.
+    |
+    */
+
+    'benchmark' => [
+        'default_window_days' => (int) env('ANALYSIS_BENCHMARK_WINDOW_DAYS', 7),
+        'retention_days' => (int) env('ANALYSIS_BENCHMARK_RETENTION_DAYS', 90),
+    ],
+
+    'slo' => [
+        'alert_webhook_url' => env('ANALYSIS_SLO_ALERT_WEBHOOK_URL'),
+        'judicial' => [
+            'p95_total_ms_max' => (int) env('ANALYSIS_SLO_JUDICIAL_P95_MS_MAX', 0),
+            'docs_per_min_min' => (float) env('ANALYSIS_SLO_JUDICIAL_DOCS_PER_MIN_MIN', 0),
+        ],
+        'contracts' => [
+            'avg_analysis_ms_max' => (int) env('ANALYSIS_SLO_CONTRACT_AVG_ANALYSIS_MS_MAX', 0),
+            'avg_legal_opinion_ms_max' => (int) env('ANALYSIS_SLO_CONTRACT_AVG_LEGAL_MS_MAX', 0),
+            'avg_infographic_ms_max' => (int) env('ANALYSIS_SLO_CONTRACT_AVG_INFOGRAPHIC_MS_MAX', 0),
+        ],
+    ],
+
 ];

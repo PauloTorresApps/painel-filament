@@ -197,6 +197,110 @@ Prompts fallback quando nao ha registro no banco de dados:
 2. Prompt customizado passado pelo usuario
 3. Fallback do `config/prompts.php`
 
+## Benchmark de Performance
+
+Para acompanhar latencia e custo aproximado de tokens dos pipelines:
+
+```bash
+php artisan analysis:benchmark-pipeline --days=7
+```
+
+Saida em JSON para automacao/CI:
+
+```bash
+php artisan analysis:benchmark-pipeline --days=7 --format=json
+```
+
+Metricas reportadas:
+
+- Pipeline judicial (MAP/REDUCE): volume, latencia media/P95, throughput (docs/min) e tokens MAP/REDUCE.
+- Pipeline de contratos: latencia media por fase (analise, parecer, infografico) e tokens por etapa.
+
+### Snapshot Historico
+
+Persistencia de benchmark para comparacao de tendencia:
+
+```bash
+php artisan analysis:benchmark-snapshot --days=7
+```
+
+Com validacao de SLO no snapshot:
+
+```bash
+php artisan analysis:benchmark-snapshot --days=7 --check-slo
+```
+
+### SLO Check
+
+Verifica degradacoes conforme limites em `config/analysis.php`:
+
+```bash
+php artisan analysis:benchmark-slo-check --days=7 --fail-on-breach
+```
+
+Saida em JSON:
+
+```bash
+php artisan analysis:benchmark-slo-check --days=7 --format=json --fail-on-breach
+```
+
+Quando `--fail-on-breach` estiver ativo, o comando retorna exit code 1 em caso de violacao.
+
+Alerta externo opcional:
+- Configure `ANALYSIS_SLO_ALERT_WEBHOOK_URL` para enviar payload HTTP em caso de breach.
+
+### Tendencia Historica
+
+Compara snapshots ao longo do tempo:
+
+```bash
+php artisan analysis:benchmark-trend --days=30 --window-days=7
+```
+
+Saida em JSON:
+
+```bash
+php artisan analysis:benchmark-trend --days=30 --window-days=7 --format=json
+```
+
+### Limpeza de Retencao
+
+Limpa snapshots antigos (politica padrao: 90 dias):
+
+```bash
+php artisan analysis:benchmark-snapshot-cleanup --older-than-days=90 --force
+```
+
+### Dashboard Grafana
+
+Dashboard provisionado para acompanhamento operacional:
+
+- `grafana/dashboards/performance-slo-overview.json`
+
+Indicadores:
+- Latencia HTTP p95 da area de analises
+- Consumo de tokens IA na janela
+- Contagem e detalhes de violacoes de SLO via logs
+
+### Calibracao de SLO (7 e 30 dias)
+
+Passo 1 (coleta diaria):
+
+```bash
+php artisan analysis:benchmark-snapshot --days=7 --check-slo
+```
+
+Passo 2 (tendencia semanal):
+
+```bash
+php artisan analysis:benchmark-trend --days=30 --window-days=7 --format=json
+```
+
+Passo 3 (ajuste de limites):
+- Se houver falsos positivos frequentes, aumente temporariamente os limites de latencia em 10-20%.
+- Se houver estabilidade por 2 semanas, reduza gradualmente os limites em 5-10%.
+- Mantenha `ANALYSIS_SLO_*` no `.env` de cada ambiente (staging/producao) com valores diferentes.
+
 ## Troubleshooting
 
 ### Erro: "pdftotext nao esta disponivel"
