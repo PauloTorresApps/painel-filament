@@ -126,11 +126,7 @@ class AiPromptsTable
             ])
             ->modifyQueryUsing(fn ($query) => $query
                 ->orderBy('is_active', 'desc')
-                ->orderByRaw("CASE
-                    WHEN prompt_type = 'document_analysis' THEN 0
-                    WHEN prompt_type = 'final_opinion' THEN 1
-                    ELSE 2
-                END")
+                ->orderBy('prompt_type', 'asc')
                 ->orderBy('created_at', 'desc')
             );
     }

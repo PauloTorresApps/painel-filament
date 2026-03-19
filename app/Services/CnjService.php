@@ -133,8 +133,11 @@ class CnjService
     {
         $descricoes = [];
 
-        foreach ($codigosAssuntos as $codigo) {
-            $descricoes[$codigo] = $this->getAssuntoDescricao($codigo);
+        $codigosUnicos = array_values(array_unique(array_map('intval', $codigosAssuntos)));
+        foreach (array_chunk($codigosUnicos, 50) as $lote) {
+            foreach ($lote as $codigo) {
+                $descricoes[$codigo] = $this->getAssuntoDescricao($codigo);
+            }
         }
 
         return $descricoes;

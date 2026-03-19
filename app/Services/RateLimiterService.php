@@ -23,6 +23,7 @@ class RateLimiterService
         $key = "rate_limit:{$provider}";
         $windowSeconds = 60; // Janela de 1 minuto
         $minDelayMs = (int) (($windowSeconds * 1000) / $rateLimit); // Delay mínimo entre requisições em ms
+        $maxBlockingMs = (int) config('analysis.ai.max_blocking_retry_ms', 2000);
 
         try {
             // Tenta obter o timestamp da última requisição
@@ -33,7 +34,7 @@ class RateLimiterService
 
                 // Se passou menos tempo que o necessário, aguarda
                 if ($timeSinceLastRequest < $minDelayMs) {
-                    $sleepMs = (int) ($minDelayMs - $timeSinceLastRequest);
+                    $sleepMs = min((int) ($minDelayMs - $timeSinceLastRequest), $maxBlockingMs);
 
                     Log::info("Rate limiting: aguardando {$sleepMs}ms", [
                         'provider' => $provider,
@@ -57,7 +58,7 @@ class RateLimiterService
             ]);
 
             // Fallback: aplica delay mínimo entre requisições mesmo sem Redis
-            usleep($minDelayMs * 1000);
+            usleep(min($minDelayMs, $maxBlockingMs) * 1000);
         }
     }
 

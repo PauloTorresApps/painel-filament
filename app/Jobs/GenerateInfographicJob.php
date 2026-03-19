@@ -100,7 +100,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             $analysis->updateInfographicProgress(5, 'Carregando configurações...', null);
 
             // Busca o sistema de Contratos
-            $system = System::where('name', 'Contratos')->first();
+            $system = System::contratos();
 
             if (!$system) {
                 throw new \Exception('Sistema "Contratos" não encontrado.');
@@ -293,7 +293,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             Log::error('Erro ao gerar infográfico', [
                 'id' => $this->contractAnalysisId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => app()->isLocal() ? $e->getTraceAsString() : null,
             ]);
 
             // Tenta atualizar o status para failed

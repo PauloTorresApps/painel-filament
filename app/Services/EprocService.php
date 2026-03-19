@@ -26,23 +26,23 @@ class EprocService
         // Hash deve ser em minúsculas
         $this->senha = hash('sha256', $senhaParaHash);
         $this->urlBase = config('services.eproc.url_base');
+        $isLocal = app()->isLocal();
 
         Log::info('EprocService inicializado', [
             'usuario' => $this->usuario,
-            'senha_hash' => $this->senha,
-            'tamanho_hash' => strlen($this->senha),
+            'hash_length' => strlen($this->senha),
             'url_base' => $this->urlBase
         ]);
 
         try {
             $wsdlUrl = config('services.eproc.wsdl_url');
 
-            // Contexto com opções SSL mais permissivas para ambientes de desenvolvimento
+            // Em produção, valida certificado TLS rigorosamente.
             $contextOptions = [
                 'ssl' => [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                    'allow_self_signed' => true,
+                    'verify_peer' => !$isLocal,
+                    'verify_peer_name' => !$isLocal,
+                    'allow_self_signed' => $isLocal,
                     'crypto_method' => STREAM_CRYPTO_METHOD_TLS_CLIENT
                 ],
                 'http' => [
@@ -90,11 +90,12 @@ class EprocService
     private function diagnosticarWSDL($wsdlUrl)
     {
         try {
+            $isLocal = app()->isLocal();
             $context = stream_context_create([
                 'ssl' => [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                    'allow_self_signed' => true
+                    'verify_peer' => !$isLocal,
+                    'verify_peer_name' => !$isLocal,
+                    'allow_self_signed' => $isLocal,
                 ],
                 'http' => [
                     'timeout' => 10
@@ -172,23 +173,19 @@ class EprocService
                 );
             }
 
-            // Log dos parâmetros sendo enviados (sem a senha completa por segurança)
+            // Log dos parâmetros sem payload sensível.
             Log::info('Enviando requisição consultarProcesso', [
                 'usuario' => $this->usuario,
                 'numeroProcesso' => $numeroProcessoLimpo,
                 'hash_length' => strlen($this->senha),
-                'hash_first_chars' => substr($this->senha, 0, 8) . '...',
                 'chave' => $chave ? 'informada' : 'não informada'
             ]);
 
             $response = $this->client->consultarProcesso($params);
 
-            // Log do XML enviado para diagnóstico
-            Log::info('SOAP Request XML', [
-                'request' => $this->client->__getLastRequest()
-            ]);
-            Log::info('SOAP Response XML', [
-                'response' => substr($this->client->__getLastResponse() ?? '', 0, 2000)
+            Log::debug('SOAP call summary', [
+                'request_size' => strlen($this->client->__getLastRequest() ?? ''),
+                'response_size' => strlen($this->client->__getLastResponse() ?? ''),
             ]);
 
             $durationMs = (hrtime(true) - $start) / 1_000_000;
@@ -200,8 +197,10 @@ class EprocService
 
         } catch (SoapFault $e) {
             Log::error('Erro SOAP ao consultar processo: ' . $e->getMessage());
-            Log::error('Request: ' . $this->client->__getLastRequest());
-            Log::error('Response: ' . $this->client->__getLastResponse());
+            Log::debug('SOAP error context', [
+                'request_size' => strlen($this->client->__getLastRequest() ?? ''),
+                'response_size' => strlen($this->client->__getLastResponse() ?? ''),
+            ]);
 
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordExternalApiCall('eproc', 'consultarProcesso', 'failed', $durationMs);
@@ -290,13 +289,13 @@ class EprocService
                 }
 
                 Log::warning('Resposta não-multipart recebida', [
-                    'conteudo' => substr($xmlResponse, 0, 1000)
+                    'preview' => app()->isLocal() ? substr($xmlResponse, 0, 400) : 'suppressed',
                 ]);
             }
 
             Log::info('XML extraído do multipart', [
                 'tamanho' => strlen($xmlResponse),
-                'primeiros_500_chars' => substr($xmlResponse, 0, 500)
+                'preview' => app()->isLocal() ? substr($xmlResponse, 0, 300) : 'suppressed',
             ]);
 
             // Remove namespaces para facilitar o parsing
@@ -316,7 +315,7 @@ class EprocService
 
             Log::info('Estrutura da resposta XML parseada', [
                 'keys' => array_keys($resultado),
-                'resultado_completo' => json_encode($resultado, JSON_PRETTY_PRINT)
+                'body_keys' => array_keys($resultado['Body'] ?? []),
             ]);
 
             // Extrai anexos MTOM
@@ -404,8 +403,8 @@ XML;
                 'SOAPAction: "' . $soapAction . '"',
                 'Content-Length: ' . strlen($soapEnvelope)
             ],
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYPEER => !app()->isLocal(),
+            CURLOPT_SSL_VERIFYHOST => app()->isLocal() ? 0 : 2,
             CURLOPT_TIMEOUT => 60
         ]);
 

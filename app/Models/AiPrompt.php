@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class AiPrompt extends Model
@@ -193,11 +194,15 @@ class AiPrompt extends Model
      */
     public static function getDefaultForSystemAndType(int $systemId, string $promptType): ?self
     {
-        return self::where('system_id', $systemId)
-            ->where('prompt_type', $promptType)
-            ->where('is_default', true)
-            ->where('is_active', true)
-            ->first();
+        return Cache::remember(
+            "ai_prompt_default:{$systemId}:{$promptType}",
+            now()->addMinutes(10),
+            fn () => self::where('system_id', $systemId)
+                ->where('prompt_type', $promptType)
+                ->where('is_default', true)
+                ->where('is_active', true)
+                ->first()
+        );
     }
 
     /**
@@ -207,7 +212,7 @@ class AiPrompt extends Model
      */
     public static function checkInfographicPromptsExist(): array
     {
-        $system = \App\Models\System::where('name', 'Contratos')->first();
+        $system = System::contratos();
 
         if (!$system) {
             return [

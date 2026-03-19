@@ -54,7 +54,7 @@ class ContractPromptResource extends Resource
         static $systemId = null;
 
         if ($systemId === null) {
-            $system = System::where('name', 'Contratos')->first();
+            $system = System::contratos();
             $systemId = $system?->id;
         }
 

@@ -8,6 +8,8 @@ use App\Services\EprocService;
 use App\Services\CnjService;
 use App\Services\EprocDataNormalizer;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 use Exception;
 use OpenTelemetry\API\Trace\StatusCode;
 
@@ -16,10 +18,12 @@ class EprocController extends Controller
     use WithOtelTracing;
 
     private EprocDataNormalizer $normalizer;
+    private CnjService $cnjService;
 
-    public function __construct()
+    public function __construct(EprocDataNormalizer $normalizer, CnjService $cnjService)
     {
-        $this->normalizer = new EprocDataNormalizer();
+        $this->normalizer = $normalizer;
+        $this->cnjService = $cnjService;
     }
 
 
@@ -32,9 +36,10 @@ class EprocController extends Controller
         ]);
 
         $request->validate([
-            'numero_processo' => 'required|string',
+            'numero_processo' => ['required', 'string', 'max:30', 'regex:/^[0-9.\-\s]+$/'],
             'user_ws' => 'required|exists:judicial_users,id',
-            'password_ws' => 'required|string',
+            'password_ws' => 'required|string|min:3|max:255',
+            'chave' => 'nullable|string|max:255',
         ]);
 
         try {
@@ -75,13 +80,10 @@ class EprocController extends Controller
             // Normaliza os dados básicos usando o Normalizer
             $dadosBasicos = $processoData['dadosBasicos'] ?? [];
 
-            // Busca descrições de classe e assuntos do CNJ
-            $cnjService = new CnjService();
-
             // Busca descrição da classe
             if (isset($dadosBasicos['classeProcessual'])) {
                 $codigoClasse = (int) $dadosBasicos['classeProcessual'];
-                $dadosBasicos['classeProcessualNome'] = $cnjService->getClasseDescricao($codigoClasse);
+                $dadosBasicos['classeProcessualNome'] = $this->cnjService->getClasseDescricao($codigoClasse);
             }
 
             // Trata assuntos
@@ -91,7 +93,7 @@ class EprocController extends Controller
 
                 // Busca descrições apenas se houver códigos
                 if (!empty($codigosAssuntos)) {
-                    $descricoesAssuntos = $cnjService->getMultiplosAssuntosDescricoes($codigosAssuntos);
+                    $descricoesAssuntos = $this->cnjService->getMultiplosAssuntosDescricoes($codigosAssuntos);
                     $assuntos = $this->normalizer->addAssuntoDescriptions($assuntos, $descricoesAssuntos);
                 }
 
@@ -105,17 +107,20 @@ class EprocController extends Controller
                 'documento' => $processoData['documento'] ?? [],
             ]);
 
-            // Armazena os dados no cache por 10 minutos
-            $cacheKey = 'processo_' . md5($numeroProcesso . Auth::id());
+            // Armazena dados no cache por curto período com segredo cifrado
+            $cacheKey = 'processo_' . Str::uuid()->toString();
             cache()->put($cacheKey, [
                 'dadosBasicos' => $dadosNormalizados['dadosBasicos'],
                 'movimentos' => $dadosNormalizados['movimentos'],
                 'documentos' => $dadosNormalizados['documentos'],
                 'numeroProcesso' => $numeroProcesso,
-                'judicial_user_id' => $request->user_ws,
-                'senha' => $senha,
-                'chave' => $chave
-            ], now()->addMinutes(10));
+                'judicial_user_id' => (int) $request->user_ws,
+                'owner_user_id' => (int) Auth::id(),
+                'secret_ref' => Crypt::encryptString(json_encode([
+                    'senha' => $senha,
+                    'chave' => $chave,
+                ], JSON_THROW_ON_ERROR)),
+            ], now()->addMinutes(2));
 
             $span?->setStatus(StatusCode::STATUS_OK);
 
@@ -141,10 +146,10 @@ class EprocController extends Controller
         ]);
 
         $request->validate([
-            'numero_processo' => 'required|string',
-            'id_documento' => 'required|string',
+            'numero_processo' => ['required', 'string', 'max:30', 'regex:/^[0-9.\-\s]+$/'],
+            'id_documento' => 'required|string|max:100',
             'judicial_user_id' => 'required|exists:judicial_users,id',
-            'password_ws' => 'required|string',
+            'password_ws' => 'required|string|min:3|max:255',
         ]);
 
         try {

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class AiModel extends Model
@@ -101,11 +102,11 @@ class AiModel extends Model
      */
     public static function getModelIdForPurpose(string $purpose): ?string
     {
-        $model = self::where('is_active', true)
-            ->whereJsonContains('purpose', $purpose)
-            ->first();
-
-        return $model?->model_id;
+        return Cache::remember("ai_model_purpose:{$purpose}", now()->addMinutes(10), function () use ($purpose) {
+            return self::where('is_active', true)
+                ->whereJsonContains('purpose', $purpose)
+                ->value('model_id');
+        });
     }
 
     /**

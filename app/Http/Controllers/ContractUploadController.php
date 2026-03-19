@@ -43,19 +43,19 @@ class ContractUploadController extends Controller
 
         try {
             // Debug: log do que está sendo recebido
-            Log::info('Upload request recebido', [
-                'method' => $request->method(),
-                'has_file_filepond' => $request->hasFile('filepond'),
-                'has_file_file' => $request->hasFile('file'),
-                'all_files' => array_keys($request->allFiles()),
-                'all_input' => array_keys($request->all()),
-                'headers' => [
-                    'Upload-Length' => $request->header('Upload-Length'),
-                    'Upload-Offset' => $request->header('Upload-Offset'),
-                    'Upload-Name' => $request->header('Upload-Name'),
-                    'Content-Type' => $request->header('Content-Type'),
-                ],
-            ]);
+            if (app()->isLocal()) {
+                Log::debug('Upload request recebido', [
+                    'method' => $request->method(),
+                    'has_file_filepond' => $request->hasFile('filepond'),
+                    'has_file_file' => $request->hasFile('file'),
+                    'headers' => [
+                        'Upload-Length' => $request->header('Upload-Length'),
+                        'Upload-Offset' => $request->header('Upload-Offset'),
+                        'Upload-Name' => $request->header('Upload-Name'),
+                        'Content-Type' => $request->header('Content-Type'),
+                    ],
+                ]);
+            }
 
             // Verifica se é upload chunked
             $isChunked = $request->has('patch') || $request->header('Upload-Length');
@@ -73,7 +73,7 @@ class ContractUploadController extends Controller
             $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro no upload de contrato', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => app()->isLocal() ? $e->getTraceAsString() : null,
             ]);
 
             return response()->json(['error' => $e->getMessage()], 500);
@@ -106,6 +106,11 @@ class ContractUploadController extends Controller
         ]);
 
         $file = $request->file($fileKey);
+        $signature = @file_get_contents($file->getRealPath(), false, null, 0, 5);
+        if (!app()->environment('testing') && $signature !== '%PDF-') {
+            return response()->json(['error' => 'Arquivo inválido: assinatura PDF não encontrada'], 422);
+        }
+
         $fileName = $this->generateFileName($file->getClientOriginalName());
 
         // Salva o arquivo
@@ -147,6 +152,7 @@ class ContractUploadController extends Controller
 
             // Armazena metadados do upload
             Storage::put(self::TEMP_DIR . "/{$uploadId}.meta", json_encode([
+                'user_id' => Auth::id(),
                 'original_name' => $uploadName,
                 'total_size' => $uploadLength,
                 'received_size' => 0,
@@ -163,19 +169,25 @@ class ContractUploadController extends Controller
         // Chunks subsequentes - precisa do upload_id
         $uploadId = $request->input('patch') ?? $request->header('Upload-Id');
 
-        if (!$uploadId || !Storage::exists(self::TEMP_DIR . "/{$uploadId}.meta")) {
+        if (!$uploadId || !Str::isUuid($uploadId) || !Storage::exists(self::TEMP_DIR . "/{$uploadId}.meta")) {
             return response()->json(['error' => 'Upload ID inválido'], 400);
         }
 
         // Lê metadados
         $meta = json_decode(Storage::get(self::TEMP_DIR . "/{$uploadId}.meta"), true);
+        if (($meta['user_id'] ?? null) !== Auth::id()) {
+            return response()->json(['error' => 'Upload não pertence ao usuário autenticado'], 403);
+        }
 
         // Obtém conteúdo do chunk
         $chunk = $request->getContent();
         $chunkSize = strlen($chunk);
 
-        // Append chunk ao arquivo
-        Storage::append(self::TEMP_DIR . "/{$uploadId}.part", $chunk);
+        // Append binário seguro ao arquivo (sem inserir delimitadores de linha)
+        $absolutePartPath = Storage::path(self::TEMP_DIR . "/{$uploadId}.part");
+        if (file_put_contents($absolutePartPath, $chunk, FILE_APPEND | LOCK_EX) === false) {
+            return response()->json(['error' => 'Falha ao gravar chunk'], 500);
+        }
 
         // Atualiza metadados
         $meta['received_size'] += $chunkSize;

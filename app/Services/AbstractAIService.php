@@ -570,6 +570,7 @@ PROMPT;
     {
         $attempt = 0;
         $lastException = null;
+        $maxBlockingMs = (int) config('analysis.ai.max_blocking_retry_ms', 2000);
 
         while ($attempt < $maxRetries) {
             $attempt++;
@@ -581,15 +582,15 @@ PROMPT;
 
                 if ($this->isRateLimitError($e)) {
                     if ($attempt < $maxRetries) {
-                        $backoffMs = $this->calculateBackoff($attempt);
-                        Log::warning("Rate limit atingido no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms");
+                        $backoffMs = min($this->calculateBackoff($attempt), $maxBlockingMs);
+                        Log::warning("Rate limit atingido no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms (cap aplicado)");
                         usleep($backoffMs * 1000);
                         continue;
                     }
                 }
 
                 if ($attempt < 3 && $this->isConnectionError($e)) {
-                    $retryDelay = 2000 * $attempt;
+                    $retryDelay = min(2000 * $attempt, $maxBlockingMs);
                     Log::warning("Erro de conexão no " . $this->getName() . ". Tentativa {$attempt}/3. Aguardando {$retryDelay}ms");
                     usleep($retryDelay * 1000);
                     continue;

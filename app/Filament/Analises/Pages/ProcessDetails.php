@@ -4,6 +4,8 @@ namespace App\Filament\Analises\Pages;
 
 use BackedEnum;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 
 class ProcessDetails extends Page
@@ -34,13 +36,27 @@ class ProcessDetails extends Page
 
         if ($cacheKey && cache()->has($cacheKey)) {
             $data = cache()->get($cacheKey);
+
+            if (($data['owner_user_id'] ?? null) !== Auth::id()) {
+                abort(403, 'Acesso negado aos dados deste processo.');
+            }
+
+            $secret = [];
+            if (!empty($data['secret_ref'])) {
+                try {
+                    $secret = json_decode(Crypt::decryptString($data['secret_ref']), true) ?? [];
+                } catch (\Throwable) {
+                    $secret = [];
+                }
+            }
+
             $this->dadosBasicos = $data['dadosBasicos'] ?? [];
             $this->movimentos = $data['movimentos'] ?? [];
             $this->documentos = $data['documentos'] ?? [];
             $this->numeroProcesso = $data['numeroProcesso'] ?? '';
             $this->judicialUserId = $data['judicial_user_id'] ?? null;
-            $this->senha = $data['senha'] ?? null;
-            $this->chave = $data['chave'] ?? null;
+            $this->senha = $secret['senha'] ?? null;
+            $this->chave = $secret['chave'] ?? null;
 
             // Recalcula sequência se não existir (fallback para processos consultados antes desta feature)
             $this->garantirSequenciaAnalise();
@@ -514,6 +530,11 @@ class ProcessDetails extends Page
             ]);
 
             // Dispara o Job com o provider e modelo de IA selecionados
+            $judicialUser = \App\Models\JudicialUser::find($this->judicialUserId);
+            if (!$judicialUser || $judicialUser->user_id !== auth()->id()) {
+                throw new \RuntimeException('Usuário judicial inválido para esta análise.');
+            }
+
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
                 auth()->user()->id,
                 $this->numeroProcesso,
@@ -522,7 +543,7 @@ class ProcessDetails extends Page
                 $promptPadrao->content,                              // Prompt para parecer final (REDUCE)
                 $aiProvider,                                         // Provider de IA (OpenRouter)
                 $promptPadrao->deep_thinking_enabled ?? true,        // Modo de pensamento profundo
-                \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
+                $judicialUser->user_login,
                 $this->senha,
                 $this->judicialUserId,
                 $promptPadrao->analysis_strategy ?? 'evolutionary',  // Estratégia de análise

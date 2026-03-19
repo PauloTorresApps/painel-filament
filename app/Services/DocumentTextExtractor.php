@@ -17,11 +17,8 @@ class DocumentTextExtractor
 {
     use WithOtelTracing;
 
-    private PdfToTextService $pdfService;
-
-    public function __construct()
+    public function __construct(private PdfToTextService $pdfService)
     {
-        $this->pdfService = new PdfToTextService();
     }
 
     /**

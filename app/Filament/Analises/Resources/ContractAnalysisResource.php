@@ -60,7 +60,7 @@ class ContractAnalysisResource extends Resource
 
         // Se não há usuário autenticado, retorna query vazia
         if (!$user) {
-            return $query->whereRaw('1 = 0');
+            return $query->whereKey(-1);
         }
 
         // Admin e Manager veem todas as análises

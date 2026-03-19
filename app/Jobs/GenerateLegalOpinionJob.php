@@ -100,7 +100,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Busca o prompt padrão para parecer jurídico
-            $system = System::where('name', 'Contratos')->first();
+            $system = System::contratos();
 
             if (!$system) {
                 throw new \Exception('Sistema "Contratos" não encontrado.');
@@ -211,7 +211,7 @@ class GenerateLegalOpinionJob implements ShouldQueue, ShouldBeUnique
             Log::error('Erro ao gerar parecer jurídico', [
                 'id' => $this->contractAnalysisId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => app()->isLocal() ? $e->getTraceAsString() : null,
             ]);
 
             // Tenta atualizar o status para failed

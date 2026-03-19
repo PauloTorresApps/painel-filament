@@ -9,9 +9,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
-use App\Strategies\PdfNativeProcessingStrategy;
-use App\Strategies\TextProcessingStrategy;
-use App\Strategies\VisionProcessingStrategy;
+use App\Services\DocumentProcessingStrategyFactory;
 use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -60,8 +58,10 @@ class MapDocumentAnalysisJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(?DocumentProcessingStrategyFactory $strategyFactory = null): void
     {
+        $strategyFactory ??= app(DocumentProcessingStrategyFactory::class);
+
         $batch = $this->batch();
 
         // Verifica se o batch foi cancelado
@@ -179,7 +179,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $documentPrompt = $this->buildDocumentPrompt($microAnalysis);
 
             // Roteia para a estratégia de análise mais adequada ao tipo de documento
-            $result = $this->analyzeDocument($microAnalysis, $aiService, $systemPrompt, $documentPrompt);
+            $result = $this->analyzeDocument($microAnalysis, $aiService, $systemPrompt, $documentPrompt, $strategyFactory);
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -524,13 +524,10 @@ PROMPT;
         DocumentMicroAnalysis $microAnalysis,
         \App\Contracts\AIProviderInterface $aiService,
         string $systemPrompt,
-        string $documentPrompt
+        string $documentPrompt,
+        DocumentProcessingStrategyFactory $strategyFactory
     ): string {
-        $strategies = [
-            new VisionProcessingStrategy(),
-            new PdfNativeProcessingStrategy(),
-            new TextProcessingStrategy($this->getMapAnalysisSchema()),
-        ];
+        $strategies = $strategyFactory->makeMapStrategies($this->getMapAnalysisSchema());
 
         Log::info('MapDocumentAnalysisJob: Estratégia de processamento', [
             'micro_id' => $microAnalysis->id,

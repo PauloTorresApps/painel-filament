@@ -50,7 +50,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(DocumentTextExtractor $extractor, ContractFileManager $fileManager): void
     {
         $startTime = microtime(true);
 
@@ -96,7 +96,6 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 'file_path' => $analysis->file_path
             ]);
 
-            $extractor = new DocumentTextExtractor();
             $contractText = $extractor->extractFromStorage($analysis->file_path);
 
             Log::info('Texto extraído com sucesso', [
@@ -114,7 +113,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             ]);
 
             // Busca o prompt padrão para análise de contratos
-            $system = System::where('name', 'Contratos')->first();
+            $system = System::contratos();
 
             if (!$system) {
                 throw new \Exception('Sistema "Contratos" não encontrado. Execute o seeder ContractSystemSeeder.');
@@ -211,7 +210,6 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             $analysis->markAsCompleted($result, $processingTimeMs, $aiMetadata);
 
             // Remove o arquivo do storage após análise bem-sucedida
-            $fileManager = new ContractFileManager();
             $fileManager->deleteFile($analysis);
 
             Log::info('Análise de contrato concluída', [
@@ -245,7 +243,7 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             Log::error('Erro na análise de contrato', [
                 'id' => $this->contractAnalysisId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => app()->isLocal() ? $e->getTraceAsString() : null,
             ]);
 
             // Tenta atualizar o status para failed
@@ -253,7 +251,6 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
                 $analysis->markAsFailed($e->getMessage());
 
                 // Em caso de erro, deleta o arquivo via FileManager
-                $fileManager = new ContractFileManager();
                 $fileManager->deleteFile($analysis);
 
                 if (isset($user)) {

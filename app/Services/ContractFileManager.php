@@ -6,6 +6,7 @@ use App\Models\ContractAnalysis;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Service responsável por gerenciar arquivos de contratos
@@ -96,6 +97,12 @@ class ContractFileManager
         if (!in_array($mimeType, ['application/pdf'])) {
             throw new \Exception('Tipo MIME do arquivo inválido.');
         }
+
+        // Verifica assinatura mágica do PDF para evitar spoofing por extensão/MIME.
+        $signature = @file_get_contents($file->getRealPath(), false, null, 0, 5);
+        if (!app()->environment('testing') && $signature !== '%PDF-') {
+            throw new \Exception('Arquivo inválido: assinatura de PDF não encontrada.');
+        }
     }
 
     /**
@@ -143,7 +150,7 @@ class ContractFileManager
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $timestamp = now()->format('Y-m-d-His');
-        $randomString = substr(md5(uniqid()), 0, 8);
+        $randomString = Str::lower(Str::random(16));
 
         return "contract-{$analysis->id}-{$timestamp}-{$randomString}.{$extension}";
     }
