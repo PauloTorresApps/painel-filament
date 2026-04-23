@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Middleware\OtelJobMiddleware;
+use App\Jobs\EvaluateAnalysisJob;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
@@ -208,6 +209,9 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                 'analysis_id' => $this->documentAnalysisId,
                 'total_processing_time_ms' => $totalProcessingTime,
             ]);
+
+            // Avaliação de qualidade é assíncrona e não bloqueia fluxo principal.
+            EvaluateAnalysisJob::dispatch($documentAnalysis->id)->onQueue('analysis');
 
             $this->notifyUser(
                 $documentAnalysis,

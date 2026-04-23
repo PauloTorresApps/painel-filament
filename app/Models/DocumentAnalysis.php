@@ -75,6 +75,14 @@ class DocumentAnalysis extends Model
     }
 
     /**
+     * Relacionamento com execuções de avaliação de qualidade.
+     */
+    public function evaluations(): HasMany
+    {
+        return $this->hasMany(AnalysisEvaluation::class);
+    }
+
+    /**
      * Verifica se a análise está completa
      */
     public function isCompleted(): bool
