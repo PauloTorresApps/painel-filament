@@ -75,7 +75,7 @@
     $currentPhaseIndex = array_search($phase, array_keys($phases));
 @endphp
 
-<div class="space-y-6" wire:poll.5s>
+<div class="space-y-6" wire:poll.8s>
     {{-- Status Geral --}}
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm">
         <div class="flex items-center justify-between mb-4">

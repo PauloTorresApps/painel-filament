@@ -5,9 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ContractAnalysis;
 use App\Services\PdfService;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Gate;
 use App\Traits\WithOtelTracing;
-use OpenTelemetry\API\Trace\StatusCode;
 
 class LegalOpinionPdfController extends Controller
 {
@@ -24,8 +22,8 @@ class LegalOpinionPdfController extends Controller
 
         $analysis = ContractAnalysis::findOrFail($id);
 
-        // Autoriza usando Policy
-        Gate::authorize('downloadLegalOpinion', $analysis);
+        // Autoriza usando Policy com verificação de ownership/role
+        $this->authorize('downloadLegalOpinion', $analysis);
 
         // Gera PDF usando o serviço
         $pdf = PdfService::generateLegalOpinionPdf($analysis);
@@ -33,9 +31,8 @@ class LegalOpinionPdfController extends Controller
         // Nome do arquivo
         $fileName = 'parecer-juridico-' . $analysis->id . '-' . now()->format('Y-m-d-His') . '.pdf';
 
-        $span->setStatus(StatusCode::STATUS_OK);
+        $this->finishSpanSuccess($span);
         $this->detachScope($scope);
-        $span->end();
 
         return $pdf->download($fileName);
     }
@@ -51,15 +48,14 @@ class LegalOpinionPdfController extends Controller
 
         $analysis = ContractAnalysis::findOrFail($id);
 
-        // Autoriza usando Policy
-        Gate::authorize('downloadLegalOpinion', $analysis);
+        // Autoriza usando Policy com verificação de ownership/role
+        $this->authorize('downloadLegalOpinion', $analysis);
 
         // Gera PDF usando o serviço
         $pdf = PdfService::generateLegalOpinionPdf($analysis);
 
-        $span->setStatus(StatusCode::STATUS_OK);
+        $this->finishSpanSuccess($span);
         $this->detachScope($scope);
-        $span->end();
 
         return $pdf->stream('parecer-juridico-' . $analysis->id . '.pdf');
     }

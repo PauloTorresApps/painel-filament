@@ -935,6 +935,30 @@
 
         // --- 4. FUNÇÃO PRINCIPAL ---
         async function visualizarDocumento(numeroProcesso, idDocumento) {
+            const wsPassword = '{{ $senha ?? "" }}';
+            const judicialUserIdRaw = '{{ $judicialUserId ?? "" }}';
+            const judicialUserId = judicialUserIdRaw === '' ? null : Number(judicialUserIdRaw);
+
+            if (!wsPassword) {
+                const modal = document.getElementById('documentModal');
+                const content = document.getElementById('documentContent');
+
+                modal.classList.remove('hidden');
+                content.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-[320px] text-center px-6">
+                        <div class="mb-3 rounded-full bg-amber-100 p-3 dark:bg-amber-900/30">
+                            <svg class="h-7 w-7 text-amber-700 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86l-7.02 12.17A1 1 0 004.13 17.5h15.74a1 1 0 00.86-1.47L13.71 3.86a1 1 0 00-1.72 0z"/>
+                            </svg>
+                        </div>
+                        <p class="font-semibold text-gray-800 dark:text-gray-100">Credenciais necessárias</p>
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Não foi possível recuperar as credenciais do webservice. Volte e informe as credenciais novamente para visualizar documentos.</p>
+                        <button onclick="fecharModal()" class="mt-5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">Entendi</button>
+                    </div>`;
+
+                return;
+            }
+
             const modal = document.getElementById('documentModal');
             const content = document.getElementById('documentContent');
 
@@ -957,8 +981,8 @@
                 body: JSON.stringify({
                     numero_processo: numeroProcesso,
                     id_documento: idDocumento,
-                    judicial_user_id: {{ $judicialUserId ?? 'null' }},
-                    password_ws: '{{ $senha ?? "" }}'
+                    judicial_user_id: judicialUserId,
+                    password_ws: wsPassword
                 })
             })
             .then(r => r.json())

@@ -8,6 +8,8 @@ use App\Services\EprocService;
 use App\Services\CnjService;
 use App\Services\EprocDataNormalizer;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\RateLimiter;
 use Exception;
 use OpenTelemetry\API\Trace\StatusCode;
 
@@ -30,6 +32,15 @@ class EprocController extends Controller
             'http.route' => 'document_analysis.eproc.consultar',
             'app.user_id' => Auth::id(),
         ]);
+
+        $consultKey = 'eproc:consultar:' . (Auth::id() ?? 'guest') . ':' . $request->ip();
+        if (RateLimiter::tooManyAttempts($consultKey, 12)) {
+            $seconds = RateLimiter::availableIn($consultKey);
+
+            return back()
+                ->withInput()
+                ->with('error', "Limite de consultas atingido. Tente novamente em {$seconds} segundo(s).");
+        }
 
         $request->validate([
             'numero_processo' => 'required|string',
@@ -113,9 +124,11 @@ class EprocController extends Controller
                 'documentos' => $dadosNormalizados['documentos'],
                 'numeroProcesso' => $numeroProcesso,
                 'judicial_user_id' => $request->user_ws,
-                'senha' => $senha,
-                'chave' => $chave
+                'senha' => Crypt::encryptString($senha),
+                'chave' => $chave ? Crypt::encryptString($chave) : null,
             ], now()->addMinutes(10));
+
+            RateLimiter::hit($consultKey, 60);
 
             $span?->setStatus(StatusCode::STATUS_OK);
 
@@ -139,6 +152,16 @@ class EprocController extends Controller
             'http.route' => 'document_analysis.eproc.visualizar',
             'app.user_id' => Auth::id(),
         ]);
+
+        $viewKey = 'eproc:visualizar:' . (Auth::id() ?? 'guest') . ':' . $request->ip();
+        if (RateLimiter::tooManyAttempts($viewKey, 30)) {
+            $seconds = RateLimiter::availableIn($viewKey);
+
+            return response()->json([
+                'success' => false,
+                'error' => "Limite de visualizações atingido. Tente novamente em {$seconds} segundo(s).",
+            ], 429);
+        }
 
         $request->validate([
             'numero_processo' => 'required|string',
@@ -173,6 +196,8 @@ class EprocController extends Controller
                 $numeroProcesso,
                 [$idDocumento]
             );
+
+            RateLimiter::hit($viewKey, 60);
 
             // Extrai os documentos da resposta
             // Pode estar em diferentes locais dependendo da estrutura do SOAP

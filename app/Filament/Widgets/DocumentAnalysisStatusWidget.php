@@ -5,6 +5,8 @@ namespace App\Filament\Widgets;
 use App\Models\DocumentAnalysis;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Database\Eloquent\Builder;
 
 class DocumentAnalysisStatusWidget extends Widget
 {
@@ -21,6 +23,8 @@ class DocumentAnalysisStatusWidget extends Widget
 
     public int $perPage = 10;
 
+    private const CACHE_TTL_SECONDS = 20;
+
     public function mount(?string $numeroProcesso = null): void
     {
         $this->numeroProcesso = $numeroProcesso;
@@ -28,14 +32,9 @@ class DocumentAnalysisStatusWidget extends Widget
 
     public function getAnalyses()
     {
-        $query = DocumentAnalysis::where('user_id', Auth::id())
-            ->orderBy('created_at', 'desc');
-
-        if ($this->numeroProcesso) {
-            $query->where('numero_processo', $this->numeroProcesso);
-        }
-
-        return $query->paginate($this->perPage, ['*'], 'page', $this->page);
+        return $this->baseQuery()
+            ->orderBy('created_at', 'desc')
+            ->paginate($this->perPage, ['*'], 'page', $this->page);
     }
 
     public function nextPage(): void
@@ -52,46 +51,87 @@ class DocumentAnalysisStatusWidget extends Widget
 
     public function getTotalPages(): int
     {
-        $total = DocumentAnalysis::where('user_id', Auth::id())->count();
+        $cacheKey = sprintf(
+            'widgets:document-status-total:%s:%s',
+            Auth::id() ?? 'guest',
+            $this->numeroProcesso ?: 'all'
+        );
+
+        $total = Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function (): int {
+            return (clone $this->baseQuery())->count();
+        });
+
         return (int) ceil($total / $this->perPage);
     }
 
     public function getProcessingCount(): int
     {
-        return DocumentAnalysis::where('user_id', Auth::id())
-            ->where('status', 'processing')
-            ->count();
+        return $this->getStatusCounts()['processing'];
     }
 
     public function getPendingCount(): int
     {
-        return DocumentAnalysis::where('user_id', Auth::id())
-            ->where('status', 'pending')
-            ->count();
+        return $this->getStatusCounts()['pending'];
     }
 
     public function getCompletedCount(): int
     {
-        return DocumentAnalysis::where('user_id', Auth::id())
-            ->where('status', 'completed')
-            ->count();
+        return $this->getStatusCounts()['completed'];
     }
 
     public function getFailedCount(): int
     {
-        return DocumentAnalysis::where('user_id', Auth::id())
-            ->where('status', 'failed')
-            ->count();
+        return $this->getStatusCounts()['failed'];
     }
 
     // Polling a cada 10 segundos se houver análises em andamento
     // Aumentado de 5s para 10s para reduzir carga
     public function getPollingInterval(): ?string
     {
-        $hasActiveAnalyses = DocumentAnalysis::where('user_id', Auth::id())
-            ->whereIn('status', ['processing', 'pending'])
-            ->exists();
+        $counts = $this->getStatusCounts();
+        $hasActiveAnalyses = ($counts['processing'] + $counts['pending']) > 0;
 
         return $hasActiveAnalyses ? '10s' : null;
+    }
+
+    private function baseQuery(): Builder
+    {
+        $query = DocumentAnalysis::query()
+            ->where('user_id', Auth::id());
+
+        if ($this->numeroProcesso) {
+            $query->where('numero_processo', $this->numeroProcesso);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @return array{processing:int,pending:int,completed:int,failed:int}
+     */
+    private function getStatusCounts(): array
+    {
+        $cacheKey = sprintf(
+            'widgets:document-status:%s:%s',
+            Auth::id() ?? 'guest',
+            $this->numeroProcesso ?: 'all'
+        );
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function (): array {
+            $stats = (array) (clone $this->baseQuery())
+                ->selectRaw("SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing")
+                ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending")
+                ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed")
+                ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed")
+                ->first()
+                ?->toArray();
+
+            return [
+                'processing' => (int) ($stats['processing'] ?? 0),
+                'pending' => (int) ($stats['pending'] ?? 0),
+                'completed' => (int) ($stats['completed'] ?? 0),
+                'failed' => (int) ($stats['failed'] ?? 0),
+            ];
+        });
     }
 }

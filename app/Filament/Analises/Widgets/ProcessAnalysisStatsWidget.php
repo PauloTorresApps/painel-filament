@@ -6,6 +6,7 @@ use App\Models\DocumentAnalysis;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class ProcessAnalysisStatsWidget extends StatsOverviewWidget
 {
@@ -13,25 +14,51 @@ class ProcessAnalysisStatsWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Análises de Processos';
 
+    private const CACHE_TTL_SECONDS = 30;
+
     protected function getStats(): array
     {
         $user = Auth::user();
+        if (!$user) {
+            return [];
+        }
+
         $query = DocumentAnalysis::query();
 
         if (!$user->hasAnyRole(['Admin', 'Manager'])) {
             $query->where('user_id', $user->id);
         }
 
-        $total = (clone $query)->count();
-        $completed = (clone $query)->where('status', 'completed')->count();
-        $processing = (clone $query)->where('status', 'processing')->count();
-        $failed = (clone $query)->where('status', 'failed')->count();
-        $pending = (clone $query)->where('status', 'pending')->count();
+        $cacheKey = $user->hasAnyRole(['Admin', 'Manager'])
+            ? 'widgets:process-stats:all'
+            : 'widgets:process-stats:user:' . $user->id;
 
-        $thisMonth = (clone $query)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->count();
+        $stats = Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($query) {
+            $now = now();
+
+            return (array) (clone $query)
+                ->selectRaw('COUNT(*) as total')
+                ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed")
+                ->selectRaw("SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing")
+                ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed")
+                ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending")
+                ->selectRaw(
+                    'SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) as this_month',
+                    [
+                        $now->copy()->startOfMonth(),
+                        $now->copy()->addMonthNoOverflow()->startOfMonth(),
+                    ]
+                )
+                ->first()
+                ?->toArray();
+        });
+
+        $total = (int) ($stats['total'] ?? 0);
+        $completed = (int) ($stats['completed'] ?? 0);
+        $processing = (int) ($stats['processing'] ?? 0);
+        $failed = (int) ($stats['failed'] ?? 0);
+        $pending = (int) ($stats['pending'] ?? 0);
+        $thisMonth = (int) ($stats['this_month'] ?? 0);
 
         $successRate = $total > 0 ? round(($completed / $total) * 100, 1) : 0;
 

@@ -29,8 +29,6 @@ class EprocService
 
         Log::info('EprocService inicializado', [
             'usuario' => $this->usuario,
-            'senha_hash' => $this->senha,
-            'tamanho_hash' => strlen($this->senha),
             'url_base' => $this->urlBase
         ]);
 
@@ -72,7 +70,11 @@ class EprocService
             Log::info('Cliente SOAP criado com sucesso', [
                 'wsdl_url' => $wsdlUrl
             ]);
-            Log::info('Funções SOAP disponíveis: ' . json_encode($this->client->__getFunctions()));
+            if ($this->isDebugLoggingEnabled()) {
+                Log::debug('Funções SOAP disponíveis', [
+                    'functions' => $this->client->__getFunctions(),
+                ]);
+            }
         } catch (SoapFault $e) {
             Log::error('Erro ao criar cliente SOAP: ' . $e->getMessage());
             Log::error('WSDL URL: ' . $wsdlUrl);
@@ -176,42 +178,30 @@ class EprocService
             Log::info('Enviando requisição consultarProcesso', [
                 'usuario' => $this->usuario,
                 'numeroProcesso' => $numeroProcessoLimpo,
-                'hash_length' => strlen($this->senha),
-                'hash_first_chars' => substr($this->senha, 0, 8) . '...',
                 'chave' => $chave ? 'informada' : 'não informada'
             ]);
 
             $response = $this->client->consultarProcesso($params);
 
-            // Log do XML enviado para diagnóstico
-            Log::info('SOAP Request XML', [
-                'request' => $this->client->__getLastRequest()
-            ]);
-            Log::info('SOAP Response XML', [
-                'response' => substr($this->client->__getLastResponse() ?? '', 0, 2000)
-            ]);
-
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordExternalApiCall('eproc', 'consultarProcesso', 'success', $durationMs);
-            $span->setAttribute('eproc.duration_ms', $durationMs);
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setAttribute('eproc.duration_ms', $durationMs);
+            $span?->setStatus(StatusCode::STATUS_OK);
 
             return $this->processarResposta($response);
 
         } catch (SoapFault $e) {
             Log::error('Erro SOAP ao consultar processo: ' . $e->getMessage());
-            Log::error('Request: ' . $this->client->__getLastRequest());
-            Log::error('Response: ' . $this->client->__getLastResponse());
 
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordExternalApiCall('eproc', 'consultarProcesso', 'failed', $durationMs);
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            $span?->recordException($e);
+            $span?->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
 
             throw new Exception('Erro ao consultar processo: ' . $e->getMessage());
         } finally {
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
         }
     }
 
@@ -245,7 +235,6 @@ class EprocService
 
             Log::info('Consultando documentos com conteúdo via HTTP manual', [
                 'numeroProcesso' => $numeroProcessoLimpo,
-                'idsDocumentos' => $idsDocumentos,
                 'quantidade' => count($idsDocumentos),
                 'chave' => $chave ? 'informada' : 'não informada'
             ]);
@@ -296,7 +285,6 @@ class EprocService
 
             Log::info('XML extraído do multipart', [
                 'tamanho' => strlen($xmlResponse),
-                'primeiros_500_chars' => substr($xmlResponse, 0, 500)
             ]);
 
             // Remove namespaces para facilitar o parsing
@@ -316,7 +304,6 @@ class EprocService
 
             Log::info('Estrutura da resposta XML parseada', [
                 'keys' => array_keys($resultado),
-                'resultado_completo' => json_encode($resultado, JSON_PRETTY_PRINT)
             ]);
 
             // Extrai anexos MTOM
@@ -332,21 +319,21 @@ class EprocService
 
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordExternalApiCall('eproc', 'consultarDocumentosProcesso', 'success', $durationMs);
-            $span->setAttribute('eproc.duration_ms', $durationMs);
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setAttribute('eproc.duration_ms', $durationMs);
+            $span?->setStatus(StatusCode::STATUS_OK);
 
             return $this->processarResposta($resultado);
 
         } catch (Exception $e) {
             $durationMs = (hrtime(true) - $start) / 1_000_000;
             $metrics->recordExternalApiCall('eproc', 'consultarDocumentosProcesso', 'failed', $durationMs);
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            $span?->recordException($e);
+            $span?->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro ao consultar documentos: ' . $e->getMessage());
             throw $e;
         } finally {
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
         }
     }
 
@@ -592,7 +579,8 @@ XML;
             }
 
             Log::info('Documentos após vinculação', [
-                'tem_conteudo' => isset($documentos['conteudo']['conteudo']) || isset($documentos[0]['conteudo']['conteudo'])
+                'tem_conteudo' => isset($documentos['conteudo']['conteudo']) || isset($documentos[0]['conteudo']['conteudo']),
+                'total_documentos' => isset($documentos[0]) ? count($documentos) : 1,
             ]);
         }
 
@@ -860,6 +848,11 @@ XML;
 
         // Retorna a mensagem limpa
         return trim($descritivo);
+    }
+
+    private function isDebugLoggingEnabled(): bool
+    {
+        return (bool) config('app.debug', false);
     }
 
     /**

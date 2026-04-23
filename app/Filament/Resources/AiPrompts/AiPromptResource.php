@@ -81,6 +81,7 @@ class AiPromptResource extends Resource
         // Filtra prompts que NÃO sejam do sistema de Contratos
         // Prompts de análise processual pertencem a sistemas judiciais (EPROC, PJE, etc.)
         return parent::getEloquentQuery()
+            ->with(['system', 'aiModel'])
             ->when($contractSystemId, fn ($query) => $query->where('system_id', '!=', $contractSystemId));
     }
 }

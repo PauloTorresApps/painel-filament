@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Traits\WithOtelTracing;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -59,18 +60,18 @@ class ContractUploadController extends Controller
 
             // Verifica se é upload chunked
             $isChunked = $request->has('patch') || $request->header('Upload-Length');
-            $span->setAttribute('upload.chunked', $isChunked);
+            $span?->setAttribute('upload.chunked', $isChunked);
 
             if ($isChunked) {
-                $span->setStatus(StatusCode::STATUS_OK);
+                $span?->setStatus(StatusCode::STATUS_OK);
                 return $this->handleChunkedUpload($request);
             }
 
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setStatus(StatusCode::STATUS_OK);
             return $this->handleRegularUpload($request);
         } catch (\Exception $e) {
-            $span->recordException($e);
-            $span->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
+            $span?->recordException($e);
+            $span?->setStatus(StatusCode::STATUS_ERROR, $e->getMessage());
             Log::error('Erro no upload de contrato', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -79,7 +80,7 @@ class ContractUploadController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         } finally {
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
         }
     }
 
@@ -106,6 +107,7 @@ class ContractUploadController extends Controller
         ]);
 
         $file = $request->file($fileKey);
+        $this->assertValidPdfUpload($file);
         $fileName = $this->generateFileName($file->getClientOriginalName());
 
         // Salva o arquivo
@@ -141,6 +143,10 @@ class ContractUploadController extends Controller
         $uploadOffset = $request->header('Upload-Offset');
         $uploadName = $request->header('Upload-Name');
 
+        if ($uploadLength !== null && (int) $uploadLength > self::MAX_FILE_SIZE) {
+            return response()->json(['error' => 'Arquivo excede o limite de 100MB'], 422);
+        }
+
         // Se é o primeiro chunk, cria um ID único para o upload
         if ($uploadOffset == 0) {
             $uploadId = Str::uuid()->toString();
@@ -174,8 +180,8 @@ class ContractUploadController extends Controller
         $chunk = $request->getContent();
         $chunkSize = strlen($chunk);
 
-        // Append chunk ao arquivo
-        Storage::append(self::TEMP_DIR . "/{$uploadId}.part", $chunk);
+        // Append binário seguro (Storage::append pode adicionar quebras de linha em alguns drivers)
+        $this->appendChunkToTempFile($uploadId, $chunk);
 
         // Atualiza metadados
         $meta['received_size'] += $chunkSize;
@@ -198,6 +204,25 @@ class ContractUploadController extends Controller
     private function finalizeChunkedUpload(string $uploadId, array $meta): JsonResponse
     {
         $tempPath = self::TEMP_DIR . "/{$uploadId}.part";
+
+        if ((int) ($meta['total_size'] ?? 0) > self::MAX_FILE_SIZE) {
+            Storage::delete([$tempPath, self::TEMP_DIR . "/{$uploadId}.meta"]);
+
+            return response()->json(['error' => 'Arquivo excede o limite de 100MB'], 422);
+        }
+
+        if (!$this->isValidPdfName((string) ($meta['original_name'] ?? ''))) {
+            Storage::delete([$tempPath, self::TEMP_DIR . "/{$uploadId}.meta"]);
+
+            return response()->json(['error' => 'Apenas arquivos PDF são permitidos'], 422);
+        }
+
+        if (!$this->hasPdfMagicFromStoragePath($tempPath)) {
+            Storage::delete([$tempPath, self::TEMP_DIR . "/{$uploadId}.meta"]);
+
+            return response()->json(['error' => 'Arquivo inválido: assinatura PDF não encontrada'], 422);
+        }
+
         $fileName = $this->generateFileName($meta['original_name']);
         $finalPath = self::CONTRACTS_DIR . "/{$fileName}";
 
@@ -236,22 +261,22 @@ class ContractUploadController extends Controller
         $fileId = $request->input('file_id') ?? $request->getContent();
 
         if (!$fileId) {
-            $span->setStatus(StatusCode::STATUS_ERROR, 'File ID não fornecido');
+            $span?->setStatus(StatusCode::STATUS_ERROR, 'File ID não fornecido');
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
             return response()->json(['error' => 'File ID não fornecido'], 400);
         }
 
-        $span->setAttribute('upload.file_id', (string) $fileId);
+        $span?->setAttribute('upload.file_id', (string) $fileId);
 
         // Tenta remover do diretório de contratos
         $contractPath = self::CONTRACTS_DIR . "/{$fileId}";
         if (Storage::exists($contractPath)) {
             Storage::delete($contractPath);
             Log::info('Contrato removido', ['path' => $contractPath]);
-            $span->setStatus(StatusCode::STATUS_OK);
+            $span?->setStatus(StatusCode::STATUS_OK);
             $this->detachScope($scope);
-            $span->end();
+            $span?->end();
             return response()->json(['success' => true]);
         }
 
@@ -266,11 +291,70 @@ class ContractUploadController extends Controller
             Storage::delete($metaPath);
         }
 
-        $span->setStatus(StatusCode::STATUS_OK);
+        $span?->setStatus(StatusCode::STATUS_OK);
         $this->detachScope($scope);
-        $span->end();
+        $span?->end();
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Valida assinatura e extensão do PDF no upload regular.
+     */
+    private function assertValidPdfUpload(UploadedFile $file): void
+    {
+        if (!$this->isValidPdfName($file->getClientOriginalName())) {
+            abort(422, 'Apenas arquivos PDF são permitidos');
+        }
+
+        $handle = @fopen($file->getRealPath(), 'rb');
+        if ($handle === false) {
+            abort(422, 'Não foi possível validar o arquivo enviado');
+        }
+
+        $header = fread($handle, 5) ?: '';
+        fclose($handle);
+
+        if ($header !== '%PDF-') {
+            abort(422, 'Arquivo inválido: assinatura PDF não encontrada');
+        }
+    }
+
+    private function isValidPdfName(string $fileName): bool
+    {
+        return strtolower(pathinfo($fileName, PATHINFO_EXTENSION)) === 'pdf';
+    }
+
+    private function hasPdfMagicFromStoragePath(string $relativePath): bool
+    {
+        if (!Storage::exists($relativePath)) {
+            return false;
+        }
+
+        $absolutePath = Storage::path($relativePath);
+        $handle = @fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        $header = fread($handle, 5) ?: '';
+        fclose($handle);
+
+        return $header === '%PDF-';
+    }
+
+    /**
+     * Faz append binário do chunk no arquivo temporário do upload.
+     */
+    private function appendChunkToTempFile(string $uploadId, string $chunk): void
+    {
+        $tempPath = self::TEMP_DIR . "/{$uploadId}.part";
+        $absolutePath = Storage::path($tempPath);
+
+        $bytesWritten = @file_put_contents($absolutePath, $chunk, FILE_APPEND);
+        if ($bytesWritten === false) {
+            throw new \RuntimeException('Falha ao anexar chunk ao arquivo temporário');
+        }
     }
 
     /**

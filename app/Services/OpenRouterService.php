@@ -10,6 +10,9 @@ use OpenTelemetry\API\Trace\StatusCode;
 
 class OpenRouterService extends AbstractAIService
 {
+    protected ?OpenRouterResponseHandler $responseHandler = null;
+    protected ?OpenRouterPayloadEnricher $payloadEnricher = null;
+
     public function __construct()
     {
         $this->apiKey = config('services.openrouter.api_key') ?? config('laravel-openrouter.api_key');
@@ -290,65 +293,6 @@ class OpenRouterService extends AbstractAIService
     }
 
     /**
-     * Monta o objeto `provider` para routing/fallback/performance da OpenRouter.
-     * Configurado via .env: OPENROUTER_PROVIDER_ORDER, OPENROUTER_PROVIDER_SORT, etc.
-     */
-    private function buildProviderRouting(): ?array
-    {
-        $provider = [];
-
-        // Ordem de providers (ex: 'anthropic,google,openai')
-        $order = config('services.openrouter.provider_order');
-        if (is_string($order) && $order !== '') {
-            $provider['order'] = array_map('trim', explode(',', $order));
-        }
-
-        // Permitir fallback automático
-        $provider['allow_fallbacks'] = (bool) config('services.openrouter.allow_fallbacks', true);
-
-        // Só roteia para providers que suportam todos os parâmetros
-        if (config('services.openrouter.require_parameters', true)) {
-            $provider['require_parameters'] = true;
-        }
-
-        // Ordenação por critério (price, throughput, latency)
-        $sort = config('services.openrouter.provider_sort');
-        if ($sort) {
-            $provider['sort'] = $sort;
-        }
-
-        // Teto de preço por 1M tokens
-        $maxPricePrompt = config('services.openrouter.max_price_prompt');
-        $maxPriceCompletion = config('services.openrouter.max_price_completion');
-        if ($maxPricePrompt || $maxPriceCompletion) {
-            $maxPrice = [];
-            if ($maxPricePrompt) {
-                $maxPrice['prompt'] = (float) $maxPricePrompt;
-            }
-            if ($maxPriceCompletion) {
-                $maxPrice['completion'] = (float) $maxPriceCompletion;
-            }
-            $provider['max_price'] = $maxPrice;
-        }
-
-        return !empty($provider) ? $provider : null;
-    }
-
-    /**
-     * Monta o array de transforms (ex: middle-out) para o payload.
-     */
-    private function buildTransforms(): ?array
-    {
-        $transforms = config('services.openrouter.transforms');
-
-        if ($transforms === '' || $transforms === null || $transforms === false) {
-            return null;
-        }
-
-        return array_map('trim', explode(',', $transforms));
-    }
-
-    /**
      * Monta o array de plugins para o payload.
      * Recebe plugins base (ex: file-parser do PDF) e mescla opcionais.
      */
@@ -401,34 +345,7 @@ class OpenRouterService extends AbstractAIService
         }
 
         try {
-            // Injeta temperature (apenas quando NÃO usa reasoning)
-            if (!$useReasoning && !isset($payload['temperature'])) {
-                $payload['temperature'] = $this->temperatureOverride ?? config('services.openrouter.temperature', 0.3);
-            }
-
-            // Injeta configuração de reasoning
-            if ($useReasoning && !isset($payload['reasoning'])) {
-                $payload['reasoning'] = [
-                    'effort' => 'high',
-                    'exclude' => true,
-                ];
-            }
-
-            // Injeta provider routing (fallbacks, ordenação, teto de preço)
-            if (!isset($payload['provider'])) {
-                $providerRouting = $this->buildProviderRouting();
-                if ($providerRouting) {
-                    $payload['provider'] = $providerRouting;
-                }
-            }
-
-            // Injeta transforms (middle-out) se não já definido
-            if (!isset($payload['transforms'])) {
-                $transforms = $this->buildTransforms();
-                if ($transforms !== null) {
-                    $payload['transforms'] = $transforms;
-                }
-            }
+            $payload = $this->getPayloadEnricher()->enrich($payload, $useReasoning, $this->temperatureOverride);
 
             $baseUrl = rtrim($this->apiUrl ?? 'https://openrouter.ai/api/v1', '/');
             $chatEndpoint = $baseUrl . '/chat/completions';
@@ -469,24 +386,14 @@ class OpenRouterService extends AbstractAIService
                 'data_keys' => is_array($data) ? array_keys($data) : 'not_array',
             ]);
 
-            // Extrai informações de uso
-            $usage = $data['usage'] ?? null;
-            $totalTokens = 0;
-            if ($usage) {
-                $usageArray = [
-                    'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
-                    'completion_tokens' => $usage['completion_tokens'] ?? 0,
-                    'total_tokens' => ($usage['prompt_tokens'] ?? 0) + ($usage['completion_tokens'] ?? 0),
-                ];
+            $parsedResponse = $this->getResponseHandler()->parse($data, $callType, $useReasoning);
+            $usageArray = $parsedResponse['usage'];
+            $totalTokens = (int) ($parsedResponse['total_tokens'] ?? 0);
+            $text = $parsedResponse['text'];
 
-                if (!empty($usage['completion_tokens_details']['reasoning_tokens'])) {
-                    $usageArray['completion_tokens_details'] = [
-                        'reasoning_tokens' => $usage['completion_tokens_details']['reasoning_tokens'],
-                    ];
-                }
-
-                $totalTokens = (int) $usageArray['total_tokens'];
-                $this->accumulateMetadata($usageArray, $data['model'] ?? $this->model);
+            if (is_array($usageArray)) {
+                $model = $parsedResponse['model'] ?? $this->model;
+                $this->accumulateMetadata($usageArray, $model);
 
                 if ($span !== null) {
                     $span->setAttribute('ai.prompt_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
@@ -495,69 +402,15 @@ class OpenRouterService extends AbstractAIService
                 }
 
                 Log::info("OpenRouter API - Resposta recebida ({$callType})", [
-                    'model' => $data['model'] ?? $this->model,
+                    'model' => $model,
                     'reasoning_enabled' => $useReasoning,
                     'usage' => $usageArray,
-                    'generation_id' => $data['id'] ?? 'N/A',
+                    'generation_id' => $parsedResponse['generation_id'] ?? 'N/A',
                 ]);
             }
 
-            // Captura annotations para cache (P5)
-            $annotations = $data['annotations'] ?? null;
-            if ($annotations) {
-                $this->lastAnalysisMetadata['file_annotations'] = $annotations;
-            }
-
-            // Extrai o texto da resposta
-            $text = null;
-            $reasoningContent = null;
-
-            if (!empty($data['choices'])) {
-                $choice = $data['choices'][0];
-                $message = $choice['message'] ?? null;
-
-                if ($message) {
-                    if ($useReasoning) {
-                        Log::info("OpenRouter - Estrutura da mensagem ({$callType})", [
-                            'message_keys' => array_keys($message),
-                            'content_length' => mb_strlen($message['content'] ?? ''),
-                            'has_reasoning' => isset($message['reasoning']),
-                        ]);
-                    }
-
-                    $text = $message['content'] ?? null;
-
-                    if (is_array($text)) {
-                        $textParts = array_filter($text, fn($part) => is_array($part) && ($part['type'] ?? '') === 'text');
-                        $text = implode("\n", array_map(fn($part) => $part['text'] ?? '', $textParts));
-                    }
-
-                    $reasoningContent = $message['reasoning'] ?? null;
-
-                    if (empty($text) && !empty($reasoningContent)) {
-                        Log::info("OpenRouter - Content vazio, usando reasoning ({$callType})", [
-                            'reasoning_length' => mb_strlen($reasoningContent),
-                        ]);
-                        $text = $reasoningContent;
-                        $reasoningContent = null;
-                    }
-                }
-            }
-
-            if ($reasoningContent) {
-                Log::info("OpenRouter - Reasoning separado recebido ({$callType})", [
-                    'reasoning_length' => mb_strlen($reasoningContent),
-                ]);
-            }
-
-            if (empty($text)) {
-                Log::error("OpenRouter retornou resposta vazia ({$callType})", [
-                    'response_id' => $data['id'] ?? 'N/A',
-                    'model' => $data['model'] ?? $this->model,
-                    'has_reasoning' => !empty($reasoningContent),
-                    'choices_count' => count($data['choices'] ?? []),
-                ]);
-                throw new \Exception("A API OpenRouter retornou uma resposta vazia para {$callType}. Tente novamente em alguns instantes.");
+            if (!empty($parsedResponse['annotations']) && is_array($parsedResponse['annotations'])) {
+                $this->lastAnalysisMetadata['file_annotations'] = $parsedResponse['annotations'];
             }
 
             $durationMs = (hrtime(true) - $start) / 1_000_000;
@@ -587,6 +440,45 @@ class OpenRouterService extends AbstractAIService
                 $span->end();
             }
         }
+    }
+
+    private function getResponseHandler(): OpenRouterResponseHandler
+    {
+        if ($this->responseHandler !== null) {
+            return $this->responseHandler;
+        }
+
+        try {
+            $this->responseHandler = app(OpenRouterResponseHandler::class);
+        } catch (\Throwable) {
+            $this->responseHandler = new OpenRouterResponseHandler();
+        }
+
+        return $this->responseHandler;
+    }
+
+    private function getPayloadEnricher(): OpenRouterPayloadEnricher
+    {
+        if ($this->payloadEnricher !== null) {
+            return $this->payloadEnricher;
+        }
+
+        try {
+            $this->payloadEnricher = app(OpenRouterPayloadEnricher::class);
+        } catch (\Throwable) {
+            $this->payloadEnricher = new OpenRouterPayloadEnricher([
+                'temperature' => config('services.openrouter.temperature', 0.3),
+                'provider_order' => config('services.openrouter.provider_order'),
+                'allow_fallbacks' => config('services.openrouter.allow_fallbacks', true),
+                'require_parameters' => config('services.openrouter.require_parameters', true),
+                'provider_sort' => config('services.openrouter.provider_sort'),
+                'max_price_prompt' => config('services.openrouter.max_price_prompt'),
+                'max_price_completion' => config('services.openrouter.max_price_completion'),
+                'transforms' => config('services.openrouter.transforms'),
+            ]);
+        }
+
+        return $this->payloadEnricher;
     }
 
     /**

@@ -37,6 +37,14 @@ abstract class AbstractAIService implements AIProviderInterface
      */
     protected int $timeout = 300;
 
+    protected ?AIRetryPolicy $retryPolicy = null;
+
+    protected ?AIAnalysisPromptBuilder $promptBuilder = null;
+
+    protected ?AIAnalysisFlowResolver $flowResolver = null;
+
+    protected ?AIAnalysisExecutionPipeline $analysisPipeline = null;
+
     /**
      * Define o timeout para a chamada HTTP.
      */
@@ -358,44 +366,29 @@ abstract class AbstractAIService implements AIProviderInterface
         bool $deepThinkingEnabled = true,
         ?DocumentAnalysis $documentAnalysis = null
     ): string {
-        try {
-            $this->resetAnalysisMetadata();
+        $flow = $this->getFlowResolver()->resolveFlow($contextoDados);
+        $isContract = $flow === AIAnalysisFlowResolver::FLOW_CONTRACT;
+        $totalDocuments = \count($documentos);
 
-            $isContract = $this->isContractAnalysis($contextoDados);
-
-            Log::info('AbstractAIService: Iniciando análise', [
-                'provider' => $this->getName(),
-                'total_documentos' => \count($documentos),
-                'is_contract' => $isContract,
-            ]);
-
-            if ($isContract) {
-                // Análise de contrato: fluxo simples (documento único)
-                $result = $this->analyzeContract($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled);
-            } else {
-                // Processos judiciais com múltiplos documentos devem usar map-reduce
-                // Este fallback existe apenas para compatibilidade
-                $result = $this->analyzeSimple($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled);
-            }
-
-            $this->finalizeMetadata(\count($documentos));
-
-            Log::info('AbstractAIService: Análise concluída', [
-                'provider' => $this->getName(),
-                'metadata' => $this->lastAnalysisMetadata
-            ]);
-
-            return $result;
-
-        } catch (\Exception $e) {
-            $this->finalizeMetadata(\count($documentos));
-            $this->lastAnalysisMetadata['error'] = $e->getMessage();
-
-            Log::error('AbstractAIService: Erro na análise', [
-                'error' => $e->getMessage(),
-            ]);
-            throw $e;
-        }
+        return $this->getAnalysisPipeline()->execute(
+            provider: $this->getName(),
+            totalDocuments: $totalDocuments,
+            isContract: $isContract,
+            onStart: fn () => $this->resetAnalysisMetadata(),
+            runAnalysis: function () use ($flow, $promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled): string {
+                return match ($flow) {
+                    AIAnalysisFlowResolver::FLOW_CONTRACT => $this->analyzeContract($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled),
+                    AIAnalysisFlowResolver::FLOW_SIMPLE => $this->analyzeSimple($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled),
+                    default => $this->analyzeSimple($promptTemplate, $documentos, $contextoDados, $deepThinkingEnabled),
+                };
+            },
+            onSuccess: fn () => $this->finalizeMetadata($totalDocuments),
+            onError: function (\Exception $e) use ($totalDocuments): void {
+                $this->finalizeMetadata($totalDocuments);
+                $this->lastAnalysisMetadata['error'] = $e->getMessage();
+            },
+            metadataProvider: fn () => $this->lastAnalysisMetadata,
+        );
     }
 
     /**
@@ -403,11 +396,7 @@ abstract class AbstractAIService implements AIProviderInterface
      */
     protected function isContractAnalysis(array $contextoDados): bool
     {
-        if (!isset($contextoDados['tipo'])) {
-            return false;
-        }
-
-        return \in_array($contextoDados['tipo'], ['Contrato', 'Parecer Jurídico']);
+        return $this->getFlowResolver()->isContractAnalysis($contextoDados);
     }
 
     /**
@@ -429,40 +418,24 @@ abstract class AbstractAIService implements AIProviderInterface
         $arquivo = $contextoDados['arquivo'] ?? 'Contrato';
         $parteInteressada = $contextoDados['parte_interessada'] ?? '';
 
-        // Monta contexto
-        $contexto = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
-        $contexto .= "**Tipo:** Análise de Contrato\n";
-        $contexto .= "**Arquivo:** {$arquivo}\n";
-
-        if (!empty($parteInteressada)) {
-            $contexto .= "**Parte Interessada:** {$parteInteressada}\n";
-        }
-
-        $contexto .= "\n---\n\n";
-        $contexto .= "# DOCUMENTO DO CONTRATO\n\n";
-        $contexto .= $texto . "\n\n";
-        $contexto .= "---\n\n";
-        $contexto .= "# TAREFA\n\n";
-        $contexto .= $promptTemplate;
+        $contexto = $this->getPromptBuilder()->buildContractAnalysisPrompt(
+            promptTemplate: $promptTemplate,
+            documentText: $texto,
+            arquivo: $arquivo,
+            parteInteressada: $parteInteressada,
+            isSummarized: false,
+        );
 
         // Se muito grande, sumariza
         if (mb_strlen($texto) > static::SINGLE_DOC_CHAR_LIMIT) {
             $texto = $this->summarizeDocument($texto, $arquivo, $deepThinkingEnabled);
-
-            $contexto = "# CONTEXTO DA ANÁLISE DE CONTRATO\n\n";
-            $contexto .= "**Tipo:** Análise de Contrato\n";
-            $contexto .= "**Arquivo:** {$arquivo}\n";
-
-            if (!empty($parteInteressada)) {
-                $contexto .= "**Parte Interessada:** {$parteInteressada}\n";
-            }
-
-            $contexto .= "\n---\n\n";
-            $contexto .= "# DOCUMENTO DO CONTRATO (RESUMIDO)\n\n";
-            $contexto .= $texto . "\n\n";
-            $contexto .= "---\n\n";
-            $contexto .= "# TAREFA\n\n";
-            $contexto .= $promptTemplate;
+            $contexto = $this->getPromptBuilder()->buildContractAnalysisPrompt(
+                promptTemplate: $promptTemplate,
+                documentText: $texto,
+                arquivo: $arquivo,
+                parteInteressada: $parteInteressada,
+                isSummarized: true,
+            );
         }
 
         return $this->callAPI($contexto, $deepThinkingEnabled);
@@ -478,38 +451,7 @@ abstract class AbstractAIService implements AIProviderInterface
         array $contextoDados,
         bool $deepThinkingEnabled
     ): string {
-        $nomeClasse = $contextoDados['classeProcessualNome']
-            ?? $contextoDados['classeProcessual']
-            ?? 'Não informada';
-
-        $assuntos = $this->formatAssuntos($contextoDados['assunto'] ?? []);
-        $numeroProcesso = $contextoDados['numeroProcesso'] ?? 'Não informado';
-
-        // Monta contexto
-        $prompt = "# CONTEXTO DO PROCESSO\n\n";
-        $prompt .= "**Classe Processual:** {$nomeClasse}\n";
-        $prompt .= "**Assuntos:** {$assuntos}\n";
-        $prompt .= "**Número do Processo:** {$numeroProcesso}\n";
-
-        if (!empty($contextoDados['valorCausa'])) {
-            $prompt .= "**Valor da Causa:** R$ " . number_format($contextoDados['valorCausa'], 2, ',', '.') . "\n";
-        }
-
-        $prompt .= "\n---\n\n";
-        $prompt .= "# DOCUMENTOS DO PROCESSO\n\n";
-
-        foreach ($documentos as $index => $doc) {
-            $docNum = $index + 1;
-            $descricao = $doc['descricao'] ?? "Documento {$docNum}";
-            $texto = $doc['texto'] ?? '';
-
-            $prompt .= "## DOCUMENTO {$docNum}: {$descricao}\n\n";
-            $prompt .= $texto . "\n\n";
-            $prompt .= "---\n\n";
-        }
-
-        $prompt .= "# TAREFA\n\n";
-        $prompt .= $promptTemplate;
+        $prompt = $this->getPromptBuilder()->buildSimpleProcessAnalysisPrompt($promptTemplate, $documentos, $contextoDados);
 
         return $this->callAPI($prompt, $deepThinkingEnabled);
     }
@@ -519,24 +461,7 @@ abstract class AbstractAIService implements AIProviderInterface
      */
     protected function summarizeDocument(string $documentText, string $descricao, bool $deepThinkingEnabled = false): string
     {
-        $promptSumarizacao = <<<PROMPT
-Você é um assistente jurídico especializado. Resuma o documento abaixo em 2-3 parágrafos concisos, destacando:
-
-1. **Tipo de manifestação** (petição, contestação, decisão, despacho, sentença, recurso, contrato, etc.)
-2. **Partes envolvidas**
-3. **Pedidos ou decisões principais**
-4. **Fundamentos legais citados**
-5. **Fatos relevantes**
-6. **Datas importantes**
-
-**IMPORTANTE:** Preserve informações essenciais para compreensão do documento.
-
-**Descrição do documento:** {$descricao}
-
-**DOCUMENTO:**
-
-{$documentText}
-PROMPT;
+        $promptSumarizacao = $this->getPromptBuilder()->buildSummarizationPrompt($documentText, $descricao);
 
         $response = $this->callAPI($promptSumarizacao, $deepThinkingEnabled);
 
@@ -548,19 +473,7 @@ PROMPT;
      */
     protected function formatAssuntos(array $assuntos): string
     {
-        if (empty($assuntos)) {
-            return 'Não informados';
-        }
-
-        $nomes = array_map(function ($assunto) {
-            return $assunto['nomeAssunto']
-                ?? $assunto['descricao']
-                ?? $assunto['codigoAssunto']
-                ?? $assunto['codigoNacional']
-                ?? 'Assunto';
-        }, $assuntos);
-
-        return implode(', ', $nomes);
+        return $this->getPromptBuilder()->formatAssuntos($assuntos);
     }
 
     /**
@@ -568,38 +481,7 @@ PROMPT;
      */
     protected function withRetry(callable $apiCall, int $maxRetries = self::MAX_RETRIES_ON_RATE_LIMIT): string
     {
-        $attempt = 0;
-        $lastException = null;
-
-        while ($attempt < $maxRetries) {
-            $attempt++;
-
-            try {
-                return $apiCall($attempt);
-            } catch (\Exception $e) {
-                $lastException = $e;
-
-                if ($this->isRateLimitError($e)) {
-                    if ($attempt < $maxRetries) {
-                        $backoffMs = $this->calculateBackoff($attempt);
-                        Log::warning("Rate limit atingido no " . $this->getName() . ". Tentativa {$attempt}/{$maxRetries}. Aguardando {$backoffMs}ms");
-                        usleep($backoffMs * 1000);
-                        continue;
-                    }
-                }
-
-                if ($attempt < 3 && $this->isConnectionError($e)) {
-                    $retryDelay = 2000 * $attempt;
-                    Log::warning("Erro de conexão no " . $this->getName() . ". Tentativa {$attempt}/3. Aguardando {$retryDelay}ms");
-                    usleep($retryDelay * 1000);
-                    continue;
-                }
-
-                throw $e;
-            }
-        }
-
-        throw $lastException ?? new \Exception("Falha ao chamar API " . $this->getName() . " após múltiplas tentativas");
+        return $this->getRetryPolicy()->execute($apiCall, $this->getName(), $maxRetries);
     }
 
     /**
@@ -607,10 +489,7 @@ PROMPT;
      */
     protected function isRateLimitError(\Exception $e): bool
     {
-        $msg = strtolower($e->getMessage());
-        return str_contains($msg, '429') ||
-            str_contains($msg, 'rate limit') ||
-            str_contains($msg, 'too many requests');
+        return $this->getRetryPolicy()->isRateLimitError($e);
     }
 
     /**
@@ -618,11 +497,7 @@ PROMPT;
      */
     protected function isConnectionError(\Exception $e): bool
     {
-        $msg = strtolower($e->getMessage());
-        return str_contains($msg, 'timeout') ||
-            str_contains($msg, 'connection') ||
-            str_contains($msg, 'curl error') ||
-            str_contains($msg, '504');
+        return $this->getRetryPolicy()->isConnectionError($e);
     }
 
     /**
@@ -630,6 +505,66 @@ PROMPT;
      */
     protected function calculateBackoff(int $attempt): int
     {
-        return static::RATE_LIMIT_BACKOFF_BASE_MS * (int) pow(2, $attempt - 1);
+        return $this->getRetryPolicy()->calculateBackoff($attempt);
+    }
+
+    protected function getRetryPolicy(): AIRetryPolicy
+    {
+        if ($this->retryPolicy !== null) {
+            return $this->retryPolicy;
+        }
+
+        try {
+            $this->retryPolicy = app(AIRetryPolicy::class);
+        } catch (\Throwable) {
+            $this->retryPolicy = new AIRetryPolicy(static::RATE_LIMIT_BACKOFF_BASE_MS);
+        }
+
+        return $this->retryPolicy;
+    }
+
+    protected function getPromptBuilder(): AIAnalysisPromptBuilder
+    {
+        if ($this->promptBuilder !== null) {
+            return $this->promptBuilder;
+        }
+
+        try {
+            $this->promptBuilder = app(AIAnalysisPromptBuilder::class);
+        } catch (\Throwable) {
+            $this->promptBuilder = new AIAnalysisPromptBuilder();
+        }
+
+        return $this->promptBuilder;
+    }
+
+    protected function getFlowResolver(): AIAnalysisFlowResolver
+    {
+        if ($this->flowResolver !== null) {
+            return $this->flowResolver;
+        }
+
+        try {
+            $this->flowResolver = app(AIAnalysisFlowResolver::class);
+        } catch (\Throwable) {
+            $this->flowResolver = new AIAnalysisFlowResolver();
+        }
+
+        return $this->flowResolver;
+    }
+
+    protected function getAnalysisPipeline(): AIAnalysisExecutionPipeline
+    {
+        if ($this->analysisPipeline !== null) {
+            return $this->analysisPipeline;
+        }
+
+        try {
+            $this->analysisPipeline = app(AIAnalysisExecutionPipeline::class);
+        } catch (\Throwable) {
+            $this->analysisPipeline = new AIAnalysisExecutionPipeline();
+        }
+
+        return $this->analysisPipeline;
     }
 }

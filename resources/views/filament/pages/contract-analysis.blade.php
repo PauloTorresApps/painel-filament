@@ -47,7 +47,7 @@
                     Última Análise
                 </x-slot>
 
-                <div class="space-y-4" wire:poll.5s="refreshAnalysisStatus">
+                <div class="space-y-4" wire:poll.8s="refreshAnalysisStatus">
                     {{-- Header com status --}}
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-3">
@@ -280,7 +280,7 @@
                             </div>
 
                             <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto">
-                                {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->legal_opinion_result) !!}
+                                {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->legal_opinion_result, ['html_input' => 'strip', 'allow_unsafe_links' => false]) !!}
                             </div>
 
                             {{-- Metadados da IA (Parecer) --}}
@@ -375,7 +375,7 @@
 
                     {{-- Infográfico em processamento --}}
                     @if($this->latestAnalysis->isInfographicProcessing())
-                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4" wire:poll.2s="loadLatestAnalysis">
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4" wire:poll.8s="loadLatestAnalysis">
                             <div class="p-4 bg-success-50 dark:bg-success-950 rounded-lg space-y-4">
                                 {{-- Header com status e botão cancelar --}}
                                 <div class="flex items-center justify-between gap-3">

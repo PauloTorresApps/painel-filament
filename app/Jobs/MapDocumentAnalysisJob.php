@@ -126,7 +126,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
             $hasOriginalContent = $microAnalysis->hasOriginalContent();
 
-            Log::info('MapDocumentAnalysisJob: Iniciando processamento', [
+            $this->verboseLog('MapDocumentAnalysisJob: Iniciando processamento', [
                 'micro_id' => $this->microAnalysisId,
                 'document_index' => $microAnalysis->document_index,
                 'descricao' => $microAnalysis->descricao,
@@ -210,7 +210,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
 
                 $microAnalysis->update($structuredUpdate);
 
-                Log::info('MapDocumentAnalysisJob: Resultado estruturado processado', [
+                $this->verboseLog('MapDocumentAnalysisJob: Resultado estruturado processado', [
                     'micro_id' => $this->microAnalysisId,
                     'classificacao' => $structuredData['classificacao'] ?? 'N/A',
                     'relevancia' => $structuredData['relevancia'] ?? 'N/A',
@@ -241,7 +241,7 @@ class MapDocumentAnalysisJob implements ShouldQueue
             // Salva arquivo de debug com resultado da análise
             $this->saveAnalysisToFile($microAnalysis, $result, $systemPrompt, $documentPrompt, $metadata);
 
-            Log::info('MapDocumentAnalysisJob: Concluído com sucesso', [
+            $this->verboseLog('MapDocumentAnalysisJob: Concluído com sucesso', [
                 'micro_id' => $this->microAnalysisId,
                 'processing_time_ms' => $processingTimeMs,
                 'strategy_used' => $microAnalysis->processing_strategy,
@@ -532,7 +532,7 @@ PROMPT;
             new TextProcessingStrategy($this->getMapAnalysisSchema()),
         ];
 
-        Log::info('MapDocumentAnalysisJob: Estratégia de processamento', [
+        $this->verboseLog('MapDocumentAnalysisJob: Estratégia de processamento', [
             'micro_id' => $microAnalysis->id,
             'strategy' => $microAnalysis->processing_strategy ?? 'text',
             'is_scanned' => $microAnalysis->is_scanned,
@@ -843,7 +843,7 @@ MD;
 
             Storage::disk('local')->put("{$baseDir}/{$fileName}", $content);
 
-            Log::info('MapDocumentAnalysisJob: Arquivo de debug salvo', [
+            $this->verboseLog('MapDocumentAnalysisJob: Arquivo de debug salvo', [
                 'path' => "{$baseDir}/{$fileName}",
                 'micro_id' => $microAnalysis->id
             ]);
@@ -855,6 +855,15 @@ MD;
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    private function verboseLog(string $message, array $context = []): void
+    {
+        if (!config('analysis.telemetry.verbose_job_logs', false)) {
+            return;
+        }
+
+        Log::info($message, $context);
     }
 
 }

@@ -4,7 +4,10 @@ namespace App\Filament\Analises\Pages;
 
 use BackedEnum;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 
 class ProcessDetails extends Page
 {
@@ -25,6 +28,7 @@ class ProcessDetails extends Page
     public ?int $judicialUserId = null;
     public ?string $senha = null;
     public ?string $chave = null;
+    public bool $credenciaisPrecisamRevalidacao = false;
     public array $selectedDocuments = [];
 
     public function mount(): void
@@ -39,8 +43,36 @@ class ProcessDetails extends Page
             $this->documentos = $data['documentos'] ?? [];
             $this->numeroProcesso = $data['numeroProcesso'] ?? '';
             $this->judicialUserId = $data['judicial_user_id'] ?? null;
-            $this->senha = $data['senha'] ?? null;
-            $this->chave = $data['chave'] ?? null;
+
+            try {
+                $this->senha = isset($data['senha']) ? Crypt::decryptString($data['senha']) : null;
+            } catch (\Throwable) {
+                $this->senha = null;
+                $this->credenciaisPrecisamRevalidacao = true;
+
+                Log::warning('Falha ao descriptografar senha do webservice no cache', [
+                    'cache_key' => $cacheKey,
+                    'user_id' => Auth::id(),
+                    'numero_processo' => $this->numeroProcesso,
+                ]);
+            }
+
+            try {
+                $this->chave = !empty($data['chave']) ? Crypt::decryptString($data['chave']) : null;
+            } catch (\Throwable) {
+                $this->chave = null;
+                $this->credenciaisPrecisamRevalidacao = true;
+
+                Log::warning('Falha ao descriptografar chave do processo no cache', [
+                    'cache_key' => $cacheKey,
+                    'user_id' => Auth::id(),
+                    'numero_processo' => $this->numeroProcesso,
+                ]);
+            }
+
+            if (empty($this->senha)) {
+                $this->credenciaisPrecisamRevalidacao = true;
+            }
 
             // Recalcula sequência se não existir (fallback para processos consultados antes desta feature)
             $this->garantirSequenciaAnalise();
@@ -63,6 +95,22 @@ class ProcessDetails extends Page
             $this->numeroProcesso = session('numeroProcesso', '');
 
             session()->forget(['dadosBasicos', 'movimentos', 'documentos', 'numeroProcesso']);
+        }
+
+        if ($this->credenciaisPrecisamRevalidacao) {
+            \Filament\Notifications\Notification::make()
+                ->title('🔐 Credenciais expiradas ou inválidas')
+                ->body('Para continuar, informe novamente as credenciais do webservice e consulte o processo outra vez.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->redirect(
+                route('filament.analises.pages.process-analysis'),
+                navigate: true
+            );
+
+            return;
         }
 
         $this->initSelectedDocuments();
@@ -293,7 +341,7 @@ class ProcessDetails extends Page
                 ->icon('heroicon-o-document-text')
                 ->color('info')
                 ->url(function () {
-                    $ultimaAnalise = \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                    $ultimaAnalise = \App\Models\DocumentAnalysis::where('user_id', Auth::id())
                         ->where('numero_processo', $this->numeroProcesso)
                         ->where('status', 'completed')
                         ->latest()
@@ -304,7 +352,7 @@ class ProcessDetails extends Page
                         : null;
                 })
                 ->visible(function () {
-                    return \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                    return \App\Models\DocumentAnalysis::where('user_id', Auth::id())
                         ->where('numero_processo', $this->numeroProcesso)
                         ->where('status', 'completed')
                         ->exists();
@@ -329,11 +377,12 @@ class ProcessDetails extends Page
                 ->visible(fn () => !empty($this->documentos))
                 ->disabled(function () {
                     $noneSelected = collect($this->selectedDocuments)->filter()->isEmpty();
-                    $analysisInProgress = \App\Models\DocumentAnalysis::where('user_id', auth()->id())
+                    $analysisInProgress = \App\Models\DocumentAnalysis::where('user_id', Auth::id())
                         ->where('numero_processo', $this->numeroProcesso)
                         ->where('status', 'processing')
                         ->exists();
-                    return $noneSelected || $analysisInProgress;
+
+                    return $noneSelected || $analysisInProgress || $this->credenciaisPrecisamRevalidacao || empty($this->senha);
                 }),
 
             \Filament\Actions\Action::make('voltar')
@@ -350,8 +399,36 @@ class ProcessDetails extends Page
     public function enviarParaAnalise(): void
     {
         try {
+            $userId = Auth::id();
+
+            if ($this->credenciaisPrecisamRevalidacao || empty($this->senha)) {
+                \Filament\Notifications\Notification::make()
+                    ->title('🔐 Informe as credenciais novamente')
+                    ->body('Não foi possível recuperar as credenciais do cache. Volte e consulte o processo novamente informando usuário/senha (e chave, se aplicável).')
+                    ->warning()
+                    ->persistent()
+                    ->send();
+
+                return;
+            }
+
+            $rateLimitKey = "process-analysis:start:{$userId}";
+            if (RateLimiter::tooManyAttempts($rateLimitKey, 5)) {
+                $seconds = RateLimiter::availableIn($rateLimitKey);
+                $minutes = (int) ceil($seconds / 60);
+
+                \Filament\Notifications\Notification::make()
+                    ->title('⚠️ Limite de solicitações atingido')
+                    ->body("Você atingiu o limite de 5 análises por hora. Tente novamente em {$minutes} minuto(s).")
+                    ->warning()
+                    ->persistent()
+                    ->send();
+
+                return;
+            }
+
             // Verifica se já existe uma análise em andamento para este processo
-            $analiseEmAndamento = \App\Models\DocumentAnalysis::where('user_id', auth()->user()->id)
+            $analiseEmAndamento = \App\Models\DocumentAnalysis::where('user_id', $userId)
                 ->where('numero_processo', $this->numeroProcesso)
                 ->where('status', 'processing')
                 ->exists();
@@ -365,7 +442,7 @@ class ProcessDetails extends Page
                     ->send();
 
                 Log::info('Tentativa de análise duplicada bloqueada', [
-                    'user_id' => auth()->user()->id,
+                    'user_id' => $userId,
                     'numero_processo' => $this->numeroProcesso
                 ]);
 
@@ -406,7 +483,7 @@ class ProcessDetails extends Page
                     ->send();
 
                 Log::warning('Tentativa de análise sem prompt de parecer final configurado', [
-                    'user_id' => auth()->user()->id,
+                    'user_id' => $userId,
                     'numero_processo' => $this->numeroProcesso
                 ]);
 
@@ -453,7 +530,7 @@ class ProcessDetails extends Page
                     ->send();
 
                 Log::warning('Nenhum documento selecionado para análise', [
-                    'user_id' => auth()->user()->id,
+                    'user_id' => $userId,
                     'numero_processo' => $this->numeroProcesso,
                     'total_documentos' => count($this->documentos),
                 ]);
@@ -486,7 +563,7 @@ class ProcessDetails extends Page
                 ->implode(', ');
 
             $documentAnalysis = \App\Models\DocumentAnalysis::create([
-                'user_id' => auth()->user()->id,
+                'user_id' => $userId,
                 'numero_processo' => $this->numeroProcesso,
                 'classe_processual' => $classeProcessual,
                 'assuntos' => $assuntos !== '' ? $assuntos : null,
@@ -515,7 +592,7 @@ class ProcessDetails extends Page
 
             // Dispara o Job com o provider e modelo de IA selecionados
             \App\Jobs\AnalyzeProcessDocuments::dispatch(
-                auth()->user()->id,
+                $userId,
                 $this->numeroProcesso,
                 $documentosParaAnalise,
                 $this->dadosBasicos,
@@ -533,6 +610,8 @@ class ProcessDetails extends Page
                 $documentAnalysis->id                                // ID da análise já criada para redirecionamento imediato
             );
 
+            RateLimiter::hit($rateLimitKey, 3600);
+
             $totalDocs = count($documentosParaAnalise);
             $modelName = $reduceModel?->name ?? 'IA';
             $providerName = 'OpenRouter';
@@ -545,7 +624,7 @@ class ProcessDetails extends Page
                 ->send();
 
             Log::info('Análise de documentos iniciada', [
-                'user_id' => auth()->user()->id,
+                'user_id' => $userId,
                 'numero_processo' => $this->numeroProcesso,
                 'total_documentos' => count($documentosParaAnalise)
             ]);
@@ -565,7 +644,7 @@ class ProcessDetails extends Page
                 ->send();
 
             Log::error('Erro ao enviar documentos para análise', [
-                'user_id' => auth()->id(),
+                'user_id' => Auth::id(),
                 'numero_processo' => $this->numeroProcesso,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()

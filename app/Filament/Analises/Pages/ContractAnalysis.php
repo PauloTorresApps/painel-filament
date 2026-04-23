@@ -14,6 +14,7 @@ use Filament\Pages\Page;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\On;
 use UnitEnum;
@@ -142,6 +143,8 @@ class ContractAnalysis extends Page
      */
     public function executeAnalysis(?string $interestedPartyName = null): void
     {
+        $userId = Auth::id();
+
         if (!$this->uploadedFilePath) {
             Notification::make()
                 ->title('Nenhum arquivo selecionado')
@@ -179,16 +182,32 @@ class ContractAnalysis extends Page
             return;
         }
 
+        // Limita criação de análises por usuário para reduzir abuso de filas.
+        $rateLimitKey = "contract-analysis:start:{$userId}";
+        if (RateLimiter::tooManyAttempts($rateLimitKey, 5)) {
+            $seconds = RateLimiter::availableIn($rateLimitKey);
+            $minutes = (int) ceil($seconds / 60);
+
+            Notification::make()
+                ->title('Limite de solicitações atingido')
+                ->body("Você atingiu o limite de 5 análises por hora. Tente novamente em {$minutes} minuto(s).")
+                ->warning()
+                ->send();
+            return;
+        }
+
         try {
             // Cria registro da análise
             $analysis = ContractAnalysisModel::create([
-                'user_id' => Auth::id(),
+                'user_id' => $userId,
                 'file_name' => $this->uploadedFileName,
                 'file_path' => $this->uploadedFilePath,
                 'file_size' => $this->uploadedFileSize ?? 0,
                 'interested_party_name' => $interestedPartyName,
                 'status' => ContractAnalysisModel::STATUS_PENDING,
             ]);
+
+            RateLimiter::hit($rateLimitKey, 3600);
 
             // Dispara o job de análise
             AnalyzeContractJob::dispatch($analysis->id);
@@ -211,7 +230,7 @@ class ContractAnalysis extends Page
 
             Log::info('Análise de contrato iniciada', [
                 'analysis_id' => $analysis->id,
-                'user_id' => Auth::id(),
+                'user_id' => $userId,
                 'interested_party_name' => $interestedPartyName
             ]);
 

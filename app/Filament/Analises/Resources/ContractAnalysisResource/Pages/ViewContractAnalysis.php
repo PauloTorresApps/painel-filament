@@ -185,7 +185,7 @@ class ViewContractAnalysis extends ViewRecord
                             ->columnSpanFull(),
                     ])
                     ->visible(fn ($record) => $record->isInfographicProcessing())
-                    ->extraAttributes(['wire:poll.2s' => ''])
+                    ->extraAttributes(['wire:poll.8s' => ''])
                     ->columnSpanFull(),
 
                 // 6. Erro no Infográfico

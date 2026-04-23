@@ -128,4 +128,18 @@ return [
         'word_multiplier' => (float) env('ANALYSIS_TOKEN_MULTIPLIER', 1.3),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Telemetry
+    |--------------------------------------------------------------------------
+    |
+    | verbose_job_logs: habilita logs detalhados dos jobs de pipeline.
+    | Em produção, mantenha false para reduzir I/O e volume no Loki.
+    |
+    */
+
+    'telemetry' => [
+        'verbose_job_logs' => (bool) env('ANALYSIS_VERBOSE_JOB_LOGS', false),
+    ],
+
 ];

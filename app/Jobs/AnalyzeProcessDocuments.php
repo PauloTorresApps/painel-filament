@@ -266,7 +266,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             ];
         }
 
-        Log::info('AnalyzeProcessDocuments: Baixando todos os documentos em lote', [
+        $this->verboseLog('AnalyzeProcessDocuments: Baixando todos os documentos em lote', [
             'analysis_id' => $documentAnalysis->id,
             'total_ids' => count($idsDocumentos),
         ]);
@@ -290,7 +290,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         // Extrai lista de documentos da resposta SOAP
         $documentosRetornados = $this->extractDocumentosFromResponse($resultado);
 
-        Log::info('AnalyzeProcessDocuments: Documentos recebidos do e-Proc', [
+        $this->verboseLog('AnalyzeProcessDocuments: Documentos recebidos do e-Proc', [
             'analysis_id' => $documentAnalysis->id,
             'retornados' => count($documentosRetornados),
             'solicitados' => count($idsDocumentos),
@@ -451,7 +451,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
                     $isScanned = $pdfResult['is_scanned'];
                     $processingStrategy = $isScanned ? 'pdf_ocr' : 'pdf_text';
 
-                    Log::info('AnalyzeProcessDocuments: HTML convertido para PDF via wkhtmltopdf', [
+                    $this->verboseLog('AnalyzeProcessDocuments: HTML convertido para PDF via wkhtmltopdf', [
                         'id_documento' => $idDocumento,
                         'chars_extracted' => mb_strlen($texto),
                         'is_scanned' => $isScanned,
@@ -484,7 +484,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             $isScanned = $pdfResult['is_scanned'];
             $processingStrategy = $isScanned ? 'pdf_ocr' : 'pdf_text';
 
-            Log::info('AnalyzeProcessDocuments: PDF processado', [
+            $this->verboseLog('AnalyzeProcessDocuments: PDF processado', [
                 'id_documento' => $idDocumento,
                 'chars_extracted' => mb_strlen($texto),
                 'is_scanned' => $isScanned,
@@ -508,7 +508,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
             'reduce_level' => 0,
         ]);
 
-        Log::info('AnalyzeProcessDocuments: Documento processado', [
+        $this->verboseLog('AnalyzeProcessDocuments: Documento processado', [
             'analysis_id' => $documentAnalysis->id,
             'document_index' => $metadata['index'],
             'id_documento' => $idDocumento,
@@ -539,7 +539,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
 
             Storage::disk('local')->put($path, $decodedContent);
 
-            Log::info('AnalyzeProcessDocuments: Conteúdo original salvo', [
+            $this->verboseLog('AnalyzeProcessDocuments: Conteúdo original salvo', [
                 'id_documento' => $idDocumento,
                 'path' => $path,
                 'size_bytes' => strlen($decodedContent),
@@ -569,7 +569,7 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         try {
             $texto = $ocrService->extractText($base64Content, $mimetype, "doc_{$idDocumento}");
 
-            Log::info('AnalyzeProcessDocuments: Texto extraído da imagem via OCR', [
+            $this->verboseLog('AnalyzeProcessDocuments: Texto extraído da imagem via OCR', [
                 'id_documento' => $idDocumento,
                 'chars_extracted' => mb_strlen($texto),
             ]);
@@ -662,5 +662,14 @@ class AnalyzeProcessDocuments implements ShouldQueue, ShouldBeUnique
         $nomes = array_filter($nomes);
 
         return !empty($nomes) ? implode(', ', $nomes) : null;
+    }
+
+    private function verboseLog(string $message, array $context = []): void
+    {
+        if (!config('analysis.telemetry.verbose_job_logs', false)) {
+            return;
+        }
+
+        Log::info($message, $context);
     }
 }

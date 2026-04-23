@@ -55,12 +55,12 @@ class ContractAnalysisResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()->with('user');
         $user = Auth::user();
 
         // Se não há usuário autenticado, retorna query vazia
         if (!$user) {
-            return $query->whereRaw('1 = 0');
+            return $query->whereKey(-1);
         }
 
         // Admin e Manager veem todas as análises
