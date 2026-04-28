@@ -182,6 +182,10 @@ services:
       - TEMPO_ENDPOINT=${TEMPO_ENDPOINT:-tempo:4317}
       - PROM_ENDPOINT=${PROM_ENDPOINT:-0.0.0.0:9090}
       - LOKI_ENDPOINT=${LOKI_ENDPOINT:-http://loki:3100/otlp}
+      - LANGFUSE_OTLP_ENDPOINT=${LANGFUSE_OTLP_ENDPOINT:-http://host.docker.internal:3000/api/public/otel/v1/traces}
+      - LANGFUSE_OTLP_BASIC_AUTH=${LANGFUSE_OTLP_BASIC_AUTH:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       prometheus:
         condition: service_healthy

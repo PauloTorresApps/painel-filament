@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class DocumentAnalysis extends Model
 {
@@ -36,6 +37,9 @@ class DocumentAnalysis extends Model
         'reduce_processed_batches',
         'reduce_total_batches',
         'progress_message',
+        'analysis_ai_metadata',
+        'langfuse_trace_id',
+        'langfuse_session_id',
     ];
 
     protected $casts = [
@@ -51,7 +55,34 @@ class DocumentAnalysis extends Model
         'reduce_total_levels' => 'integer',
         'reduce_processed_batches' => 'integer',
         'reduce_total_batches' => 'integer',
+        'analysis_ai_metadata' => 'array',
     ];
+
+    /**
+     * Garante IDs estáveis de correlação para Langfuse/OTEL.
+     */
+    public function ensureLangfuseContext(): array
+    {
+        $updates = [];
+
+        if (empty($this->langfuse_trace_id)) {
+            $updates['langfuse_trace_id'] = (string) Str::uuid();
+        }
+
+        if (empty($this->langfuse_session_id)) {
+            $updates['langfuse_session_id'] = (string) Str::uuid();
+        }
+
+        if (!empty($updates)) {
+            $this->forceFill($updates)->save();
+            $this->refresh();
+        }
+
+        return [
+            'trace_id' => (string) $this->langfuse_trace_id,
+            'session_id' => (string) $this->langfuse_session_id,
+        ];
+    }
 
     /**
      * Constantes para fases de processamento

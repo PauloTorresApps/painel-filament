@@ -10,6 +10,8 @@ use OpenTelemetry\API\Trace\StatusCode;
 
 class OpenRouterService extends AbstractAIService
 {
+    private const OBSERVABILITY_TEXT_LIMIT = 4000;
+
     protected ?OpenRouterResponseHandler $responseHandler = null;
     protected ?OpenRouterPayloadEnricher $payloadEnricher = null;
 
@@ -342,6 +344,34 @@ class OpenRouterService extends AbstractAIService
             $span->setAttribute('ai.model', (string) ($payload['model'] ?? $this->model));
             $span->setAttribute('ai.call_type', $callType);
             $span->setAttribute('ai.reasoning_enabled', $useReasoning);
+
+            // GenAI semantic conventions + Langfuse-specific hints.
+            $span->setAttribute('gen_ai.system', 'openrouter');
+            $span->setAttribute('gen_ai.request.model', (string) ($payload['model'] ?? $this->model));
+            $span->setAttribute('langfuse.observation.type', 'generation');
+            $span->setAttribute('langfuse.trace.name', 'openrouter.' . strtolower(str_replace(' ', '_', $callType)));
+
+            $promptInput = $this->extractPromptInput($payload);
+            if ($promptInput !== '') {
+                $span->setAttribute('langfuse.observation.input', $this->truncateForObservability($promptInput));
+            }
+
+            $analysisContext = $this->getAnalysisContext();
+            if (!empty($analysisContext['user_id'])) {
+                $span->setAttribute('langfuse.user.id', (string) $analysisContext['user_id']);
+            }
+            if (!empty($analysisContext['session_id'])) {
+                $span->setAttribute('langfuse.session.id', (string) $analysisContext['session_id']);
+            }
+            if (!empty($analysisContext['trace_id'])) {
+                $span->setAttribute('langfuse.trace.id', (string) $analysisContext['trace_id']);
+            }
+            if (!empty($analysisContext['entity'])) {
+                $span->setAttribute('langfuse.entity', (string) $analysisContext['entity']);
+            }
+            if (!empty($analysisContext['entity_id'])) {
+                $span->setAttribute('langfuse.entity_id', (string) $analysisContext['entity_id']);
+            }
         }
 
         try {
@@ -399,6 +429,20 @@ class OpenRouterService extends AbstractAIService
                     $span->setAttribute('ai.prompt_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
                     $span->setAttribute('ai.completion_tokens', (int) ($usageArray['completion_tokens'] ?? 0));
                     $span->setAttribute('ai.total_tokens', $totalTokens);
+
+                    $span->setAttribute('gen_ai.usage.input_tokens', (int) ($usageArray['prompt_tokens'] ?? 0));
+                    $span->setAttribute('gen_ai.usage.output_tokens', (int) ($usageArray['completion_tokens'] ?? 0));
+                    $span->setAttribute('gen_ai.usage.total_tokens', $totalTokens);
+                    $span->setAttribute('gen_ai.response.model', (string) ($model ?? $this->model));
+
+                    $generationId = $parsedResponse['generation_id'] ?? null;
+                    if (is_string($generationId) && $generationId !== '') {
+                        $span->setAttribute('gen_ai.response.id', $generationId);
+                    }
+
+                    if ($text !== '') {
+                        $span->setAttribute('langfuse.observation.output', $this->truncateForObservability($text));
+                    }
                 }
 
                 Log::info("OpenRouter API - Resposta recebida ({$callType})", [
@@ -440,6 +484,67 @@ class OpenRouterService extends AbstractAIService
                 $span->end();
             }
         }
+    }
+
+    private function extractPromptInput(array $payload): string
+    {
+        $messages = $payload['messages'] ?? null;
+
+        if (!is_array($messages)) {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach ($messages as $message) {
+            if (!is_array($message)) {
+                continue;
+            }
+
+            $role = is_string($message['role'] ?? null) ? $message['role'] : 'unknown';
+            $content = $message['content'] ?? null;
+
+            if (is_string($content)) {
+                $parts[] = "[{$role}] {$content}";
+                continue;
+            }
+
+            if (!is_array($content)) {
+                continue;
+            }
+
+            $contentParts = [];
+            foreach ($content as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $type = $item['type'] ?? null;
+                if ($type === 'text' && is_string($item['text'] ?? null)) {
+                    $contentParts[] = $item['text'];
+                } elseif ($type === 'image_url') {
+                    $contentParts[] = '[image_url omitted]';
+                } elseif ($type === 'file') {
+                    $filename = is_string($item['file']['filename'] ?? null) ? $item['file']['filename'] : 'file';
+                    $contentParts[] = "[file: {$filename}]";
+                }
+            }
+
+            if (!empty($contentParts)) {
+                $parts[] = "[{$role}] " . implode("\n", $contentParts);
+            }
+        }
+
+        return implode("\n\n", $parts);
+    }
+
+    private function truncateForObservability(string $value): string
+    {
+        if (mb_strlen($value) <= self::OBSERVABILITY_TEXT_LIMIT) {
+            return $value;
+        }
+
+        return mb_substr($value, 0, self::OBSERVABILITY_TEXT_LIMIT) . '... [truncated]';
     }
 
     private function getResponseHandler(): OpenRouterResponseHandler

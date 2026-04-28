@@ -46,6 +46,11 @@ abstract class AbstractAIService implements AIProviderInterface
     protected ?AIAnalysisExecutionPipeline $analysisPipeline = null;
 
     /**
+     * Contexto de observabilidade propagado pelos jobs/chamadores.
+     */
+    protected array $analysisContext = [];
+
+    /**
      * Define o timeout para a chamada HTTP.
      */
     public function setTimeout(int $seconds): self
@@ -102,6 +107,36 @@ abstract class AbstractAIService implements AIProviderInterface
     public function getModel(): string
     {
         return $this->model;
+    }
+
+    /**
+     * Define contexto de observabilidade da análise (Langfuse/OTEL).
+     */
+    public function setAnalysisContext(array $context): self
+    {
+        $normalized = [];
+
+        foreach ($context as $key => $value) {
+            if (!is_string($key) || $key === '') {
+                continue;
+            }
+
+            if (is_scalar($value) || $value === null) {
+                $normalized[$key] = $value;
+            }
+        }
+
+        $this->analysisContext = $normalized;
+
+        return $this;
+    }
+
+    /**
+     * Retorna o contexto de observabilidade atual.
+     */
+    public function getAnalysisContext(): array
+    {
+        return $this->analysisContext;
     }
 
     /**
@@ -172,6 +207,7 @@ abstract class AbstractAIService implements AIProviderInterface
             'max_tokens_override' => $this->maxTokensOverride,
             'input_char_limit' => $this->inputCharLimit,
             'temperature_override' => $this->temperatureOverride,
+            'analysis_context' => $this->analysisContext,
         ];
     }
 

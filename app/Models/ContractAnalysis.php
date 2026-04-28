@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class ContractAnalysis extends Model
 {
@@ -38,6 +39,8 @@ class ContractAnalysis extends Model
         'processing_time_ms',
         'legal_opinion_processing_time_ms',
         'infographic_processing_time_ms',
+        'langfuse_trace_id',
+        'langfuse_session_id',
     ];
 
     protected $casts = [
@@ -50,6 +53,32 @@ class ContractAnalysis extends Model
         'legal_opinion_ai_metadata' => 'array',
         'infographic_ai_metadata' => 'array',
     ];
+
+    /**
+     * Garante IDs estáveis de correlação para Langfuse/OTEL.
+     */
+    public function ensureLangfuseContext(): array
+    {
+        $updates = [];
+
+        if (empty($this->langfuse_trace_id)) {
+            $updates['langfuse_trace_id'] = (string) Str::uuid();
+        }
+
+        if (empty($this->langfuse_session_id)) {
+            $updates['langfuse_session_id'] = (string) Str::uuid();
+        }
+
+        if (!empty($updates)) {
+            $this->forceFill($updates)->save();
+            $this->refresh();
+        }
+
+        return [
+            'trace_id' => (string) $this->langfuse_trace_id,
+            'session_id' => (string) $this->langfuse_session_id,
+        ];
+    }
 
     /**
      * Constantes para fases do infográfico

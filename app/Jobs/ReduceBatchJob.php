@@ -168,6 +168,15 @@ class ReduceBatchJob implements ShouldQueue
             // Obtém o serviço de IA
             $aiService = AIServiceFactory::make($this->aiProvider);
 
+            $langfuseContext = $documentAnalysis->ensureLangfuseContext();
+            $aiService->setAnalysisContext([
+                'user_id' => (string) $documentAnalysis->user_id,
+                'session_id' => $langfuseContext['session_id'],
+                'trace_id' => $langfuseContext['trace_id'],
+                'entity' => 'document_analysis',
+                'entity_id' => (string) $documentAnalysis->id,
+            ]);
+
             $resolvedModelId = $this->resolveReduceModelId($documentAnalysis);
 
             // Define o modelo específico se configurado

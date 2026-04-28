@@ -108,6 +108,15 @@ class ChunkLargeDocumentJob implements ShouldQueue
             // Obtém o serviço de IA
             // Modelo do prompt como base, override por purpose se cadastrado
             $aiService = AIServiceFactory::make($this->aiProvider);
+            $langfuseContext = $documentAnalysis->ensureLangfuseContext();
+            $aiService->setAnalysisContext([
+                'user_id' => (string) $documentAnalysis->user_id,
+                'session_id' => $langfuseContext['session_id'],
+                'trace_id' => $langfuseContext['trace_id'],
+                'entity' => 'document_analysis',
+                'entity_id' => (string) $documentAnalysis->id,
+            ]);
+
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);
             }

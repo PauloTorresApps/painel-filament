@@ -149,6 +149,16 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
 
             $storyboardAiService = AIServiceFactory::make($storyboardPrompt->ai_provider);
 
+            $langfuseContext = $analysis->ensureLangfuseContext();
+            $baseAnalysisContext = [
+                'user_id' => (string) $analysis->user_id,
+                'session_id' => $langfuseContext['session_id'],
+                'trace_id' => $langfuseContext['trace_id'],
+                'entity' => 'contract_analysis',
+                'entity_id' => (string) $analysis->id,
+            ];
+            $storyboardAiService->setAnalysisContext($baseAnalysisContext);
+
             if ($storyboardPrompt->aiModel && !empty($storyboardPrompt->aiModel->model_id)) {
                 $storyboardAiService->setModel($storyboardPrompt->aiModel->model_id);
             }
@@ -215,6 +225,7 @@ class GenerateInfographicJob implements ShouldQueue, ShouldBeUnique
             Log::info('Fase 2: Gerando HTML do infográfico', ['id' => $analysis->id]);
 
             $htmlAiService = AIServiceFactory::make($infographicPrompt->ai_provider);
+            $htmlAiService->setAnalysisContext($baseAnalysisContext);
 
             if ($infographicPrompt->aiModel && !empty($infographicPrompt->aiModel->model_id)) {
                 $htmlAiService->setModel($infographicPrompt->aiModel->model_id);

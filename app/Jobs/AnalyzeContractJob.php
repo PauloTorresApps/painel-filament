@@ -159,6 +159,15 @@ class AnalyzeContractJob implements ShouldQueue, ShouldBeUnique
             // Obtém o serviço de IA apropriado
             $aiService = AIServiceFactory::make($prompt->ai_provider);
 
+            $langfuseContext = $analysis->ensureLangfuseContext();
+            $aiService->setAnalysisContext([
+                'user_id' => (string) $analysis->user_id,
+                'session_id' => $langfuseContext['session_id'],
+                'trace_id' => $langfuseContext['trace_id'],
+                'entity' => 'contract_analysis',
+                'entity_id' => (string) $analysis->id,
+            ]);
+
             // Define o modelo específico do prompt (se houver)
             if ($prompt->aiModel && !empty($prompt->aiModel->model_id)) {
                 $aiService->setModel($prompt->aiModel->model_id);

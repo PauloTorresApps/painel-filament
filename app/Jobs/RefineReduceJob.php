@@ -139,6 +139,15 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
             );
 
             $aiService = AIServiceFactory::make($this->aiProvider);
+            $langfuseContext = $documentAnalysis->ensureLangfuseContext();
+            $aiService->setAnalysisContext([
+                'user_id' => (string) $documentAnalysis->user_id,
+                'session_id' => $langfuseContext['session_id'],
+                'trace_id' => $langfuseContext['trace_id'],
+                'entity' => 'document_analysis',
+                'entity_id' => (string) $documentAnalysis->id,
+            ]);
+
             $resolvedModelId = $this->resolveReduceModelId($documentAnalysis);
 
             if (!empty($resolvedModelId)) {
@@ -185,6 +194,7 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
             }
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
+            $finalAiMetadata = $aiService->getLastAnalysisMetadata();
 
             // Calcula tempo total
             $totalProcessingTime = $documentAnalysis->microAnalyses()
@@ -197,6 +207,7 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                 'status' => 'completed',
                 'current_phase' => DocumentAnalysis::PHASE_COMPLETED,
                 'ai_analysis' => $finalAnalysis,
+                'analysis_ai_metadata' => $finalAiMetadata,
                 'processing_time_ms' => $totalProcessingTime,
                 'is_resumable' => false,
                 'last_processed_at' => now(),

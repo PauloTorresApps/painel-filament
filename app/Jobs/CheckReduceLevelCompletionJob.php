@@ -157,6 +157,15 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
 
         $aiService = AIServiceFactory::make($this->aiProvider);
 
+        $langfuseContext = $documentAnalysis->ensureLangfuseContext();
+        $aiService->setAnalysisContext([
+            'user_id' => (string) $documentAnalysis->user_id,
+            'session_id' => $langfuseContext['session_id'],
+            'trace_id' => $langfuseContext['trace_id'],
+            'entity' => 'document_analysis',
+            'entity_id' => (string) $documentAnalysis->id,
+        ]);
+
         // Define o modelo específico se configurado
         if ($this->aiModelId) {
             $aiService->setModel($this->aiModelId);
@@ -225,6 +234,7 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
             'status' => 'completed',
             'current_phase' => DocumentAnalysis::PHASE_COMPLETED,
             'ai_analysis' => $finalAnalysis,
+            'analysis_ai_metadata' => $apiMetadata,
             'processing_time_ms' => $totalProcessingTime,
             'is_resumable' => false,
             'last_processed_at' => now(),

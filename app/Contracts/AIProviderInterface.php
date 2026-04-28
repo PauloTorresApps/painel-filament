@@ -115,6 +115,17 @@ interface AIProviderInterface
     public function getModel(): string;
 
     /**
+     * Define contexto de observabilidade da análise (Langfuse/OTEL).
+     * Exemplo: user_id, session_id, trace_id, entity, entity_id.
+     */
+    public function setAnalysisContext(array $context): self;
+
+    /**
+     * Retorna o contexto de observabilidade atualmente aplicado.
+     */
+    public function getAnalysisContext(): array;
+
+    /**
      * Retorna os metadados acumulados da última análise (tokens, annotations, etc.)
      */
     public function getLastAnalysisMetadata(): array;
