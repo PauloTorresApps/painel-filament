@@ -2,7 +2,7 @@
 
 namespace App\Filament\Traits;
 
-use App\Jobs\GenerateInfographicJob;
+use App\Jobs\ContractAnalysis\GenerateInfographicJob;
 use App\Models\AiPrompt;
 use App\Models\ContractAnalysis;
 use Filament\Actions\Action;

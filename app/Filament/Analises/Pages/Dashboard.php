@@ -2,10 +2,10 @@
 
 namespace App\Filament\Analises\Pages;
 
-use App\Filament\Analises\Widgets\ContractAnalysisStatsWidget;
-use App\Filament\Analises\Widgets\ProcessAnalysisStatsWidget;
-use App\Filament\Analises\Widgets\RecentContractAnalysesWidget;
-use App\Filament\Analises\Widgets\RecentProcessAnalysesWidget;
+use App\Filament\Analises\Widgets\ContractAnalysis\ContractAnalysisStatsWidget;
+use App\Filament\Analises\Widgets\ProcessAnalysis\ProcessAnalysisStatsWidget;
+use App\Filament\Analises\Widgets\ContractAnalysis\RecentContractAnalysesWidget;
+use App\Filament\Analises\Widgets\ProcessAnalysis\RecentProcessAnalysesWidget;
 use BackedEnum;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;

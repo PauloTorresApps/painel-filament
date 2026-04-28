@@ -4,9 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Traits\WithOtelTracing;
 use Illuminate\Http\Request;
-use App\Services\EprocService;
-use App\Services\CnjService;
-use App\Services\EprocDataNormalizer;
+use App\Services\ProcessAnalysis\EprocService;
+use App\Services\ProcessAnalysis\CnjService;
+use App\Services\ProcessAnalysis\EprocDataNormalizer;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\RateLimiter;

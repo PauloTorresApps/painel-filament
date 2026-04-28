@@ -3,7 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Analises\Pages\UserProfile;
-use App\Filament\Analises\Resources\ContractAnalysisResource;
+use App\Filament\Analises\Resources\ContractAnalysis\ContractAnalysisResource;
 use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
