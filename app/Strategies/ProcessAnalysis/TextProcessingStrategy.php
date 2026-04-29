@@ -107,6 +107,10 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
                     'micro_id' => $microAnalysis->id,
                     'error' => $e->getMessage(),
                 ]);
+
+                if (!config('services.openrouter.structured_map_fallback_to_text', false)) {
+                    throw $e;
+                }
             }
         }
 

@@ -14,6 +14,7 @@ use App\Strategies\ProcessAnalysis\TextProcessingStrategy;
 use App\Strategies\ProcessAnalysis\VisionProcessingStrategy;
 use App\Traits\HandlesJsonOutput;
 use Illuminate\Bus\Batchable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -31,13 +32,14 @@ use Illuminate\Support\Facades\Storage;
  * para aproveitar o prompt caching do OpenRouter (Anthropic, etc.),
  * reduzindo o custo de tokens repetidos entre documentos da mesma análise.
  */
-class MapDocumentAnalysisJob implements ShouldQueue
+class MapDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 {
     use Queueable, Batchable, HandlesJsonOutput;
 
     public int $timeout;
     public int $tries;
     public int $backoff;
+    public int $uniqueFor;
 
     public function __construct(
         public int $microAnalysisId,
@@ -48,8 +50,14 @@ class MapDocumentAnalysisJob implements ShouldQueue
         public ?string $customAnalysisPrompt = null   // Prompt customizado para análise de documentos
     ) {
         $this->timeout = config('analysis.jobs.map_document.timeout', 300);
-        $this->tries = config('analysis.jobs.map_document.tries', 3);
+        $this->tries = config('analysis.jobs.map_document.tries', 1);
         $this->backoff = config('analysis.jobs.map_document.backoff', 30);
+        $this->uniqueFor = config('analysis.jobs.map_document.unique_for', 900);
+    }
+
+    public function uniqueId(): string
+    {
+        return 'map_micro_' . $this->microAnalysisId;
     }
 
     public function middleware(): array
@@ -186,6 +194,38 @@ class MapDocumentAnalysisJob implements ShouldQueue
             // - Document prompt: conteúdo variável (específico por documento)
             $systemPrompt = $this->buildSystemPrompt();
             $documentPrompt = $this->buildDocumentPrompt($microAnalysis);
+
+            // Dedupe seguro no escopo da própria análise: reaproveita resultado
+            // quando outro documento equivalente (mesmo hash + estratégia) já foi concluído.
+            $mapCacheEnabled = (bool) config('analysis.map_cache.enabled', true);
+            if ($mapCacheEnabled) {
+                $cacheHash = $this->resolveMapCacheHash($microAnalysis);
+
+                if ($cacheHash) {
+                    if (empty($microAnalysis->file_annotation_hash)) {
+                        $microAnalysis->update(['file_annotation_hash' => $cacheHash]);
+                    }
+
+                    $cachedMicro = $this->findCachedMapResult($microAnalysis, $cacheHash);
+
+                    if ($cachedMicro) {
+                        $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
+
+                        $this->hydrateFromCachedResult($microAnalysis, $cachedMicro, $processingTimeMs);
+                        $microAnalysis->deleteOriginalContent();
+
+                        $this->verboseLog('MapDocumentAnalysisJob: Resultado reaproveitado via MAP cache', [
+                            'micro_id' => $this->microAnalysisId,
+                            'cached_micro_id' => $cachedMicro->id,
+                            'cache_hash' => $cacheHash,
+                        ]);
+
+                        $this->ensureMapToReduceTransition($microAnalysis);
+
+                        return;
+                    }
+                }
+            }
 
             // Roteia para a estratégia de análise mais adequada ao tipo de documento
             $result = $this->analyzeDocument($microAnalysis, $aiService, $systemPrompt, $documentPrompt);
@@ -416,16 +456,24 @@ class MapDocumentAnalysisJob implements ShouldQueue
                 ?? 'auto';
 
             $docCount = $documentAnalysis->total_documents ?? $totalCount;
+            $completedChars = (int) (clone $levelZero)
+                ->where('status', 'completed')
+                ->get(['micro_analysis'])
+                ->sum(fn (DocumentMicroAnalysis $m) => mb_strlen($m->micro_analysis ?? ''));
+            $directConsolidationLimit = (int) config('analysis.reduce.direct_consolidation_chars', 800000);
+
             $useRefineStrategy = match ($reduceStrategy) {
                 'refine' => true,
                 'batch' => false,
-                default => $docCount <= config('analysis.thresholds.refine_max_documents', 20),
+                default => $docCount <= config('analysis.thresholds.refine_max_documents', 20)
+                    && $completedChars <= $directConsolidationLimit,
             };
 
             Log::warning('MapDocumentAnalysisJob: Self-healing ativado para transição MAP -> REDUCE', [
                 'analysis_id' => $documentAnalysis->id,
                 'completed_docs' => $completedCount,
                 'failed_docs' => $failedCount,
+                'completed_chars' => $completedChars,
                 'strategy' => $useRefineStrategy ? 'refine' : 'batch',
             ]);
 
@@ -570,6 +618,63 @@ PROMPT;
         }
 
         throw new \RuntimeException("Nenhuma estratégia de processamento conseguiu processar o documento {$microAnalysis->id}");
+    }
+
+    /**
+     * Resolve um hash estável para dedupe de MAP.
+     * Prioriza hash de anotação do provider; fallback para hash local do texto extraído.
+     */
+    private function resolveMapCacheHash(DocumentMicroAnalysis $microAnalysis): ?string
+    {
+        if (!empty($microAnalysis->file_annotation_hash)) {
+            return (string) $microAnalysis->file_annotation_hash;
+        }
+
+        $text = $microAnalysis->extracted_text ?? '';
+        if ($text === '') {
+            return null;
+        }
+
+        return 'txt:' . hash('sha256', $text);
+    }
+
+    /**
+     * Busca micro-análise concluída equivalente para reaproveitamento no MAP.
+     * Escopo: mesma análise principal para evitar vazamento entre processos.
+     */
+    private function findCachedMapResult(DocumentMicroAnalysis $microAnalysis, string $cacheHash): ?DocumentMicroAnalysis
+    {
+        return DocumentMicroAnalysis::query()
+            ->where('document_analysis_id', $microAnalysis->document_analysis_id)
+            ->where('id', '!=', $microAnalysis->id)
+            ->where('reduce_level', 0)
+            ->where('status', 'completed')
+            ->whereNotNull('micro_analysis')
+            ->where('file_annotation_hash', $cacheHash)
+            ->where('processing_strategy', $microAnalysis->processing_strategy)
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Copia para o documento atual o resultado já concluído de uma micro-análise equivalente.
+     */
+    private function hydrateFromCachedResult(
+        DocumentMicroAnalysis $microAnalysis,
+        DocumentMicroAnalysis $cachedMicro,
+        int $processingTimeMs
+    ): void {
+        $microAnalysis->markAsCompleted(
+            (string) $cachedMicro->micro_analysis,
+            $cachedMicro->token_count,
+            $processingTimeMs
+        );
+
+        $microAnalysis->update([
+            'timeline_events' => $cachedMicro->timeline_events,
+            'aggregated_entities' => $cachedMicro->aggregated_entities,
+            'file_annotation_hash' => $cachedMicro->file_annotation_hash,
+        ]);
     }
 
     /**

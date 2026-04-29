@@ -140,15 +140,23 @@ class DispatchMapPhaseJob implements ShouldQueue
                 return;
             }
 
-            // Descobre estratégia antecipadamente
+            // Descobre estratégia antecipadamente (pode ser recalculada após o MAP)
             $originalTotalDocs = $microAnalysesCount + $completedMicroAnalysesCount + $failedDownloads;
-            $useRefineStrategy = $this->shouldUseRefineStrategy($originalTotalDocs);
+            $useRefineStrategy = $this->shouldUseRefineStrategy($originalTotalDocs, null);
 
             // Se não há jobs Map pendentes, mas existem os completados (Ex: Reprocessar apenas Reduce), dispara logo o Reduce
             if ($microAnalysesCount === 0 && $completedMicroAnalysesCount > 0) {
+                $completedChars = (int) $documentAnalysis->microAnalyses()
+                    ->where('status', 'completed')
+                    ->where('reduce_level', 0)
+                    ->sum(DB::raw('LENGTH(micro_analysis)'));
+                $useRefineStrategy = $this->shouldUseRefineStrategy($completedMicroAnalysesCount, $completedChars);
+
                 Log::info('DispatchMapPhaseJob: Pulando fase MAP e indo direto para REDUCE', [
                     'analysis_id' => $this->analysisId,
-                    'completed_count' => $completedMicroAnalysesCount
+                    'completed_count' => $completedMicroAnalysesCount,
+                    'completed_chars' => $completedChars,
+                    'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
                 ]);
                 $this->dispatchReducePhase($useRefineStrategy, $this->analysisId, $this->aiProvider, $this->deepThinkingEnabled, $this->aiModelId, $this->contextoDados);
                 return;
@@ -252,14 +260,13 @@ class DispatchMapPhaseJob implements ShouldQueue
                 ->name("map_analysis_{$analysisId}")
                 ->onQueue('analysis')
                 ->allowFailures()
-                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $aiModelId, $useRefineStrategy, $contextoDados, $userId) {
+                ->then(function (Batch $batch) use ($analysisId, $aiProvider, $deepThinkingEnabled, $aiModelId, $contextoDados, $userId) {
                     // Callback de sucesso: todos os MAPs concluídos
                     Log::info('DispatchMapPhaseJob: Batch de MAPs concluído', [
                         'analysis_id' => $analysisId,
                         'batch_id' => $batch->id,
                         'total_jobs' => $batch->totalJobs,
                         'failed_jobs' => $batch->failedJobs,
-                        'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
                     ]);
 
                     // Circuit breaker: aborta se taxa de falha exceder limite
@@ -297,6 +304,36 @@ class DispatchMapPhaseJob implements ShouldQueue
                             return;
                         }
                     }
+
+                    // Recalcula estratégia com base no MAP concluído para evitar
+                    // cair no Refine sequencial quando o volume agregado ficou alto.
+                    $documentAnalysis = DocumentAnalysis::find($analysisId);
+                    $completedCount = (int) ($documentAnalysis?->microAnalyses()
+                        ->where('status', 'completed')
+                        ->where('reduce_level', 0)
+                        ->count() ?? 0);
+                    $completedChars = (int) ($documentAnalysis?->microAnalyses()
+                        ->where('status', 'completed')
+                        ->where('reduce_level', 0)
+                        ->sum(DB::raw('LENGTH(micro_analysis)')) ?? 0);
+
+                    $dispatchJob = new DispatchMapPhaseJob(
+                        $analysisId,
+                        $aiProvider,
+                        $deepThinkingEnabled,
+                        $contextoDados,
+                        $aiModelId,
+                        $userId,
+                        'auto'
+                    );
+                    $useRefineStrategy = $dispatchJob->shouldUseRefineStrategy($completedCount, $completedChars);
+
+                    Log::info('DispatchMapPhaseJob: Estratégia REDUCE recalculada após MAP', [
+                        'analysis_id' => $analysisId,
+                        'completed_docs' => $completedCount,
+                        'completed_chars' => $completedChars,
+                        'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
+                    ]);
 
                     // Escolhe a estratégia de REDUCE
                     $dispatchJob = new DispatchMapPhaseJob(
@@ -378,7 +415,7 @@ class DispatchMapPhaseJob implements ShouldQueue
     /**
      * Determina se deve usar a estratégia de Refinamento Sequencial
      */
-    private function shouldUseRefineStrategy(int $docCount): bool
+    private function shouldUseRefineStrategy(int $docCount, ?int $totalChars): bool
     {
         // Se foi especificado explicitamente
         if ($this->reduceStrategy === 'refine') {
@@ -389,10 +426,19 @@ class DispatchMapPhaseJob implements ShouldQueue
             return false;
         }
 
-        // Estratégia automática baseada na quantidade de documentos
+        // Estratégia automática baseada na quantidade de documentos e no volume agregado.
         // - Poucos documentos: refine é melhor (narrativa mais coesa)
         // - Muitos documentos: batch é mais rápido e eficiente
-        return $docCount <= config('analysis.thresholds.refine_max_documents', 20);
+        if ($docCount > config('analysis.thresholds.refine_max_documents', 20)) {
+            return false;
+        }
+
+        $directConsolidationLimit = (int) config('analysis.reduce.direct_consolidation_chars', 800000);
+        if (!is_null($totalChars) && $totalChars > $directConsolidationLimit) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

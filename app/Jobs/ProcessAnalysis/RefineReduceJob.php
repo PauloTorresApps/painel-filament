@@ -171,7 +171,7 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             // Se todas as micro-análises cabem em uma janela de contexto razoável,
             // faz consolidação direta em 1 única chamada ao invés de N chamadas sequenciais
-            $directConsolidationLimit = 200000; // ~50k tokens — cabe confortavelmente em modelos modernos
+            $directConsolidationLimit = (int) config('analysis.reduce.direct_consolidation_chars', 800000);
 
             if ($this->startFromIndex === 0 && $totalChars <= $directConsolidationLimit) {
                 // CONSOLIDAÇÃO DIRETA: 1 única chamada à API

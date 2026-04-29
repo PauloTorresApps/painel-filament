@@ -116,6 +116,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 'entity' => 'document_analysis',
                 'entity_id' => (string) $documentAnalysis->id,
             ]);
+            $aiService->setInputCharLimit(null);
 
             if ($this->aiModelId) {
                 $aiService->setModel($this->aiModelId);

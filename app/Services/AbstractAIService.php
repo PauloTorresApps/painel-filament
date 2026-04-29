@@ -70,9 +70,9 @@ abstract class AbstractAIService implements AIProviderInterface
     }
 
     /**
-     * Define limite de caracteres de entrada para summarização.
+     * Define limite lógico de caracteres de entrada.
      * null = sem limite (texto completo é enviado).
-     * Resetado automaticamente no início de cada análise (resetAnalysisMetadata).
+     * Este valor é usado para observabilidade/controle pelo chamador.
      */
     public function setInputCharLimit(?int $limit): self
     {
@@ -258,17 +258,15 @@ abstract class AbstractAIService implements AIProviderInterface
 
         $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO\n\n" . $documentText;
 
-        // Se o documento for muito grande, sumariza primeiro
-        // inputCharLimit = null desativa a sumarização (usado em REDUCE/FINAL)
+        // Não dispara sumarização automática para evitar chamadas LLM ocultas.
+        // O chunking deve ser decidido no pipeline de jobs.
         $charLimit = $this->inputCharLimit ?? static::SINGLE_DOC_CHAR_LIMIT;
         if ($charLimit > 0 && mb_strlen($documentText) > $charLimit) {
-            Log::info('AbstractAIService: Documento muito grande, sumarizando', [
+            Log::warning('AbstractAIService: Documento acima do limite lógico, enviando texto integral', [
                 'original_chars' => mb_strlen($documentText),
                 'limit' => $charLimit,
+                'reason' => 'auto_summarization_disabled',
             ]);
-
-            $documentText = $this->summarizeDocument($documentText, 'Documento', $deepThinkingEnabled);
-            $fullPrompt = $prompt . "\n\n---\n\n# DOCUMENTO (RESUMIDO)\n\n" . $documentText;
         }
 
         $result = $this->callAPI($fullPrompt, $deepThinkingEnabled, $systemPrompt);

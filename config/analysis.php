@@ -26,8 +26,9 @@ return [
 
         'map_document' => [
             'timeout' => (int) env('ANALYSIS_MAP_TIMEOUT', 300),
-            'tries' => 3,
+            'tries' => (int) env('ANALYSIS_MAP_TRIES', 1),
             'backoff' => 30,
+            'unique_for' => (int) env('ANALYSIS_MAP_UNIQUE_FOR', 900),
         ],
 
         'chunk_large_document' => [
@@ -69,7 +70,7 @@ return [
 
     'thresholds' => [
         // Documentos acima deste limite são divididos em chunks (ChunkLargeDocumentJob)
-        'large_document_chars' => (int) env('ANALYSIS_LARGE_DOC_THRESHOLD', 100000),
+        'large_document_chars' => (int) env('ANALYSIS_LARGE_DOC_THRESHOLD', 250000),
 
         // Até este número de documentos, usa RefineReduceJob; acima, usa ReduceDocumentAnalysisJob
         'refine_max_documents' => (int) env('ANALYSIS_REFINE_THRESHOLD', 20),
@@ -88,6 +89,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | MAP Cache
+    |--------------------------------------------------------------------------
+    |
+    | Reaproveita micro-análises já concluídas para o mesmo conteúdo (hash)
+    | e estratégia, reduzindo chamadas LLM em reprocessamentos.
+    |
+    */
+
+    'map_cache' => [
+        'enabled' => (bool) env('ANALYSIS_MAP_CACHE_ENABLED', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Reduce Configuration
     |--------------------------------------------------------------------------
     */
@@ -95,6 +110,8 @@ return [
     'reduce' => [
         'batch_size' => (int) env('ANALYSIS_BATCH_SIZE', 10),
         'max_levels' => (int) env('ANALYSIS_MAX_REDUCE_LEVELS', 5),
+        // Limite para consolidar em uma única chamada no RefineReduceJob
+        'direct_consolidation_chars' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS', 800000),
     ],
 
     /*

@@ -94,6 +94,9 @@ return [
         // Structured outputs: respostas JSON na fase MAP para dados consistentes
         // Requer modelos compatíveis com JSON structured output
         'structured_map_enabled' => env('OPENROUTER_STRUCTURED_MAP_ENABLED', false),
+        // Se false, falha de structured output não faz segunda chamada em texto livre.
+        // Reduz chamadas, mas pode aumentar falhas de MAP quando o modelo não respeita schema.
+        'structured_map_fallback_to_text' => env('OPENROUTER_STRUCTURED_MAP_FALLBACK_TO_TEXT', false),
 
         // Web search plugin para o parecer final
         'web_search_enabled' => env('OPENROUTER_WEB_SEARCH_ENABLED', false),
