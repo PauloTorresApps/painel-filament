@@ -17,6 +17,11 @@ class AiPrompt extends Model
     // Tipos de prompt para Processos Judiciais (Map-Reduce)
     public const TYPE_DOCUMENT_ANALYSIS = 'document_analysis';  // Análise individual de documentos (fase MAP)
     public const TYPE_FINAL_OPINION = 'final_opinion';          // Parecer final consolidado (fase REDUCE)
+    public const TYPE_INVENTORY_CONSOLIDATION = 'inventory_consolidation';
+    public const TYPE_CHRONOLOGY_BUILDER = 'chronology_builder';
+    public const TYPE_ENGINE_INTELLIGENCE = 'engine_intelligence';
+    public const TYPE_PARECER_STRUCTURED = 'parecer_structured';
+    public const TYPE_DESIGNER_BRIEF = 'designer_brief';
 
     protected $fillable = [
         'system_id',
@@ -162,6 +167,11 @@ class AiPrompt extends Model
         return [
             self::TYPE_DOCUMENT_ANALYSIS => 'Análise de Documentos (MAP)',
             self::TYPE_FINAL_OPINION => 'Parecer Final (REDUCE)',
+            self::TYPE_INVENTORY_CONSOLIDATION => 'Inventário Estruturado',
+            self::TYPE_CHRONOLOGY_BUILDER => 'Cronologia Processual',
+            self::TYPE_ENGINE_INTELLIGENCE => 'Engine Processual',
+            self::TYPE_PARECER_STRUCTURED => 'Parecer Estruturado (OWLEX)',
+            self::TYPE_DESIGNER_BRIEF => 'Designer Brief (Dashboard)',
         ];
     }
 

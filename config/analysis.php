@@ -60,6 +60,36 @@ return [
             'tries' => 2,
             'backoff' => 60,
         ],
+
+        'build_inventory' => [
+            'timeout' => (int) env('ANALYSIS_INVENTORY_TIMEOUT', 300),
+            'tries' => 2,
+            'backoff' => 30,
+        ],
+
+        'build_chronology' => [
+            'timeout' => (int) env('ANALYSIS_CHRONOLOGY_TIMEOUT', 300),
+            'tries' => 2,
+            'backoff' => 30,
+        ],
+
+        'run_engine' => [
+            'timeout' => (int) env('ANALYSIS_ENGINE_TIMEOUT', 600),
+            'tries' => 2,
+            'backoff' => 60,
+        ],
+
+        'build_structured_parecer' => [
+            'timeout' => (int) env('ANALYSIS_PARECER_STRUCTURED_TIMEOUT', 600),
+            'tries' => 2,
+            'backoff' => 60,
+        ],
+
+        'build_designer_brief' => [
+            'timeout' => (int) env('ANALYSIS_DESIGNER_TIMEOUT', 180),
+            'tries' => 2,
+            'backoff' => 30,
+        ],
     ],
 
     /*
@@ -112,6 +142,33 @@ return [
         'max_levels' => (int) env('ANALYSIS_MAX_REDUCE_LEVELS', 5),
         // Limite para consolidar em uma única chamada no RefineReduceJob
         'direct_consolidation_chars' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS', 800000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | OWLEX Configuration
+    |--------------------------------------------------------------------------
+    */
+
+    'owlex' => [
+        'enabled' => (bool) env('OWLEX_PIPELINE_ENABLED', false),
+
+        'inventory' => [
+            'duplicate_hash_algorithm' => env('ANALYSIS_INVENTORY_HASH_ALGO', 'sha256'),
+            'min_text_chars_legible' => (int) env('ANALYSIS_INVENTORY_MIN_LEGIBLE_CHARS', 120),
+        ],
+
+        'chronology' => [
+            'inertia_gap_days' => (int) env('ANALYSIS_CHRONOLOGY_INERTIA_GAP_DAYS', 60),
+        ],
+
+        'engine' => [
+            'score' => [
+                'critical_min' => (int) env('ANALYSIS_SCORE_CRITICAL_MIN', 80),
+                'high_min' => (int) env('ANALYSIS_SCORE_HIGH_MIN', 60),
+                'medium_min' => (int) env('ANALYSIS_SCORE_MEDIUM_MIN', 40),
+            ],
+        ],
     ],
 
     /*

@@ -2,9 +2,21 @@
 
 namespace App\Models;
 
+use App\Models\ProcessAnalysis\ProcessActionPlanItem;
+use App\Models\ProcessAnalysis\ProcessDeadline;
+use App\Models\ProcessAnalysis\ProcessEngineSnapshot;
+use App\Models\ProcessAnalysis\ProcessEvent;
+use App\Models\ProcessAnalysis\ProcessInconsistency;
+use App\Models\ProcessAnalysis\ProcessInertiaPeriod;
+use App\Models\ProcessAnalysis\ProcessInventoryItem;
+use App\Models\ProcessAnalysis\ProcessOpportunity;
+use App\Models\ProcessAnalysis\ProcessRisk;
+use App\Models\ProcessAnalysis\ProcessStructuredOpinion;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Str;
 
 class DocumentAnalysis extends Model
@@ -12,6 +24,10 @@ class DocumentAnalysis extends Model
     protected $fillable = [
         'user_id',
         'numero_processo',
+        'parte_representada',
+        'papel_processual',
+        'objetivo_analise',
+        'prazo_em_curso',
         'classe_processual',
         'assuntos',
         'id_documento',
@@ -88,8 +104,13 @@ class DocumentAnalysis extends Model
      * Constantes para fases de processamento
      */
     public const PHASE_DOWNLOAD = 'download';
+    public const PHASE_INVENTORY = 'inventory';
     public const PHASE_MAP = 'map';
     public const PHASE_REDUCE = 'reduce';
+    public const PHASE_CHRONOLOGY = 'chronology';
+    public const PHASE_ENGINE = 'engine';
+    public const PHASE_PARECER_STRUCTURED = 'parecer_structured';
+    public const PHASE_DESIGN = 'design';
     public const PHASE_COMPLETED = 'completed';
 
     public function user(): BelongsTo
@@ -103,6 +124,66 @@ class DocumentAnalysis extends Model
     public function microAnalyses(): HasMany
     {
         return $this->hasMany(DocumentMicroAnalysis::class);
+    }
+
+    public function inventoryItems(): HasMany
+    {
+        return $this->hasMany(ProcessInventoryItem::class);
+    }
+
+    public function processEvents(): HasMany
+    {
+        return $this->hasMany(ProcessEvent::class);
+    }
+
+    public function inertiaPeriods(): HasMany
+    {
+        return $this->hasMany(ProcessInertiaPeriod::class);
+    }
+
+    public function processDeadlines(): HasMany
+    {
+        return $this->hasMany(ProcessDeadline::class);
+    }
+
+    public function processRisks(): HasMany
+    {
+        return $this->hasMany(ProcessRisk::class);
+    }
+
+    public function processOpportunities(): HasMany
+    {
+        return $this->hasMany(ProcessOpportunity::class);
+    }
+
+    public function processInconsistencies(): HasMany
+    {
+        return $this->hasMany(ProcessInconsistency::class);
+    }
+
+    public function engineSnapshots(): HasMany
+    {
+        return $this->hasMany(ProcessEngineSnapshot::class);
+    }
+
+    public function latestEngineSnapshot(): HasOne
+    {
+        return $this->hasOne(ProcessEngineSnapshot::class)->latestOfMany('generated_at');
+    }
+
+    public function structuredOpinion(): HasOne
+    {
+        return $this->hasOne(ProcessStructuredOpinion::class);
+    }
+
+    public function actionPlanItems(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            ProcessActionPlanItem::class,
+            ProcessStructuredOpinion::class,
+            'document_analysis_id',
+            'process_structured_opinion_id'
+        );
     }
 
     /**
@@ -263,8 +344,13 @@ class DocumentAnalysis extends Model
     {
         return match ($this->current_phase) {
             self::PHASE_DOWNLOAD => 'Download',
+            self::PHASE_INVENTORY => 'Inventário',
             self::PHASE_MAP => 'Análise Individual',
             self::PHASE_REDUCE => 'Consolidação',
+            self::PHASE_CHRONOLOGY => 'Cronologia',
+            self::PHASE_ENGINE => 'Engine',
+            self::PHASE_PARECER_STRUCTURED => 'Parecer Estruturado',
+            self::PHASE_DESIGN => 'Designer',
             self::PHASE_COMPLETED => 'Concluído',
             default => 'Processando',
         };
@@ -272,14 +358,21 @@ class DocumentAnalysis extends Model
 
     /**
      * Retorna o progresso geral como porcentagem (0-100)
-     * Download: 0-10%, MAP: 10-70%, REDUCE: 70-100%
+     * Download: 0-10%, Inventário: 10-20%, MAP: 20-55%, REDUCE: 55-75%,
+     * Cronologia: 75-83%, Engine: 83-91%, Parecer estruturado: 91-97%,
+     * Designer: 97-100%
      */
     public function getOverallProgressPercentage(): float
     {
         $progress = match ($this->current_phase) {
             self::PHASE_DOWNLOAD => min(10, $this->getProgressPercentage() * 0.1),
-            self::PHASE_MAP => 10 + ($this->getProgressPercentage() * 0.6),
-            self::PHASE_REDUCE => 70 + ($this->getReduceProgressPercentage() * 0.3),
+            self::PHASE_INVENTORY => 10 + min(10, $this->getProgressPercentage() * 0.1),
+            self::PHASE_MAP => 20 + ($this->getProgressPercentage() * 0.35),
+            self::PHASE_REDUCE => 55 + ($this->getReduceProgressPercentage() * 0.2),
+            self::PHASE_CHRONOLOGY => 83,
+            self::PHASE_ENGINE => 91,
+            self::PHASE_PARECER_STRUCTURED => 97,
+            self::PHASE_DESIGN => 99,
             self::PHASE_COMPLETED => 100,
             default => 0,
         };

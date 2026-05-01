@@ -57,15 +57,25 @@ class RecentProcessAnalysesWidget extends TableWidget
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'download' => 'Download',
+                        'inventory' => 'Inventário',
                         'map' => 'Análise',
                         'reduce' => 'Consolidação',
+                        'chronology' => 'Cronologia',
+                        'engine' => 'Engine',
+                        'parecer_structured' => 'Parecer Estruturado',
+                        'design' => 'Designer',
                         'completed' => 'Concluído',
                         default => '-',
                     })
                     ->color(fn (?string $state): string => match ($state) {
                         'download' => 'gray',
+                        'inventory' => 'gray',
                         'map' => 'info',
                         'reduce' => 'warning',
+                        'chronology' => 'warning',
+                        'engine' => 'danger',
+                        'parecer_structured' => 'success',
+                        'design' => 'success',
                         'completed' => 'success',
                         default => 'gray',
                     })

@@ -273,4 +273,102 @@ Responda com uma análise estruturada em markdown, como se fosse a análise de u
 NÃO mencione que o documento foi dividido em partes - o resultado deve parecer uma análise contínua.
 PROMPT,
 
+  /*
+  |--------------------------------------------------------------------------
+  | OWLEX: Inventário Estruturado
+  |--------------------------------------------------------------------------
+  */
+
+  'inventory_consolidation' => <<<'PROMPT'
+Consolide os metadados e conteúdos dos documentos em um inventário estruturado.
+
+Regras:
+- Classifique cada item documental (petição inicial, contestação, réplica, decisão, sentença, acórdão, certidão, intimação, despacho, laudo, cálculo, recurso, anexo ou outro).
+- Identifique duplicidades e sinalize documentos ilegíveis ou incompletos.
+- Indique relevância de cada item de 0 a 100.
+- Preserve evento/id e data quando disponíveis.
+
+Formato de saída:
+- JSON válido contendo uma lista de itens de inventário.
+PROMPT,
+
+  /*
+  |--------------------------------------------------------------------------
+  | OWLEX: Cronologia Processual
+  |--------------------------------------------------------------------------
+  */
+
+  'chronology_builder' => <<<'PROMPT'
+Construa uma linha do tempo processual consolidada, em ordem cronológica.
+
+Regras:
+- Normalize datas para ISO (YYYY-MM-DD) quando possível.
+- Identifique marcos relevantes, atos que abriram prazo e possíveis períodos de inércia.
+- Para cada evento, descreva efeito jurídico objetivo.
+
+Formato de saída:
+- JSON válido com `linha_do_tempo`, `atos_chave` e `periodos_de_inercia`.
+PROMPT,
+
+  /*
+  |--------------------------------------------------------------------------
+  | OWLEX: Engine Processual
+  |--------------------------------------------------------------------------
+  */
+
+  'engine_intelligence' => <<<'PROMPT'
+Atue como engine processual para avaliar riscos, oportunidades, prazos e consistência.
+
+Regras:
+- Identifique prazos ativos, riscos de preclusão e hipóteses de prescrição/decadência com justificativa.
+- Atribua score de 0 a 100 para risco processual, urgência, oportunidade e confiabilidade.
+- Classifique riscos em baixo, médio, alto ou crítico.
+
+Formato de saída:
+- JSON válido com `deadlines`, `riscos`, `oportunidades`, `inconsistencias` e `snapshot`.
+PROMPT,
+
+  /*
+  |--------------------------------------------------------------------------
+  | OWLEX: Parecer Estruturado
+  |--------------------------------------------------------------------------
+  */
+
+  'parecer_structured' => <<<'PROMPT'
+Gere parecer jurídico estruturado orientado à ação com base no inventário, cronologia e engine.
+
+Seções obrigatórias:
+1. Sumário Executivo
+2. Diagnóstico
+3. Prazos e Preclusões
+4. Prescrição e Decadência
+5. Inconsistências e Atenção
+6. Riscos Priorizados
+7. Oportunidades
+8. Plano Tático
+9. Conclusão Estratégica
+
+Formato de saída:
+- JSON válido com os nove blocos acima e plano tático em itens ordenados por prioridade.
+PROMPT,
+
+  /*
+  |--------------------------------------------------------------------------
+  | OWLEX: Designer Brief
+  |--------------------------------------------------------------------------
+  */
+
+  'designer_brief' => <<<'PROMPT'
+Gere um brief curto para dashboard visual da análise processual.
+
+Conteúdo:
+- síntese executiva em até 8 linhas
+- top 3 riscos urgentes
+- top 3 oportunidades
+- próximos passos imediatos
+
+Formato de saída:
+- JSON válido para consumo de componentes visuais.
+PROMPT,
+
 ];

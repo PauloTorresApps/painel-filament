@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\ProcessAnalysis\ProcessEvent;
+use App\Models\ProcessAnalysis\ProcessInventoryItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 class DocumentMicroAnalysis extends Model
@@ -47,6 +50,16 @@ class DocumentMicroAnalysis extends Model
     public function documentAnalysis(): BelongsTo
     {
         return $this->belongsTo(DocumentAnalysis::class);
+    }
+
+    public function inventoryItems(): HasMany
+    {
+        return $this->hasMany(ProcessInventoryItem::class);
+    }
+
+    public function sourceEvents(): HasMany
+    {
+        return $this->hasMany(ProcessEvent::class, 'source_micro_analysis_id');
     }
 
     /**
