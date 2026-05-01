@@ -334,7 +334,12 @@ class ReduceBatchJob implements ShouldQueue
      */
     private function buildReducePrompt(int $documentCount): string
     {
-        return str_replace(':documentCount', (string) $documentCount, config('prompts.reduce_consolidation'));
+        $template = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_REDUCE_CONSOLIDATION
+        );
+
+        return str_replace(':documentCount', (string) $documentCount, $template);
     }
 
 

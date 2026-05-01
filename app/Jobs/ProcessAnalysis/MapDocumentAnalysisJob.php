@@ -7,6 +7,9 @@ use App\Models\AiModel;
 use App\Models\AiPrompt;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
+use App\Models\ProcessAnalysis\ProcessDecisao;
+use App\Models\ProcessAnalysis\ProcessIntimacao;
+use App\Models\ProcessAnalysis\ProcessPedido;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
 use App\Strategies\ProcessAnalysis\PdfNativeProcessingStrategy;
@@ -259,6 +262,8 @@ class MapDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 
                 $microAnalysis->update($structuredUpdate);
 
+                $this->persistStructuredAnalystData($microAnalysis, $structuredData);
+
                 $this->verboseLog('MapDocumentAnalysisJob: Resultado estruturado processado', [
                     'micro_id' => $this->microAnalysisId,
                     'classificacao' => $structuredData['classificacao'] ?? 'N/A',
@@ -273,6 +278,12 @@ class MapDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
                     $this->estimateTokenCount($result),
                     $processingTimeMs
                 );
+
+                $embeddedAnalystJson = $this->extractEmbeddedAnalystJson($result, $documentAnalysis);
+
+                if ($embeddedAnalystJson) {
+                    $this->persistStructuredAnalystData($microAnalysis, $embeddedAnalystJson);
+                }
             }
 
             // Captura annotation hash para cache de reanálise (P5)
@@ -537,7 +548,10 @@ class MapDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
             $tarefaPrompt = $this->buildDefaultTaskPrompt();
         }
 
-        $systemRole = config('prompts.system_role', 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.');
+        $systemRole = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_SYSTEM_ROLE
+        );
 
         $basePrompt = <<<PROMPT
 {$systemRole}
@@ -556,15 +570,28 @@ PROMPT;
         // Se structured outputs está habilitado, o schema JSON já define a estrutura da resposta
         // Não precisa instruir o modelo a incluir timeline JSON no texto
         if (config('services.openrouter.structured_map_enabled', false)) {
-            $formatInstructions = config('prompts.map_structured_format', '**FORMATO:** Preencha todos os campos do JSON schema solicitado. O campo `analise` deve conter a análise completa em markdown. Seja conciso mas completo.');
+            $formatInstructions = AiPrompt::resolvePromptContent(
+                1,
+                AiPrompt::TYPE_MAP_STRUCTURED_FORMAT
+            );
             return $basePrompt . "\n\n---\n\n" . $formatInstructions;
         }
 
         // Modo texto livre: instrui o modelo a incluir timeline JSON entre tags
-        $timelineInstructions = config('prompts.timeline_instructions');
-        $formatInstructions = config('prompts.map_freetext_format', '**FORMATO:** Responda de forma estruturada usando markdown. Seja conciso mas completo. Não esqueça do bloco JSON ao final.');
+        $timelineInstructions = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_TIMELINE_INSTRUCTIONS
+        );
+        $analystJsonInstructions = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_ANALYST_JSON_INSTRUCTIONS
+        );
+        $formatInstructions = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_MAP_FREETEXT_FORMAT
+        );
 
-        return $basePrompt . "\n\n---\n\n" . $timelineInstructions . "\n\n---\n\n" . $formatInstructions;
+        return $basePrompt . "\n\n---\n\n" . $timelineInstructions . "\n\n---\n\n" . $analystJsonInstructions . "\n\n---\n\n" . $formatInstructions;
     }
 
     /**
@@ -722,7 +749,10 @@ PROMPT;
      */
     private function buildDefaultTaskPrompt(): string
     {
-        return config('prompts.map_default_task');
+        return AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_DOCUMENT_ANALYSIS
+        );
     }
 
     /**
@@ -769,6 +799,82 @@ PROMPT;
                         'items' => ['type' => 'string'],
                         'description' => 'Nomes das partes mencionadas no documento',
                     ],
+
+                    'identificacao_processo' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'numero_processo' => ['type' => ['string', 'null']],
+                            'classe_processual' => ['type' => ['string', 'null']],
+                            'assuntos' => ['type' => 'array', 'items' => ['type' => 'string']],
+                        ],
+                        'required' => ['numero_processo', 'classe_processual', 'assuntos'],
+                        'additionalProperties' => false,
+                    ],
+
+                    'partes' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                    ],
+
+                    'objeto_central' => [
+                        'type' => 'string',
+                    ],
+
+                    'pedidos_identificados' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'parte' => ['type' => ['string', 'null']],
+                                'pedido' => ['type' => 'string'],
+                                'fundamento' => ['type' => ['string', 'null']],
+                                'status' => ['type' => ['string', 'null']],
+                            ],
+                            'required' => ['parte', 'pedido', 'fundamento', 'status'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+
+                    'decisoes_identificadas' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'evento_ou_id' => ['type' => ['string', 'null']],
+                                'data' => ['type' => ['string', 'null']],
+                                'autoridade' => ['type' => ['string', 'null']],
+                                'conteudo' => ['type' => 'string'],
+                                'efeito_juridico' => ['type' => ['string', 'null']],
+                                'resultado' => ['type' => ['string', 'null']],
+                            ],
+                            'required' => ['evento_ou_id', 'data', 'autoridade', 'conteudo', 'efeito_juridico', 'resultado'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+
+                    'intimacoes_e_certidoes' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'evento_ou_id' => ['type' => ['string', 'null']],
+                                'data' => ['type' => ['string', 'null']],
+                                'tipo' => ['type' => ['string', 'null']],
+                                'destinatario' => ['type' => ['string', 'null']],
+                                'conteudo' => ['type' => ['string', 'null']],
+                                'prazo' => ['type' => ['string', 'null']],
+                                'cumprida' => ['type' => ['boolean', 'null']],
+                            ],
+                            'required' => ['evento_ou_id', 'data', 'tipo', 'destinatario', 'conteudo', 'prazo', 'cumprida'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+
+                    'lacunas' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                    ],
+
                     'valores_monetarios' => [
                         'type' => 'array',
                         'items' => ['type' => 'string'],
@@ -800,7 +906,24 @@ PROMPT;
                         'additionalProperties' => false,
                     ],
                 ],
-                'required' => ['analise', 'tipo_documento', 'classificacao', 'relevancia', 'resumo', 'pontos_chave', 'partes_mencionadas', 'valores_monetarios', 'timeline'],
+                'required' => [
+                    'analise',
+                    'tipo_documento',
+                    'classificacao',
+                    'relevancia',
+                    'resumo',
+                    'pontos_chave',
+                    'partes_mencionadas',
+                    'identificacao_processo',
+                    'partes',
+                    'objeto_central',
+                    'pedidos_identificados',
+                    'decisoes_identificadas',
+                    'intimacoes_e_certidoes',
+                    'lacunas',
+                    'valores_monetarios',
+                    'timeline',
+                ],
                 'additionalProperties' => false,
             ],
         ];
@@ -833,6 +956,134 @@ PROMPT;
                 'error' => $e->getMessage(),
                 'preview' => mb_substr($result, 0, 200),
             ]);
+            return null;
+        }
+    }
+
+    private function extractEmbeddedAnalystJson(string $analysisText, DocumentAnalysis $documentAnalysis): ?array
+    {
+        if (!preg_match('/<analista_json>\s*([\s\S]*?)\s*<\/analista_json>/i', $analysisText, $matches)) {
+            return null;
+        }
+
+        $jsonString = trim($matches[1]);
+        $jsonString = preg_replace('/^```json?\s*/i', '', $jsonString);
+        $jsonString = preg_replace('/\s*```$/', '', (string) $jsonString);
+
+        try {
+            $data = $this->jsonDecode((string) $jsonString);
+
+            if (!is_array($data)) {
+                return null;
+            }
+
+            $data['identificacao_processo'] = $data['identificacao_processo'] ?? [
+                'numero_processo' => $documentAnalysis->numero_processo,
+                'classe_processual' => $documentAnalysis->classe_processual,
+                'assuntos' => !empty($documentAnalysis->assuntos)
+                    ? array_filter(array_map('trim', explode(',', (string) $documentAnalysis->assuntos)))
+                    : [],
+            ];
+
+            return $data;
+        } catch (\JsonException $e) {
+            Log::warning('MapDocumentAnalysisJob: Falha ao parsear analista_json', [
+                'micro_id' => $this->microAnalysisId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function persistStructuredAnalystData(DocumentMicroAnalysis $microAnalysis, array $data): void
+    {
+        $analysis = $microAnalysis->documentAnalysis;
+
+        if (!$analysis) {
+            return;
+        }
+
+        ProcessPedido::where('document_micro_analysis_id', $microAnalysis->id)->delete();
+        ProcessDecisao::where('document_micro_analysis_id', $microAnalysis->id)->delete();
+        ProcessIntimacao::where('document_micro_analysis_id', $microAnalysis->id)->delete();
+
+        foreach (($data['pedidos_identificados'] ?? []) as $pedido) {
+            if (empty($pedido['pedido'])) {
+                continue;
+            }
+
+            ProcessPedido::create([
+                'document_analysis_id' => $analysis->id,
+                'document_micro_analysis_id' => $microAnalysis->id,
+                'parte' => $pedido['parte'] ?? null,
+                'pedido' => $pedido['pedido'],
+                'fundamento' => $pedido['fundamento'] ?? null,
+                'status' => $pedido['status'] ?? null,
+            ]);
+        }
+
+        foreach (($data['decisoes_identificadas'] ?? []) as $decisao) {
+            if (empty($decisao['conteudo'])) {
+                continue;
+            }
+
+            ProcessDecisao::create([
+                'document_analysis_id' => $analysis->id,
+                'document_micro_analysis_id' => $microAnalysis->id,
+                'evento_ou_id' => $decisao['evento_ou_id'] ?? null,
+                'data' => $this->normalizeDate($decisao['data'] ?? null),
+                'autoridade' => $decisao['autoridade'] ?? null,
+                'conteudo' => $decisao['conteudo'],
+                'efeito_juridico' => $decisao['efeito_juridico'] ?? null,
+                'resultado' => $decisao['resultado'] ?? null,
+            ]);
+        }
+
+        foreach (($data['intimacoes_e_certidoes'] ?? []) as $intimacao) {
+            if (empty($intimacao['tipo']) && empty($intimacao['conteudo'])) {
+                continue;
+            }
+
+            ProcessIntimacao::create([
+                'document_analysis_id' => $analysis->id,
+                'document_micro_analysis_id' => $microAnalysis->id,
+                'evento_ou_id' => $intimacao['evento_ou_id'] ?? null,
+                'data' => $this->normalizeDate($intimacao['data'] ?? null),
+                'tipo' => $intimacao['tipo'] ?? null,
+                'destinatario' => $intimacao['destinatario'] ?? null,
+                'conteudo' => $intimacao['conteudo'] ?? null,
+                'prazo' => $intimacao['prazo'] ?? null,
+                'cumprida' => $intimacao['cumprida'] ?? null,
+            ]);
+        }
+
+        if (!empty($data['lacunas']) && is_array($data['lacunas'])) {
+            $currentEntities = is_array($microAnalysis->aggregated_entities)
+                ? $microAnalysis->aggregated_entities
+                : [];
+
+            $currentEntities['lacunas'] = array_values(array_unique($data['lacunas']));
+
+            $microAnalysis->update([
+                'aggregated_entities' => $currentEntities,
+            ]);
+        }
+    }
+
+    private function normalizeDate(?string $date): ?string
+    {
+        if (empty($date)) {
+            return null;
+        }
+
+        try {
+            if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $date)) {
+                return \Carbon\Carbon::createFromFormat('d/m/Y', $date)->toDateString();
+            }
+
+            return \Carbon\Carbon::parse($date)->toDateString();
+        } catch (\Throwable) {
             return null;
         }
     }

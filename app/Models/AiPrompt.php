@@ -22,6 +22,15 @@ class AiPrompt extends Model
     public const TYPE_ENGINE_INTELLIGENCE = 'engine_intelligence';
     public const TYPE_PARECER_STRUCTURED = 'parecer_structured';
     public const TYPE_DESIGNER_BRIEF = 'designer_brief';
+    public const TYPE_TIMELINE_INSTRUCTIONS = 'timeline_instructions';
+    public const TYPE_ANALYST_JSON_INSTRUCTIONS = 'analyst_json_instructions';
+    public const TYPE_MAP_STRUCTURED_FORMAT = 'map_structured_format';
+    public const TYPE_MAP_FREETEXT_FORMAT = 'map_freetext_format';
+    public const TYPE_CHUNK_ANALYSIS = 'chunk_analysis';
+    public const TYPE_CHUNK_CONSOLIDATION = 'chunk_consolidation';
+    public const TYPE_SYSTEM_ROLE = 'system_role';
+    public const TYPE_REDUCE_CONSOLIDATION = 'reduce_consolidation';
+    public const TYPE_FINAL_OPINION_WRAPPER = 'final_opinion_wrapper';
 
     protected $fillable = [
         'system_id',
@@ -167,12 +176,53 @@ class AiPrompt extends Model
         return [
             self::TYPE_DOCUMENT_ANALYSIS => 'Análise de Documentos (MAP)',
             self::TYPE_FINAL_OPINION => 'Parecer Final (REDUCE)',
+            self::TYPE_SYSTEM_ROLE => 'Papel do Assistente (System Role)',
+            self::TYPE_MAP_STRUCTURED_FORMAT => 'Formato MAP Estruturado',
+            self::TYPE_MAP_FREETEXT_FORMAT => 'Formato MAP Texto Livre',
+            self::TYPE_TIMELINE_INSTRUCTIONS => 'Instruções de Timeline (MAP/Chunk)',
+            self::TYPE_ANALYST_JSON_INSTRUCTIONS => 'Instruções de analista_json (MAP)',
+            self::TYPE_CHUNK_ANALYSIS => 'Análise de Chunks (Chunk)',
+            self::TYPE_CHUNK_CONSOLIDATION => 'Consolidação de Chunks (Chunk)',
+            self::TYPE_REDUCE_CONSOLIDATION => 'Consolidação de Batch (REDUCE)',
+            self::TYPE_FINAL_OPINION_WRAPPER => 'Template de Parecer Final (REDUCE)',
             self::TYPE_INVENTORY_CONSOLIDATION => 'Inventário Estruturado',
             self::TYPE_CHRONOLOGY_BUILDER => 'Cronologia Processual',
             self::TYPE_ENGINE_INTELLIGENCE => 'Engine Processual',
             self::TYPE_PARECER_STRUCTURED => 'Parecer Estruturado (OWLEX)',
             self::TYPE_DESIGNER_BRIEF => 'Designer Brief (Dashboard)',
         ];
+    }
+
+    /**
+     * Resolve o conteúdo do prompt exclusivamente pelo banco.
+     *
+     * Requer um prompt padrão ativo para o tipo informado.
+     */
+    public static function resolvePromptContent(int $systemId, string $promptType): string
+    {
+        $prompt = self::getDefaultForSystemAndType($systemId, $promptType);
+
+        if (!empty($prompt?->content)) {
+            return $prompt->content;
+        }
+
+        $activeCount = self::where('system_id', $systemId)
+            ->where('prompt_type', $promptType)
+            ->where('is_active', true)
+            ->count();
+
+        $defaultCount = self::where('system_id', $systemId)
+            ->where('prompt_type', $promptType)
+            ->where('is_default', true)
+            ->count();
+
+        throw new \RuntimeException(sprintf(
+            'Prompt obrigatório não configurado para system_id=%d e prompt_type=%s. Configure um prompt ativo e padrão para esta funcionalidade (ativos=%d, padrão=%d).',
+            $systemId,
+            $promptType,
+            $activeCount,
+            $defaultCount
+        ));
     }
 
     /**

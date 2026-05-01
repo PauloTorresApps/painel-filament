@@ -2,7 +2,7 @@
 
 namespace App\Filament\Analises\Resources\ProcessAnalysis\Tables;
 
-use App\Jobs\ProcessAnalysis\DispatchMapPhaseJob;
+use App\Jobs\ProcessAnalysis\BuildInventoryJob;
 use App\Jobs\ProcessAnalysis\ReduceDocumentAnalysisJob;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
@@ -210,8 +210,8 @@ class DocumentAnalysesTable
                         // Get job parameters
                         $jobParams = $record->job_parameters ?? [];
 
-                        // Dispatch the job
-                        DispatchMapPhaseJob::dispatch(
+                        // Dispatch inventario + map
+                        BuildInventoryJob::dispatch(
                             $record->id,
                             $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
                             $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,

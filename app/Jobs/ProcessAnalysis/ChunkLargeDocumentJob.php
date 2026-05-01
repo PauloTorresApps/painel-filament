@@ -4,6 +4,7 @@ namespace App\Jobs\ProcessAnalysis;
 
 use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\AiModel;
+use App\Models\AiPrompt;
 use App\Models\DocumentMicroAnalysis;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
@@ -298,7 +299,10 @@ class ChunkLargeDocumentJob implements ShouldQueue
         return str_replace(
             [':descricao', ':nomeClasse', ':totalChunks'],
             [$microAnalysis->descricao, $nomeClasse, (string) $totalChunks],
-            config('prompts.chunk_analysis')
+            AiPrompt::resolvePromptContent(
+                1,
+                AiPrompt::TYPE_CHUNK_ANALYSIS
+            )
         );
     }
 
@@ -322,11 +326,17 @@ class ChunkLargeDocumentJob implements ShouldQueue
         $consolidationPrompt = str_replace(
             [':descricao', ':nomeClasse', ':chunkCount'],
             [$microAnalysis->descricao, $nomeClasse, (string) $chunkCount],
-            config('prompts.chunk_consolidation')
+            AiPrompt::resolvePromptContent(
+                1,
+                AiPrompt::TYPE_CHUNK_CONSOLIDATION
+            )
         );
 
         // Adiciona instruções de timeline
-        $timelineInstructions = config('prompts.timeline_instructions');
+        $timelineInstructions = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_TIMELINE_INSTRUCTIONS
+        );
 
         return $consolidationPrompt . "\n\n---\n\n" . $timelineInstructions;
     }

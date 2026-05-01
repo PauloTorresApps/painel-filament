@@ -56,7 +56,11 @@ class AnalyzeProcessDocumentsJob implements ShouldQueue, ShouldBeUnique
         public ?string $documentAnalysisPrompt = null, // Prompt customizado para análise de documentos (MAP)
         public ?string $chave = null,                  // Chave do processo (para processos sigilosos)
         public ?string $mapModelId = null,             // Modelo para MAP (análise de documentos)
-        public ?int $documentAnalysisId = null         // Registro pré-criado para acompanhamento imediato
+        public ?int $documentAnalysisId = null,        // Registro pré-criado para acompanhamento imediato
+        public ?string $parteRepresentada = null,
+        public ?string $papelProcessual = null,
+        public ?string $objetivoAnalise = null,
+        public ?string $prazoEmCurso = null
     ) {
         $this->timeout = config('analysis.jobs.analyze_process.timeout', 1800);
         $this->tries = config('analysis.jobs.analyze_process.tries', 2);
@@ -148,6 +152,10 @@ class AnalyzeProcessDocumentsJob implements ShouldQueue, ShouldBeUnique
                 $documentAnalysis = DocumentAnalysis::create([
                     'user_id' => $this->userId,
                     'numero_processo' => $this->numeroProcesso,
+                    'parte_representada' => $this->parteRepresentada,
+                    'papel_processual' => $this->papelProcessual,
+                    'objetivo_analise' => $this->objetivoAnalise,
+                    'prazo_em_curso' => $this->prazoEmCurso,
                     'classe_processual' => $classeProcessual,
                     'assuntos' => $assuntos,
                     'descricao_documento' => $totalDocs . ' documento(s) do processo',
@@ -158,19 +166,35 @@ class AnalyzeProcessDocumentsJob implements ShouldQueue, ShouldBeUnique
                         'contextoDados' => $this->contextoDados,
                         'promptTemplate' => $this->promptTemplate,
                         'documentAnalysisPrompt' => $this->documentAnalysisPrompt,
+                        'parteRepresentada' => $this->parteRepresentada,
+                        'papelProcessual' => $this->papelProcessual,
+                        'objetivoAnalise' => $this->objetivoAnalise,
+                        'prazoEmCurso' => $this->prazoEmCurso,
                         'aiProvider' => $this->aiProvider,
                         'ai_provider' => $this->aiProvider,
+                        'analysisStrategy' => $this->analysisStrategy,
                         'deepThinkingEnabled' => $this->deepThinkingEnabled,
                         'deep_thinking_enabled' => $this->deepThinkingEnabled,
                         'aiModelId' => $this->aiModelId,
                         'ai_model_id' => $this->aiModelId,
                         'mapModelId' => $this->mapModelId,
                         'map_model_id' => $this->mapModelId,
+                        'chave' => $this->chave,
+                        'userLogin' => $this->userLogin,
+                        'senha' => $this->senha,
+                        'judicialUserId' => $this->judicialUserId,
                         'reduceStrategy' => 'auto',
                         'reduce_strategy' => 'auto',
                     ],
                 ]);
             }
+
+            $documentAnalysis->update([
+                'parte_representada' => $this->parteRepresentada ?? $documentAnalysis->parte_representada,
+                'papel_processual' => $this->papelProcessual ?? $documentAnalysis->papel_processual,
+                'objetivo_analise' => $this->objetivoAnalise ?? $documentAnalysis->objetivo_analise,
+                'prazo_em_curso' => $this->prazoEmCurso ?? $documentAnalysis->prazo_em_curso,
+            ]);
 
             Log::info('AnalyzeProcessDocumentsJob: Registro de análise criado', [
                 'analysis_id' => $documentAnalysis->id,
@@ -199,14 +223,14 @@ class AnalyzeProcessDocumentsJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            Log::info('AnalyzeProcessDocumentsJob: Downloads concluídos, disparando fase MAP', [
+            Log::info('AnalyzeProcessDocumentsJob: Downloads concluídos, disparando inventário', [
                 'analysis_id' => $documentAnalysis->id,
                 'docs_pendentes' => $pendingCount,
                 'docs_falhos' => $totalDocs - $pendingCount,
             ]);
 
-            // Dispara fase MAP diretamente
-            DispatchMapPhaseJob::dispatch(
+            // Dispara fase de inventário antes da MAP
+            BuildInventoryJob::dispatch(
                 $documentAnalysis->id,
                 $this->aiProvider,
                 $this->deepThinkingEnabled,

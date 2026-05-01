@@ -85,7 +85,17 @@ class RetryFailedAnalyses extends Command
             $params['deepThinkingEnabled'] ?? false,
             $params['userLogin'] ?? '',
             $params['senha'] ?? '',
-            $params['judicialUserId'] ?? null
+            $params['judicialUserId'] ?? null,
+            $params['analysisStrategy'] ?? 'evolutionary',
+            $params['aiModelId'] ?? null,
+            $params['documentAnalysisPrompt'] ?? null,
+            $params['chave'] ?? null,
+            $params['mapModelId'] ?? null,
+            null,
+            $params['parteRepresentada'] ?? null,
+            $params['papelProcessual'] ?? null,
+            $params['objetivoAnalise'] ?? null,
+            $params['prazoEmCurso'] ?? null
         );
 
         $this->info("✓ Job despachado para a fila");
@@ -145,7 +155,17 @@ class RetryFailedAnalyses extends Command
                 $params['deepThinkingEnabled'] ?? false,
                 $params['userLogin'] ?? '',
                 $params['senha'] ?? '',
-                $params['judicialUserId'] ?? null
+                $params['judicialUserId'] ?? null,
+                $params['analysisStrategy'] ?? 'evolutionary',
+                $params['aiModelId'] ?? null,
+                $params['documentAnalysisPrompt'] ?? null,
+                $params['chave'] ?? null,
+                $params['mapModelId'] ?? null,
+                null,
+                $params['parteRepresentada'] ?? null,
+                $params['papelProcessual'] ?? null,
+                $params['objetivoAnalise'] ?? null,
+                $params['prazoEmCurso'] ?? null
             );
 
             $dispatched++;

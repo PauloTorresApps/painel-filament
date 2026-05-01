@@ -4,6 +4,9 @@ namespace App\Models;
 
 use App\Models\ProcessAnalysis\ProcessEvent;
 use App\Models\ProcessAnalysis\ProcessInventoryItem;
+use App\Models\ProcessAnalysis\ProcessDecisao;
+use App\Models\ProcessAnalysis\ProcessIntimacao;
+use App\Models\ProcessAnalysis\ProcessPedido;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -60,6 +63,21 @@ class DocumentMicroAnalysis extends Model
     public function sourceEvents(): HasMany
     {
         return $this->hasMany(ProcessEvent::class, 'source_micro_analysis_id');
+    }
+
+    public function pedidos(): HasMany
+    {
+        return $this->hasMany(ProcessPedido::class);
+    }
+
+    public function decisoes(): HasMany
+    {
+        return $this->hasMany(ProcessDecisao::class);
+    }
+
+    public function intimacoes(): HasMany
+    {
+        return $this->hasMany(ProcessIntimacao::class);
     }
 
     /**

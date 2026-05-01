@@ -348,7 +348,12 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         // Prioridade: 1º prompt do banco, 2º prompt passado como parâmetro
         $basePrompt = $promptFromDb?->content ?? $this->promptTemplate;
 
-        return str_replace(':basePrompt', $basePrompt, config('prompts.final_opinion'));
+        $wrapperTemplate = AiPrompt::resolvePromptContent(
+            1,
+            AiPrompt::TYPE_FINAL_OPINION_WRAPPER
+        );
+
+        return str_replace(':basePrompt', $basePrompt, $wrapperTemplate);
     }
 
     /**

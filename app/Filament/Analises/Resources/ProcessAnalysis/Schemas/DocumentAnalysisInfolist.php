@@ -27,6 +27,23 @@ class DocumentAnalysisInfolist
                             ->label('Assuntos')
                             ->placeholder('Não informado')
                             ->columnSpanFull(),
+
+                        TextEntry::make('parte_representada')
+                            ->label('Parte Representada')
+                            ->placeholder('Não informado'),
+
+                        TextEntry::make('papel_processual')
+                            ->label('Papel Processual')
+                            ->placeholder('Não informado'),
+
+                        TextEntry::make('objetivo_analise')
+                            ->label('Objetivo da Análise')
+                            ->placeholder('Não informado'),
+
+                        TextEntry::make('prazo_em_curso')
+                            ->label('Prazo em Curso')
+                            ->placeholder('Não informado')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull()

@@ -24,13 +24,11 @@ class CreateAiPrompt extends CreateRecord
             $data['is_active'] = true;
         }
 
-        // Prompts de análise processual não têm tipo (prompt_type = null)
-        $data['prompt_type'] = null;
-
-        // Se este prompt está sendo marcado como padrão, remove o padrão dos outros prompts do mesmo sistema
-        if (!empty($data['is_default']) && !empty($data['system_id'])) {
+        // Se este prompt está sendo marcado como padrão, remove o padrão
+        // dos outros prompts do mesmo sistema E do mesmo tipo.
+        if (!empty($data['is_default']) && !empty($data['system_id']) && !empty($data['prompt_type'])) {
             AiPrompt::where('system_id', $data['system_id'])
-                ->whereNull('prompt_type') // Apenas prompts de processos (sem tipo)
+            ->where('prompt_type', $data['prompt_type'])
                 ->where('is_default', true)
                 ->update(['is_default' => false]);
         }

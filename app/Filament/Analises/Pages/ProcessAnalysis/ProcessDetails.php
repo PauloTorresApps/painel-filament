@@ -365,14 +365,52 @@ class ProcessDetails extends Page
                 })
                 ->icon('heroicon-m-square-3-stack-3d')
                 ->color('success')
-                ->requiresConfirmation()
                 ->modalHeading('Confirmar Análise de Documentos')
                 ->modalDescription(function () {
                     $count = collect($this->selectedDocuments)->filter()->count();
                     return "{$count} documento(s) selecionado(s) serão enviados para análise pela IA. Esta operação pode levar alguns minutos.";
                 })
-                ->action(function () {
-                    $this->enviarParaAnalise();
+                ->form([
+                    \Filament\Forms\Components\Select::make('parte_representada')
+                        ->label('Parte Representada')
+                        ->options([
+                            'autora' => 'Autora',
+                            'reu' => 'Réu',
+                            'terceiro' => 'Terceiro interessado',
+                            'recorrente' => 'Recorrente',
+                            'recorrido' => 'Recorrido',
+                            'impetrante' => 'Impetrante',
+                            'impetrado' => 'Impetrado',
+                            'paciente' => 'Paciente',
+                            'outro' => 'Outro',
+                        ])
+                        ->required(),
+
+                    \Filament\Forms\Components\TextInput::make('papel_processual')
+                        ->label('Papel Processual')
+                        ->placeholder('Ex: executado, exequente, assistente, litisconsorte')
+                        ->maxLength(100),
+
+                    \Filament\Forms\Components\Select::make('objetivo_analise')
+                        ->label('Objetivo da Análise')
+                        ->options([
+                            'diagnostico' => 'Diagnóstico',
+                            'recurso' => 'Estratégia recursal',
+                            'impugnacao' => 'Impugnação/defesa',
+                            'execucao' => 'Cumprimento/execução',
+                            'acordo' => 'Negociação/acordo',
+                            'auditoria' => 'Auditoria processual',
+                        ])
+                        ->required(),
+
+                    \Filament\Forms\Components\Textarea::make('prazo_em_curso')
+                        ->label('Prazo em Curso (opcional)')
+                        ->placeholder('Descreva prazo, termo inicial ou urgência conhecida')
+                        ->rows(2)
+                        ->maxLength(255),
+                ])
+                ->action(function (array $data) {
+                    $this->enviarParaAnalise($data);
                 })
                 ->visible(fn () => !empty($this->documentos))
                 ->disabled(function () {
@@ -396,7 +434,7 @@ class ProcessDetails extends Page
     /**
      * Envia todos os documentos para análise
      */
-    public function enviarParaAnalise(): void
+    public function enviarParaAnalise(array $ingestaoData = []): void
     {
         try {
             $userId = Auth::id();
@@ -565,6 +603,10 @@ class ProcessDetails extends Page
             $documentAnalysis = \App\Models\DocumentAnalysis::create([
                 'user_id' => $userId,
                 'numero_processo' => $this->numeroProcesso,
+                'parte_representada' => $ingestaoData['parte_representada'] ?? null,
+                'papel_processual' => $ingestaoData['papel_processual'] ?? null,
+                'objetivo_analise' => $ingestaoData['objetivo_analise'] ?? null,
+                'prazo_em_curso' => $ingestaoData['prazo_em_curso'] ?? null,
                 'classe_processual' => $classeProcessual,
                 'assuntos' => $assuntos !== '' ? $assuntos : null,
                 'descricao_documento' => count($documentosParaAnalise) . ' documento(s) do processo',
@@ -577,14 +619,23 @@ class ProcessDetails extends Page
                     'contextoDados' => $this->dadosBasicos,
                     'promptTemplate' => $promptPadrao->content,
                     'documentAnalysisPrompt' => $promptAnaliseDocumentos?->content,
+                    'parteRepresentada' => $ingestaoData['parte_representada'] ?? null,
+                    'papelProcessual' => $ingestaoData['papel_processual'] ?? null,
+                    'objetivoAnalise' => $ingestaoData['objetivo_analise'] ?? null,
+                    'prazoEmCurso' => $ingestaoData['prazo_em_curso'] ?? null,
                     'aiProvider' => $aiProvider,
                     'ai_provider' => $aiProvider,
+                    'analysisStrategy' => $promptPadrao->analysis_strategy ?? 'evolutionary',
                     'deepThinkingEnabled' => $promptPadrao->deep_thinking_enabled ?? true,
                     'deep_thinking_enabled' => $promptPadrao->deep_thinking_enabled ?? true,
                     'aiModelId' => $reduceModelId,
                     'ai_model_id' => $reduceModelId,
                     'mapModelId' => $mapModelId,
                     'map_model_id' => $mapModelId,
+                    'chave' => $this->chave,
+                    'userLogin' => \App\Models\JudicialUser::find($this->judicialUserId)->user_login,
+                    'senha' => $this->senha,
+                    'judicialUserId' => $this->judicialUserId,
                     'reduceStrategy' => 'auto',
                     'reduce_strategy' => 'auto',
                 ],
@@ -607,7 +658,11 @@ class ProcessDetails extends Page
                 $promptAnaliseDocumentos?->content,                  // Prompt customizado para análise de documentos (MAP)
                 $this->chave,                                        // Chave do processo (para processos sigilosos)
                 $mapModelId,                                         // ID do modelo para MAP (análise de documentos)
-                $documentAnalysis->id                                // ID da análise já criada para redirecionamento imediato
+                $documentAnalysis->id,                               // ID da análise já criada para redirecionamento imediato
+                $ingestaoData['parte_representada'] ?? null,
+                $ingestaoData['papel_processual'] ?? null,
+                $ingestaoData['objetivo_analise'] ?? null,
+                $ingestaoData['prazo_em_curso'] ?? null
             );
 
             RateLimiter::hit($rateLimitKey, 3600);

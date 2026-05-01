@@ -3,7 +3,7 @@
 namespace App\Filament\Analises\Resources\ProcessAnalysis\Pages;
 
 use App\Filament\Analises\Resources\ProcessAnalysis\DocumentAnalysisResource;
-use App\Jobs\ProcessAnalysis\DispatchMapPhaseJob;
+use App\Jobs\ProcessAnalysis\BuildInventoryJob;
 use App\Jobs\ProcessAnalysis\ReduceDocumentAnalysisJob;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
@@ -217,8 +217,8 @@ class ViewDocumentAnalysis extends ViewRecord
                     // Get job parameters
                     $jobParams = $analysis->job_parameters ?? [];
 
-                    // Dispatch the job
-                    DispatchMapPhaseJob::dispatch(
+                    // Dispatch inventario + map
+                    BuildInventoryJob::dispatch(
                         $analysis->id,
                         $jobParams['aiProvider'] ?? $jobParams['ai_provider'] ?? 'openrouter',
                         $jobParams['deepThinkingEnabled'] ?? $jobParams['deep_thinking_enabled'] ?? true,

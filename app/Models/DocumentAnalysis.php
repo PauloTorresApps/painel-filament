@@ -5,11 +5,14 @@ namespace App\Models;
 use App\Models\ProcessAnalysis\ProcessActionPlanItem;
 use App\Models\ProcessAnalysis\ProcessDeadline;
 use App\Models\ProcessAnalysis\ProcessEngineSnapshot;
+use App\Models\ProcessAnalysis\ProcessIntimacao;
 use App\Models\ProcessAnalysis\ProcessEvent;
 use App\Models\ProcessAnalysis\ProcessInconsistency;
 use App\Models\ProcessAnalysis\ProcessInertiaPeriod;
 use App\Models\ProcessAnalysis\ProcessInventoryItem;
+use App\Models\ProcessAnalysis\ProcessDecisao;
 use App\Models\ProcessAnalysis\ProcessOpportunity;
+use App\Models\ProcessAnalysis\ProcessPedido;
 use App\Models\ProcessAnalysis\ProcessRisk;
 use App\Models\ProcessAnalysis\ProcessStructuredOpinion;
 use Illuminate\Database\Eloquent\Model;
@@ -159,6 +162,21 @@ class DocumentAnalysis extends Model
     public function processInconsistencies(): HasMany
     {
         return $this->hasMany(ProcessInconsistency::class);
+    }
+
+    public function processPedidos(): HasMany
+    {
+        return $this->hasMany(ProcessPedido::class);
+    }
+
+    public function processDecisoes(): HasMany
+    {
+        return $this->hasMany(ProcessDecisao::class);
+    }
+
+    public function processIntimacoes(): HasMany
+    {
+        return $this->hasMany(ProcessIntimacao::class);
     }
 
     public function engineSnapshots(): HasMany
