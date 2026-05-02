@@ -32,6 +32,28 @@ class AiPrompt extends Model
     public const TYPE_REDUCE_CONSOLIDATION = 'reduce_consolidation';
     public const TYPE_FINAL_OPINION_WRAPPER = 'final_opinion_wrapper';
 
+    /**
+     * Tipos obrigatórios para execução completa do pipeline de análise processual.
+     */
+    public const REQUIRED_JUDICIAL_PROMPT_TYPES = [
+        self::TYPE_SYSTEM_ROLE,
+        self::TYPE_DOCUMENT_ANALYSIS,
+        self::TYPE_MAP_STRUCTURED_FORMAT,
+        self::TYPE_MAP_FREETEXT_FORMAT,
+        self::TYPE_TIMELINE_INSTRUCTIONS,
+        self::TYPE_ANALYST_JSON_INSTRUCTIONS,
+        self::TYPE_CHUNK_ANALYSIS,
+        self::TYPE_CHUNK_CONSOLIDATION,
+        self::TYPE_REDUCE_CONSOLIDATION,
+        self::TYPE_FINAL_OPINION_WRAPPER,
+        self::TYPE_FINAL_OPINION,
+        self::TYPE_INVENTORY_CONSOLIDATION,
+        self::TYPE_CHRONOLOGY_BUILDER,
+        self::TYPE_ENGINE_INTELLIGENCE,
+        self::TYPE_PARECER_STRUCTURED,
+        self::TYPE_DESIGNER_BRIEF,
+    ];
+
     protected $fillable = [
         'system_id',
         'prompt_type',
@@ -234,6 +256,34 @@ class AiPrompt extends Model
             self::getContractPromptTypes(),
             self::getJudicialPromptTypes()
         );
+    }
+
+    /**
+     * Lista os tipos obrigatórios sem prompt padrão ativo para o sistema.
+     *
+     * @return array<string, string> [prompt_type => label]
+     */
+    public static function getMissingRequiredJudicialPromptTypes(int $systemId): array
+    {
+        $allLabels = self::getAllPromptTypes();
+
+        $availableTypes = self::where('system_id', $systemId)
+            ->whereIn('prompt_type', self::REQUIRED_JUDICIAL_PROMPT_TYPES)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->pluck('prompt_type')
+            ->filter()
+            ->values()
+            ->all();
+
+        $missing = array_values(array_diff(self::REQUIRED_JUDICIAL_PROMPT_TYPES, $availableTypes));
+
+        $result = [];
+        foreach ($missing as $promptType) {
+            $result[$promptType] = $allLabels[$promptType] ?? $promptType;
+        }
+
+        return $result;
     }
 
     /**

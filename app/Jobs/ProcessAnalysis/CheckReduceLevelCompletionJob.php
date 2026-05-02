@@ -229,6 +229,27 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
         // Salva arquivo de debug com a análise final
         $this->saveFinalAnalysisToFile($documentAnalysis, $finalAnalysis, $prompt, $consolidatedText, $microAnalyses, $apiMetadata);
 
+        if (config('analysis.owlex.enabled', false)) {
+            $documentAnalysis->update([
+                'status' => 'processing',
+                'current_phase' => DocumentAnalysis::PHASE_CHRONOLOGY,
+                'ai_analysis' => $finalAnalysis,
+                'analysis_ai_metadata' => $apiMetadata,
+                'processing_time_ms' => $totalProcessingTime,
+                'is_resumable' => true,
+                'last_processed_at' => now(),
+                'progress_message' => 'Iniciando etapas OWLEX de estruturacao...',
+            ]);
+
+            BuildChronologyJob::dispatch($documentAnalysis->id)->onQueue('analysis');
+
+            Log::info('CheckReduceLevelCompletionJob: Parecer final concluido, iniciando OWLEX', [
+                'analysis_id' => $documentAnalysis->id,
+            ]);
+
+            return;
+        }
+
         // Finaliza a análise
         $documentAnalysis->update([
             'status' => 'completed',

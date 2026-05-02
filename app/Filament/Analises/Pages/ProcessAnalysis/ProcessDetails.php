@@ -487,46 +487,45 @@ class ProcessDetails extends Page
                 return;
             }
 
-            // Busca os prompts padrão do sistema por finalidade
-            // Prompt para análise individual de documentos (fase MAP) - opcional
-            $promptAnaliseDocumentos = \App\Models\AiPrompt::getDefaultForSystemAndType(
-                1, // system_id 1 para análise de processos
-                \App\Models\AiPrompt::TYPE_DOCUMENT_ANALYSIS
-            );
+            $systemId = 1; // system_id para análise de processos
 
-            // Prompt para parecer final (fase REDUCE) - obrigatório
-            $promptParecerFinal = \App\Models\AiPrompt::getDefaultForSystemAndType(
-                1,
-                \App\Models\AiPrompt::TYPE_FINAL_OPINION
-            );
+            // Valida pré-requisitos completos de prompts para evitar falhas em tempo de job.
+            $missingPrompts = \App\Models\AiPrompt::getMissingRequiredJudicialPromptTypes($systemId);
 
-            // Fallback: busca prompt antigo sem tipo específico (compatibilidade)
-            if (!$promptParecerFinal) {
-                $promptParecerFinal = \App\Models\AiPrompt::where('system_id', 1)
-                    ->whereNull('prompt_type')
-                    ->where('is_default', true)
-                    ->where('is_active', true)
-                    ->first();
-            }
+            if (!empty($missingPrompts)) {
+                $missingList = collect($missingPrompts)
+                    ->map(fn (string $label, string $type) => "- {$label} ({$type})")
+                    ->implode("\n");
 
-            // Usa o prompt de parecer final como referência para configurações de IA
-            $promptPadrao = $promptParecerFinal;
-
-            if (!$promptPadrao) {
                 \Filament\Notifications\Notification::make()
-                    ->title('⚠️ Prompt Não Configurado')
-                    ->body('O sistema não possui um prompt padrão configurado para Parecer Final. Configure pelo menos um prompt com finalidade "Parecer Final (REDUCE)" e marque como padrão.')
+                    ->title('⚠️ Prompts Obrigatórios Não Configurados')
+                    ->body("Configure prompts ativos e padrão para todas as funcionalidades obrigatórias antes de iniciar a análise:\n\n{$missingList}")
                     ->danger()
                     ->persistent()
                     ->send();
 
-                Log::warning('Tentativa de análise sem prompt de parecer final configurado', [
+                Log::warning('Tentativa de análise bloqueada por prompts obrigatórios ausentes', [
                     'user_id' => $userId,
-                    'numero_processo' => $this->numeroProcesso
+                    'numero_processo' => $this->numeroProcesso,
+                    'missing_prompt_types' => array_keys($missingPrompts),
                 ]);
 
                 return;
             }
+
+            // Busca os prompts padrão do sistema por finalidade.
+            $promptAnaliseDocumentos = \App\Models\AiPrompt::getDefaultForSystemAndType(
+                $systemId,
+                \App\Models\AiPrompt::TYPE_DOCUMENT_ANALYSIS
+            );
+
+            $promptParecerFinal = \App\Models\AiPrompt::getDefaultForSystemAndType(
+                $systemId,
+                \App\Models\AiPrompt::TYPE_FINAL_OPINION
+            );
+
+            // Usa o prompt de parecer final como referência para configurações de IA.
+            $promptPadrao = $promptParecerFinal;
 
             // Filtra documentos selecionados pelo usuário via controles de seleção da interface
             $selectedIds = collect($this->selectedDocuments)

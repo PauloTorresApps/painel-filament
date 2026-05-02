@@ -69,6 +69,19 @@ class DocumentAnalysisInfolist
                     ->visible(fn ($record) => $record->status === 'completed')
                     ->columnSpanFull(),
 
+                Section::make('Resumo OWLEX')
+                    ->schema([
+                        ViewEntry::make('owlex_summary')
+                            ->view('filament.infolists.entries.process-owlex-summary')
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn ($record) => $record->status === 'completed' && (
+                        !empty($record->analysis_ai_metadata['owlex'] ?? null)
+                        || $record->latestEngineSnapshot()->exists()
+                        || $record->structuredOpinion()->exists()
+                    ))
+                    ->columnSpanFull(),
+
                 Section::make('Erro')
                     ->schema([
                         TextEntry::make('error_message')

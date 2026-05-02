@@ -47,6 +47,26 @@ jobs:
       - name: Generate Application Key
         run: php artisan key:generate
 
+      - name: Run Migrations (Prompt Gate)
+        if: ${{ vars.ENFORCE_PROMPT_GATE == 'true' }}
+        run: php artisan migrate --force
+
+      - name: Import Required Prompts (Prompt Gate)
+        if: ${{ vars.ENFORCE_PROMPT_GATE == 'true' }}
+        env:
+          REQUIRED_PROMPTS_JSON_BASE64: ${{ secrets.REQUIRED_PROMPTS_JSON_BASE64 }}
+        run: |
+          if [ -z "$REQUIRED_PROMPTS_JSON_BASE64" ]; then
+            echo "REQUIRED_PROMPTS_JSON_BASE64 not set; skipping prompt import."
+            exit 0
+          fi
+          echo "$REQUIRED_PROMPTS_JSON_BASE64" | base64 -d > /tmp/required-prompts.json
+          php artisan analysis:import-required-prompts /tmp/required-prompts.json --system=1
+
+      - name: Validate Required Process Prompts (Prompt Gate)
+        if: ${{ vars.ENFORCE_PROMPT_GATE == 'true' }}
+        run: php artisan analysis:check-required-prompts --system=1
+
       - name: Build Assets
         run: npm run build
 

@@ -1,6 +1,6 @@
 # Makefile para facilitar gerenciamento do Docker
 
-.PHONY: help build up down restart logs shell db-shell queue-logs clear-cache migrate seed install frontend-refresh frontend-audit frontend-audit-fix frontend-dev
+.PHONY: help build up down restart logs shell db-shell queue-logs clear-cache migrate seed install frontend-refresh frontend-audit frontend-audit-fix frontend-dev analysis-check-prompts
 
 # Cores para output
 GREEN=\033[0;32m
@@ -93,6 +93,9 @@ tinker: ## Abre o Tinker (REPL do Laravel)
 
 test: ## Executa testes
 	docker compose exec app php artisan test
+
+analysis-check-prompts: ## Valida prompts obrigatorios do pipeline processual
+	docker compose exec app php artisan analysis:check-required-prompts --system=1
 
 optimize: ## Otimiza a aplicação (caches)
 	@echo "${GREEN}⚡ Otimizando aplicação...${NC}"
