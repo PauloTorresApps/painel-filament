@@ -59,6 +59,9 @@ class DocumentAnalysis extends Model
         'analysis_ai_metadata',
         'langfuse_trace_id',
         'langfuse_session_id',
+        'graph_run_id',
+        'graph_last_node',
+        'graph_state',
     ];
 
     protected $casts = [
@@ -75,6 +78,7 @@ class DocumentAnalysis extends Model
         'reduce_processed_batches' => 'integer',
         'reduce_total_batches' => 'integer',
         'analysis_ai_metadata' => 'array',
+        'graph_state' => 'array',
     ];
 
     /**

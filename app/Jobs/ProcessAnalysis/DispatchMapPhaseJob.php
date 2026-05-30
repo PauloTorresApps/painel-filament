@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Services\NotificationService;
+use App\Pipeline\Graph\Conditions\CircuitBreakerTrippedCondition;
+use App\Pipeline\Graph\Conditions\IsLargeDocumentCondition;
+use App\Pipeline\Graph\Conditions\SkipMapForReprocessingCondition;
+use App\Pipeline\Graph\Conditions\UseRefineStrategyCondition;
 use Filament\Notifications\Notification as FilamentNotification;
 
 /**
@@ -145,7 +149,7 @@ class DispatchMapPhaseJob implements ShouldQueue
             $useRefineStrategy = $this->shouldUseRefineStrategy($originalTotalDocs, null);
 
             // Se não há jobs Map pendentes, mas existem os completados (Ex: Reprocessar apenas Reduce), dispara logo o Reduce
-            if ($microAnalysesCount === 0 && $completedMicroAnalysesCount > 0) {
+            if ((new SkipMapForReprocessingCondition())->evaluate($microAnalysesCount, $completedMicroAnalysesCount)) {
                 $completedChars = (int) $documentAnalysis->microAnalyses()
                     ->where('status', 'completed')
                     ->where('reduce_level', 0)
@@ -174,10 +178,12 @@ class DispatchMapPhaseJob implements ShouldQueue
             $regularDocs = [];
             $largeDocs = [];
 
+            $isLargeDocument = new IsLargeDocumentCondition();
+
             foreach ($pendingMicroAnalyses as $microAnalysis) {
                 $textLength = mb_strlen($microAnalysis->extracted_text ?? '');
 
-                if ($textLength > config('analysis.thresholds.large_document_chars', 100000)) {
+                if ($isLargeDocument->evaluate($textLength)) {
                     $largeDocs[] = $microAnalysis;
                     Log::info('DispatchMapPhaseJob: Documento grande detectado', [
                         'micro_id' => $microAnalysis->id,
@@ -270,14 +276,13 @@ class DispatchMapPhaseJob implements ShouldQueue
                     ]);
 
                     // Circuit breaker: aborta se taxa de falha exceder limite
-                    $threshold = config('analysis.circuit_breaker.failure_threshold', 0.25);
-                    $minJobs = config('analysis.circuit_breaker.min_jobs', 4);
+                    $threshold = (float) config('analysis.circuit_breaker.failure_threshold', 0.25);
+                    $circuitBreaker = new CircuitBreakerTrippedCondition();
 
-                    if ($batch->totalJobs >= $minJobs && $batch->totalJobs > 0) {
-                        $failureRate = $batch->failedJobs / $batch->totalJobs;
-
-                        if ($failureRate > $threshold) {
-                            $failedPct = round($failureRate * 100);
+                    if ($circuitBreaker->evaluate($batch->failedJobs, $batch->totalJobs, $threshold)) {
+                            $failedPct = $batch->totalJobs > 0
+                                ? round(($batch->failedJobs / $batch->totalJobs) * 100)
+                                : 0;
                             $thresholdPct = round($threshold * 100);
 
                             Log::error('DispatchMapPhaseJob: Circuit breaker ativado', [
@@ -302,7 +307,6 @@ class DispatchMapPhaseJob implements ShouldQueue
                             }
 
                             return;
-                        }
                     }
 
                     // Recalcula estratégia com base no MAP concluído para evitar
@@ -417,28 +421,11 @@ class DispatchMapPhaseJob implements ShouldQueue
      */
     private function shouldUseRefineStrategy(int $docCount, ?int $totalChars): bool
     {
-        // Se foi especificado explicitamente
-        if ($this->reduceStrategy === 'refine') {
-            return true;
-        }
-
-        if ($this->reduceStrategy === 'batch') {
-            return false;
-        }
-
-        // Estratégia automática baseada na quantidade de documentos e no volume agregado.
-        // - Poucos documentos: refine é melhor (narrativa mais coesa)
-        // - Muitos documentos: batch é mais rápido e eficiente
-        if ($docCount > config('analysis.thresholds.refine_max_documents', 20)) {
-            return false;
-        }
-
-        $directConsolidationLimit = (int) config('analysis.reduce.direct_consolidation_chars', 800000);
-        if (!is_null($totalChars) && $totalChars > $directConsolidationLimit) {
-            return false;
-        }
-
-        return true;
+        return (new UseRefineStrategyCondition())->evaluate(
+            docCount: $docCount,
+            totalChars: $totalChars,
+            reduceStrategy: $this->reduceStrategy
+        );
     }
 
     /**

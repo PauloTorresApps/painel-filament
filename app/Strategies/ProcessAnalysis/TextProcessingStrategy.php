@@ -4,6 +4,7 @@ namespace App\Strategies\ProcessAnalysis;
 
 use App\Contracts\AIProviderInterface;
 use App\Models\DocumentMicroAnalysis;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -92,8 +93,28 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
             'structured_output' => config('services.openrouter.structured_map_enabled', false),
         ]);
 
-        // Se structured outputs habilitado, usa JSON schema para resposta consistente
-        if (config('services.openrouter.structured_map_enabled', false) && $this->mapAnalysisSchema) {
+        // Se structured outputs habilitado, usa JSON schema para resposta consistente.
+        // Quando há falha, ativa cooldown por análise/modelo para evitar duplicar
+        // a primeira chamada structured em todos os documentos seguintes.
+        $structuredEnabled = config('services.openrouter.structured_map_enabled', false);
+        if ($structuredEnabled && $this->mapAnalysisSchema) {
+            $fallbackToText = config('services.openrouter.structured_map_fallback_to_text', false);
+            $cooldownKey = $this->structuredFailureCooldownKey($microAnalysis, $aiService);
+
+            if ($fallbackToText && $cooldownKey && Cache::has($cooldownKey)) {
+                Log::info('TextProcessingStrategy: Structured em cooldown, usando texto livre', [
+                    'micro_id' => $microAnalysis->id,
+                    'analysis_id' => $microAnalysis->document_analysis_id,
+                ]);
+
+                return $aiService->analyzeSingleDocument(
+                    $documentPrompt,
+                    $text,
+                    $deepThinkingEnabled,
+                    $systemPrompt
+                );
+            }
+
             try {
                 return $aiService->analyzeSingleDocumentStructured(
                     $documentPrompt,
@@ -108,8 +129,13 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
                     'error' => $e->getMessage(),
                 ]);
 
-                if (!config('services.openrouter.structured_map_fallback_to_text', false)) {
+                if (!$fallbackToText) {
                     throw $e;
+                }
+
+                if ($cooldownKey) {
+                    $cooldownMinutes = max(1, (int) config('services.openrouter.structured_map_failure_cooldown_minutes', 30));
+                    Cache::put($cooldownKey, true, now()->addMinutes($cooldownMinutes));
                 }
             }
         }
@@ -178,5 +204,19 @@ class TextProcessingStrategy implements DocumentProcessingStrategy
             ]);
             return '';
         }
+    }
+
+    private function structuredFailureCooldownKey(DocumentMicroAnalysis $microAnalysis, AIProviderInterface $aiService): ?string
+    {
+        $analysisId = $microAnalysis->document_analysis_id;
+        $provider = $aiService->getName();
+
+        if (!$analysisId || !$provider) {
+            return null;
+        }
+
+        $strategy = $microAnalysis->processing_strategy ?? 'text';
+
+        return 'map:structured:cooldown:' . sha1($analysisId . '|' . $provider . '|' . $strategy);
     }
 }

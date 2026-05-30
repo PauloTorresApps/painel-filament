@@ -11,6 +11,7 @@ use App\Mail\ProcessAnalysis\ProcessAnalysisCompleted;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use App\Traits\InjectsUpstreamInputs;
+use App\Pipeline\Graph\Conditions\DirectConsolidationFitsCondition;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
@@ -171,9 +172,23 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             // Se todas as micro-análises cabem em uma janela de contexto razoável,
             // faz consolidação direta em 1 única chamada ao invés de N chamadas sequenciais
-            $directConsolidationLimit = (int) config('analysis.reduce.direct_consolidation_chars', 800000);
+            $directConsolidationLimit = $this->resolveDirectConsolidationLimit($resolvedModelId);
 
-            if ($this->startFromIndex === 0 && $totalChars <= $directConsolidationLimit) {
+            Log::info('RefineReduceJob: Estratégia de consolidação avaliada', [
+                'analysis_id' => $this->documentAnalysisId,
+                'resolved_model_id' => $resolvedModelId,
+                'total_chars' => $totalChars,
+                'direct_consolidation_limit' => $directConsolidationLimit,
+                'start_from_index' => $this->startFromIndex,
+            ]);
+
+            $canUseDirectConsolidation = (new DirectConsolidationFitsCondition())->evaluate(
+                startFromIndex: $this->startFromIndex,
+                totalChars: $totalChars,
+                directConsolidationLimit: $directConsolidationLimit,
+            );
+
+            if ($canUseDirectConsolidation) {
                 // CONSOLIDAÇÃO DIRETA: 1 única chamada à API
                 $finalAnalysis = $this->directConsolidation(
                     $aiService,
@@ -668,6 +683,33 @@ CONTENT;
         $promptFromDb = AiPrompt::getDefaultForSystemAndType(1, AiPrompt::TYPE_FINAL_OPINION);
 
         return $promptFromDb?->aiModel?->model_id;
+    }
+
+    /**
+     * Resolve limite de consolidação direta com override por modelo.
+     */
+    private function resolveDirectConsolidationLimit(?string $resolvedModelId): int
+    {
+        $defaultLimit = (int) config('analysis.reduce.direct_consolidation_chars', 2000000);
+        $overrides = config('analysis.reduce.direct_consolidation_chars_overrides', []);
+
+        if (!is_array($overrides) || empty($resolvedModelId)) {
+            return $defaultLimit;
+        }
+
+        $modelId = mb_strtolower($resolvedModelId);
+
+        foreach ($overrides as $pattern => $limit) {
+            if ($pattern === '' || !is_string($pattern)) {
+                continue;
+            }
+
+            if (str_contains($modelId, mb_strtolower($pattern))) {
+                return max(1, (int) $limit);
+            }
+        }
+
+        return $defaultLimit;
     }
 
     /**

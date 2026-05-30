@@ -169,12 +169,14 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 $prompt = $this->buildChunkPrompt($chunkNum, $chunkCount);
 
                 // Analisa o chunk com system prompt cacheável
-                $chunkResult = $aiService->analyzeSingleDocument(
-                    $prompt,
-                    $chunk,
-                    false, // Não usa deep thinking para chunks individuais
-                    $chunkSystemPrompt
-                );
+                $chunkResult = $aiService
+                    ->setInputCharLimit(null)
+                    ->analyzeSingleDocument(
+                        $prompt,
+                        $chunk,
+                        false, // Não usa deep thinking para chunks individuais
+                        $chunkSystemPrompt
+                    );
 
                 $chunkSummaries[] = "### Parte {$chunkNum}/{$chunkCount}\n\n{$chunkResult}";
 
@@ -195,12 +197,14 @@ class ChunkLargeDocumentJob implements ShouldQueue
             $consolidationSystemPrompt = $this->buildConsolidationSystemPrompt($microAnalysis, $chunkCount);
             $consolidationPrompt = "Consolide as análises das {$chunkCount} partes do documento abaixo em uma análise única e coesa.";
 
-            $finalResult = $aiService->analyzeSingleDocument(
-                $consolidationPrompt,
-                $consolidatedText,
-                $this->deepThinkingEnabled,
-                $consolidationSystemPrompt
-            );
+            $finalResult = $aiService
+                ->setInputCharLimit(null)
+                ->analyzeSingleDocument(
+                    $consolidationPrompt,
+                    $consolidatedText,
+                    $this->deepThinkingEnabled,
+                    $consolidationSystemPrompt
+                );
 
             $processingTimeMs = (int) ((microtime(true) - $startTime) * 1000);
 

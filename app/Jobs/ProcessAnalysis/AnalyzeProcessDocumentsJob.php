@@ -5,6 +5,9 @@ namespace App\Jobs\ProcessAnalysis;
 use App\Jobs\Middleware\OtelJobMiddleware;
 use App\Models\DocumentAnalysis;
 use App\Models\DocumentMicroAnalysis;
+use App\Pipeline\Graph\GraphRunner;
+use App\Pipeline\Graph\GraphState;
+use App\Pipeline\Graph\Nodes\InventoryNode;
 use App\Models\User;
 use App\Services\ProcessAnalysis\EprocService;
 use App\Services\HtmlToPdfService;
@@ -229,17 +232,33 @@ class AnalyzeProcessDocumentsJob implements ShouldQueue, ShouldBeUnique
                 'docs_falhos' => $totalDocs - $pendingCount,
             ]);
 
-            // Dispara fase de inventário antes da MAP
-            BuildInventoryJob::dispatch(
-                $documentAnalysis->id,
-                $this->aiProvider,
-                $this->deepThinkingEnabled,
-                $this->contextoDados,
-                $this->aiModelId,
-                $this->userId,
-                'auto',
-                $this->mapModelId
-            )->onQueue('analysis');
+            $inventoryPayload = [
+                'analysis_id' => $documentAnalysis->id,
+                'ai_provider' => $this->aiProvider,
+                'deep_thinking_enabled' => $this->deepThinkingEnabled,
+                'contexto_dados' => $this->contextoDados,
+                'ai_model_id' => $this->aiModelId,
+                'user_id' => $this->userId,
+                'reduce_strategy' => 'auto',
+                'map_model_id' => $this->mapModelId,
+            ];
+
+            if ((bool) config('analysis.graph_runner.enabled', false)) {
+                $runner = new GraphRunner();
+                $runner->run(new InventoryNode(), GraphState::fromArray($inventoryPayload));
+            } else {
+                // Caminho legado permanece como padrão durante o rollout gradual.
+                BuildInventoryJob::dispatch(
+                    $documentAnalysis->id,
+                    $this->aiProvider,
+                    $this->deepThinkingEnabled,
+                    $this->contextoDados,
+                    $this->aiModelId,
+                    $this->userId,
+                    'auto',
+                    $this->mapModelId
+                )->onQueue('analysis');
+            }
 
         } catch (\Exception $e) {
             Log::error('AnalyzeProcessDocumentsJob: Erro geral', [

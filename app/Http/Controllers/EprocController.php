@@ -24,8 +24,6 @@ class EprocController extends Controller
         $this->normalizer = new EprocDataNormalizer();
     }
 
-
-
     public function consultarProcesso(Request $request)
     {
         [$span, $scope] = $this->startSpan('painel-laravel-controller', 'controller.eproc.consultar_processo', [
@@ -116,7 +114,7 @@ class EprocController extends Controller
                 'documento' => $processoData['documento'] ?? [],
             ]);
 
-            // Armazena os dados no cache por 10 minutos
+            // Armazena os dados no cache por 2 minutos
             $cacheKey = 'processo_' . md5($numeroProcesso . Auth::id());
             cache()->put($cacheKey, [
                 'dadosBasicos' => $dadosNormalizados['dadosBasicos'],
@@ -126,7 +124,7 @@ class EprocController extends Controller
                 'judicial_user_id' => $request->user_ws,
                 'senha' => Crypt::encryptString($senha),
                 'chave' => $chave ? Crypt::encryptString($chave) : null,
-            ], now()->addMinutes(10));
+            ], now()->addMinutes(2));
 
             RateLimiter::hit($consultKey, 60);
 

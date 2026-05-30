@@ -21,6 +21,10 @@ class OtelMetricsService
     private mixed $notificationCounter = null;
     private mixed $httpRequestsCounter = null;
     private mixed $httpRequestDurationHistogram = null;
+    private mixed $pipelineNodeExecutionsCounter = null;
+    private mixed $pipelineNodeDurationHistogram = null;
+    private mixed $pipelineNodeTokensCounter = null;
+    private mixed $pipelineNodeCostCounter = null;
 
     public function recordJobExecution(string $jobName, string $status, string $queue, float $durationMs): void
     {
@@ -138,6 +142,37 @@ class OtelMetricsService
 
             $this->getHttpRequestsCounter()->add(1, $attributes);
             $this->getHttpRequestDurationHistogram()->record($durationMs, $attributes);
+        } catch (\Throwable) {
+        }
+    }
+
+    public function recordPipelineNodeExecution(
+        string $graphName,
+        string $nodeId,
+        string $status,
+        float $durationMs,
+        string $model,
+        float $costUsd = 0,
+        int $totalTokens = 0
+    ): void {
+        try {
+            $attributes = [
+                'graph.name' => $graphName,
+                'graph.node_id' => $nodeId,
+                'graph.node_status' => $status,
+                'ai.model' => $model,
+            ];
+
+            $this->getPipelineNodeExecutionsCounter()->add(1, $attributes);
+            $this->getPipelineNodeDurationHistogram()->record($durationMs, $attributes);
+
+            if ($totalTokens > 0) {
+                $this->getPipelineNodeTokensCounter()->add($totalTokens, $attributes);
+            }
+
+            if ($costUsd > 0) {
+                $this->getPipelineNodeCostCounter()->add($costUsd, $attributes);
+            }
         } catch (\Throwable) {
         }
     }
@@ -344,5 +379,57 @@ class OtelMetricsService
         }
 
         return $this->httpRequestDurationHistogram;
+    }
+
+    private function getPipelineNodeExecutionsCounter(): mixed
+    {
+        if ($this->pipelineNodeExecutionsCounter === null) {
+            $this->pipelineNodeExecutionsCounter = $this->getMeter()->createCounter(
+                'laravel_pipeline_node_executions_total',
+                '{node}',
+                'Total de execucoes de nodes do pipeline por status'
+            );
+        }
+
+        return $this->pipelineNodeExecutionsCounter;
+    }
+
+    private function getPipelineNodeDurationHistogram(): mixed
+    {
+        if ($this->pipelineNodeDurationHistogram === null) {
+            $this->pipelineNodeDurationHistogram = $this->getMeter()->createHistogram(
+                'laravel_pipeline_node_duration_ms',
+                'ms',
+                'Duracao dos nodes do pipeline'
+            );
+        }
+
+        return $this->pipelineNodeDurationHistogram;
+    }
+
+    private function getPipelineNodeTokensCounter(): mixed
+    {
+        if ($this->pipelineNodeTokensCounter === null) {
+            $this->pipelineNodeTokensCounter = $this->getMeter()->createCounter(
+                'laravel_pipeline_node_tokens_total',
+                '{token}',
+                'Total de tokens registrados por node do pipeline'
+            );
+        }
+
+        return $this->pipelineNodeTokensCounter;
+    }
+
+    private function getPipelineNodeCostCounter(): mixed
+    {
+        if ($this->pipelineNodeCostCounter === null) {
+            $this->pipelineNodeCostCounter = $this->getMeter()->createCounter(
+                'laravel_pipeline_node_cost_usd_total',
+                'USD',
+                'Custo acumulado em USD por node do pipeline'
+            );
+        }
+
+        return $this->pipelineNodeCostCounter;
     }
 }

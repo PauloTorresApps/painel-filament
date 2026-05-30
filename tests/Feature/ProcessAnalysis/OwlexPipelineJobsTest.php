@@ -82,7 +82,7 @@ function createOwlexBaseAnalysis(): DocumentAnalysis
         'job_parameters' => [],
     ]);
 
-    DocumentMicroAnalysis::create([
+    $firstMicro = DocumentMicroAnalysis::create([
         'document_analysis_id' => $analysis->id,
         'document_index' => 1,
         'id_documento' => 'doc-1',
@@ -141,7 +141,7 @@ function createOwlexBaseAnalysis(): DocumentAnalysis
 
     ProcessInventoryItem::create([
         'document_analysis_id' => $analysis->id,
-        'document_micro_analysis_id' => 1,
+        'document_micro_analysis_id' => $firstMicro->id,
         'evento_ou_id' => 'INV-1',
         'data' => '2026-01-01',
         'tipo' => 'anexo',
@@ -157,7 +157,7 @@ function createOwlexBaseAnalysis(): DocumentAnalysis
 
     ProcessPedido::create([
         'document_analysis_id' => $analysis->id,
-        'document_micro_analysis_id' => 1,
+        'document_micro_analysis_id' => $firstMicro->id,
         'parte' => 'Autora',
         'pedido' => 'Tutela de urgencia',
         'fundamentacao' => 'Art. 300 do CPC',

@@ -119,6 +119,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Eproc Integration
+    |--------------------------------------------------------------------------
+    |
+    | Cache de resposta para consultas de documentos do webservice eproc.
+    | Reduz chamadas SOAP repetidas em reanálises do mesmo processo.
+    |
+    */
+
+    'eproc' => [
+        'documents_cache_enabled' => (bool) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_ENABLED', true),
+        'documents_cache_ttl_minutes' => (int) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_TTL_MINUTES', 1440),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | MAP Cache
     |--------------------------------------------------------------------------
     |
@@ -133,6 +148,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Graph Runner (LangGraph-like abstraction)
+    |--------------------------------------------------------------------------
+    |
+    | Fase 0 spike: mantém o pipeline atual e habilita somente o roteamento
+    | inicial de InventoryNode atrás de feature flag.
+    |
+    */
+
+    'graph_runner' => [
+        'enabled' => (bool) env('ANALYSIS_GRAPH_RUNNER_ENABLED', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Reduce Configuration
     |--------------------------------------------------------------------------
     */
@@ -141,7 +170,13 @@ return [
         'batch_size' => (int) env('ANALYSIS_BATCH_SIZE', 10),
         'max_levels' => (int) env('ANALYSIS_MAX_REDUCE_LEVELS', 5),
         // Limite para consolidar em uma única chamada no RefineReduceJob
-        'direct_consolidation_chars' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS', 800000),
+        'direct_consolidation_chars' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS', 2000000),
+        // Overrides por trecho do model_id (match por contains, case-insensitive).
+        // Ex.: model_id "google/gemini-2.5-pro" casa com "gemini".
+        'direct_consolidation_chars_overrides' => [
+            'gemini' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS_GEMINI', 3500000),
+            'claude' => (int) env('ANALYSIS_DIRECT_CONSOLIDATION_CHARS_CLAUDE', 2000000),
+        ],
     ],
 
     /*

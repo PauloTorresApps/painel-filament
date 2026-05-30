@@ -8,6 +8,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Models\User;
 use App\Mail\ProcessAnalysis\ProcessAnalysisCompleted;
+use App\Pipeline\Graph\Conditions\NeedsMoreReduceLevelsCondition;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
 use App\Traits\HandlesJsonOutput;
@@ -97,8 +98,13 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
                 return;
             }
 
+            $needsMoreLevels = (new NeedsMoreReduceLevelsCondition())->evaluate(
+                completedCount: $completedCount,
+                completedLevel: $this->completedReduceLevel
+            );
+
             // Se há mais de BATCH_SIZE resultados e não atingiu o limite de níveis, precisa de mais um nível
-            if ($completedCount > config('analysis.reduce.batch_size', 10) && $this->completedReduceLevel < config('analysis.reduce.max_levels', 5)) {
+            if ($needsMoreLevels) {
                 Log::info('CheckReduceLevelCompletionJob: Disparando próximo nível de reduce', [
                     'analysis_id' => $this->analysisId,
                     'next_level' => $this->completedReduceLevel + 1,

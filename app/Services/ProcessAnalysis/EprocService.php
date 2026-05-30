@@ -7,6 +7,7 @@ use App\Traits\WithOtelTracing;
 use SoapClient;
 use SoapFault;
 use Exception;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use OpenTelemetry\API\Trace\StatusCode;
 
@@ -35,13 +36,14 @@ class EprocService
 
         try {
             $wsdlUrl = config('services.eproc.wsdl_url');
+            $isProduction = app()->environment('production');
 
-            // Contexto com opções SSL mais permissivas para ambientes de desenvolvimento
+            // Em produção exige validação TLS; em desenvolvimento permite certificado self-signed.
             $contextOptions = [
                 'ssl' => [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                    'allow_self_signed' => true,
+                    'verify_peer' => $isProduction,
+                    'verify_peer_name' => $isProduction,
+                    'allow_self_signed' => !$isProduction,
                     'crypto_method' => STREAM_CRYPTO_METHOD_TLS_CLIENT
                 ],
                 'http' => [
@@ -56,7 +58,7 @@ class EprocService
             $soapOptions = [
                 'trace' => 1,
                 'exceptions' => true,
-                'cache_wsdl' => WSDL_CACHE_NONE,
+                'cache_wsdl' => WSDL_CACHE_DISK,
                 'stream_context' => $context,
                 'connection_timeout' => 60,
                 'user_agent' => 'PHP SOAP Client',
@@ -233,6 +235,29 @@ class EprocService
         try {
             // Remove a máscara do número do processo
             $numeroProcessoLimpo = $this->limparNumeroProcesso($numeroProcesso);
+            $idsNormalizados = array_map(static fn ($id) => (string) $id, $idsDocumentos);
+            sort($idsNormalizados, SORT_STRING);
+
+            $cacheEnabled = (bool) config('analysis.eproc.documents_cache_enabled', true);
+            $cacheTtlMinutes = (int) config('analysis.eproc.documents_cache_ttl_minutes', 1440);
+            $cacheKey = 'eproc:documentos:' . sha1(implode('|', [
+                (string) $this->usuario,
+                $numeroProcessoLimpo,
+                implode(',', $idsNormalizados),
+                (string) (int) $incluirConteudo,
+                (string) ($chave ?? ''),
+            ]));
+
+            if ($cacheEnabled) {
+                $cached = Cache::get($cacheKey);
+                if ($cached !== null) {
+                    $span?->setAttribute('eproc.cache_hit', true);
+                    $span?->setStatus(StatusCode::STATUS_OK);
+                    return $cached;
+                }
+            }
+
+            $span?->setAttribute('eproc.cache_hit', false);
 
             Log::info('Consultando documentos com conteúdo via HTTP manual', [
                 'numeroProcesso' => $numeroProcessoLimpo,
@@ -323,7 +348,13 @@ class EprocService
             $span?->setAttribute('eproc.duration_ms', $durationMs);
             $span?->setStatus(StatusCode::STATUS_OK);
 
-            return $this->processarResposta($resultado);
+            $processedResult = $this->processarResposta($resultado);
+
+            if ($cacheEnabled && $cacheTtlMinutes > 0) {
+                Cache::put($cacheKey, $processedResult, now()->addMinutes($cacheTtlMinutes));
+            }
+
+            return $processedResult;
 
         } catch (Exception $e) {
             $durationMs = (hrtime(true) - $start) / 1_000_000;

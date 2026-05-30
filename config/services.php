@@ -97,6 +97,9 @@ return [
         // Se false, falha de structured output não faz segunda chamada em texto livre.
         // Reduz chamadas, mas pode aumentar falhas de MAP quando o modelo não respeita schema.
         'structured_map_fallback_to_text' => env('OPENROUTER_STRUCTURED_MAP_FALLBACK_TO_TEXT', false),
+        // Quando habilitado fallback para texto livre, evita repetir tentativas structured
+        // para todos os documentos do mesmo processo após a primeira falha.
+        'structured_map_failure_cooldown_minutes' => (int) env('OPENROUTER_STRUCTURED_MAP_FAILURE_COOLDOWN_MINUTES', 30),
 
         // Web search plugin para o parecer final
         'web_search_enabled' => env('OPENROUTER_WEB_SEARCH_ENABLED', false),
