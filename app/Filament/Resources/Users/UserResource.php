@@ -89,13 +89,11 @@ class UserResource extends Resource
 
         if (auth()->user()->hasRole('Admin')) {
             return $query;
-        } else {
-            return parent::getEloquentQuery()->whereHas(
-                'roles',
-                fn (Builder $query) => $query->where('name', '!=', 'Admin')
-            );
         }
 
-        return $query;
+        return $query->whereHas(
+            'roles',
+            fn (Builder $query) => $query->where('name', '!=', 'Admin')
+        );
     }
 }

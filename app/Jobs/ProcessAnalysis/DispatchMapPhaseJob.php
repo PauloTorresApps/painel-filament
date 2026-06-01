@@ -239,8 +239,8 @@ class DispatchMapPhaseJob implements ShouldQueue
                     $this->aiProvider,
                     $this->deepThinkingEnabled,
                     $this->contextoDados,
-                    $mapModel
-                    // TODO: Adicionar customAnalysisPrompt ao ChunkLargeDocumentJob se necessário
+                    $mapModel,
+                    $customAnalysisPrompt
                 );
             }
 

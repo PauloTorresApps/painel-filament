@@ -130,6 +130,9 @@ return [
     'eproc' => [
         'documents_cache_enabled' => (bool) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_ENABLED', true),
         'documents_cache_ttl_minutes' => (int) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_TTL_MINUTES', 1440),
+        'documents_cache_ttl_minutes_with_content' => (int) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_TTL_MINUTES_WITH_CONTENT', 60),
+        'documents_cache_ttl_minutes_large_batch' => (int) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_TTL_MINUTES_LARGE_BATCH', 240),
+        'documents_cache_large_batch_threshold' => (int) env('ANALYSIS_EPROC_DOCUMENTS_CACHE_LARGE_BATCH_THRESHOLD', 20),
     ],
 
     /*

@@ -36,7 +36,8 @@ class ChunkLargeDocumentJob implements ShouldQueue
         public string $aiProvider,
         public bool $deepThinkingEnabled,
         public array $contextoDados,
-        public ?string $aiModelId = null
+        public ?string $aiModelId = null,
+        public ?string $customAnalysisPrompt = null
     ) {
         $this->timeout = config('analysis.jobs.chunk_large_document.timeout', 3600);
         $this->tries = config('analysis.jobs.chunk_large_document.tries', 2);
@@ -300,7 +301,7 @@ class ChunkLargeDocumentJob implements ShouldQueue
             ?? $this->contextoDados['classeProcessual']
             ?? 'Não informada';
 
-        return str_replace(
+        $basePrompt = str_replace(
             [':descricao', ':nomeClasse', ':totalChunks'],
             [$microAnalysis->descricao, $nomeClasse, (string) $totalChunks],
             AiPrompt::resolvePromptContent(
@@ -308,6 +309,12 @@ class ChunkLargeDocumentJob implements ShouldQueue
                 AiPrompt::TYPE_CHUNK_ANALYSIS
             )
         );
+
+        if (blank($this->customAnalysisPrompt)) {
+            return $basePrompt;
+        }
+
+        return $basePrompt . "\n\n---\n\n# ORIENTAÇÃO CUSTOMIZADA\n\n" . trim($this->customAnalysisPrompt);
     }
 
     /**
@@ -342,7 +349,15 @@ class ChunkLargeDocumentJob implements ShouldQueue
             AiPrompt::TYPE_TIMELINE_INSTRUCTIONS
         );
 
-        return $consolidationPrompt . "\n\n---\n\n" . $timelineInstructions;
+        if (blank($this->customAnalysisPrompt)) {
+            return $consolidationPrompt . "\n\n---\n\n" . $timelineInstructions;
+        }
+
+        return $consolidationPrompt
+            . "\n\n---\n\n"
+            . $timelineInstructions
+            . "\n\n---\n\n# ORIENTAÇÃO CUSTOMIZADA\n\n"
+            . trim($this->customAnalysisPrompt);
     }
 
     /**

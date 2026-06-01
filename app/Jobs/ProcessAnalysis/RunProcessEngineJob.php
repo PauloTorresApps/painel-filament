@@ -81,14 +81,15 @@ class RunProcessEngineJob implements ShouldQueue
         $this->createInconsistencies($analysis);
         $this->createOpportunities($analysis->id, $engineTemplate);
 
-        $scores = $this->calculateScores($analysis->id);
+        $engineStats = $this->collectEngineStats($analysis->id);
+        $scores = $this->calculateScores($engineStats);
 
         $situacaoAtual = [
             'total_eventos' => $events->count(),
-            'total_prazos' => ProcessDeadline::where('document_analysis_id', $analysis->id)->count(),
-            'total_riscos' => ProcessRisk::where('document_analysis_id', $analysis->id)->count(),
-            'total_oportunidades' => ProcessOpportunity::where('document_analysis_id', $analysis->id)->count(),
-            'total_inconsistencias' => ProcessInconsistency::where('document_analysis_id', $analysis->id)->count(),
+            'total_prazos' => $engineStats['total_deadlines'],
+            'total_riscos' => $engineStats['total_risks'],
+            'total_oportunidades' => $engineStats['total_opportunities'],
+            'total_inconsistencias' => $engineStats['total_inconsistencies'],
         ];
 
         $pendencias = ProcessDeadline::where('document_analysis_id', $analysis->id)
@@ -270,14 +271,40 @@ class RunProcessEngineJob implements ShouldQueue
         }
     }
 
-    private function calculateScores(int $analysisId): array
+    private function collectEngineStats(int $analysisId): array
     {
-        $totalRisks = ProcessRisk::where('document_analysis_id', $analysisId)->count();
-        $highRisks = ProcessRisk::where('document_analysis_id', $analysisId)->where('nivel', 'alto')->count();
-        $inconsistencies = ProcessInconsistency::where('document_analysis_id', $analysisId)->count();
-        $pendingDeadlines = ProcessDeadline::where('document_analysis_id', $analysisId)->where('status', 'pendente')->count();
-        $overdueDeadlines = ProcessDeadline::where('document_analysis_id', $analysisId)->where('status', 'vencido')->count();
-        $opportunities = ProcessOpportunity::where('document_analysis_id', $analysisId)->count();
+        $riskStats = ProcessRisk::query()
+            ->where('document_analysis_id', $analysisId)
+            ->selectRaw('COUNT(*) as total_risks')
+            ->selectRaw("SUM(CASE WHEN nivel = ? THEN 1 ELSE 0 END) as high_risks", ['alto'])
+            ->first();
+
+        $deadlineStats = ProcessDeadline::query()
+            ->where('document_analysis_id', $analysisId)
+            ->selectRaw('COUNT(*) as total_deadlines')
+            ->selectRaw("SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending_deadlines", ['pendente'])
+            ->selectRaw("SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as overdue_deadlines", ['vencido'])
+            ->first();
+
+        return [
+            'total_risks' => (int) ($riskStats?->total_risks ?? 0),
+            'high_risks' => (int) ($riskStats?->high_risks ?? 0),
+            'total_inconsistencies' => (int) ProcessInconsistency::where('document_analysis_id', $analysisId)->count(),
+            'pending_deadlines' => (int) ($deadlineStats?->pending_deadlines ?? 0),
+            'overdue_deadlines' => (int) ($deadlineStats?->overdue_deadlines ?? 0),
+            'total_deadlines' => (int) ($deadlineStats?->total_deadlines ?? 0),
+            'total_opportunities' => (int) ProcessOpportunity::where('document_analysis_id', $analysisId)->count(),
+        ];
+    }
+
+    private function calculateScores(array $engineStats): array
+    {
+        $totalRisks = $engineStats['total_risks'];
+        $highRisks = $engineStats['high_risks'];
+        $inconsistencies = $engineStats['total_inconsistencies'];
+        $pendingDeadlines = $engineStats['pending_deadlines'];
+        $overdueDeadlines = $engineStats['overdue_deadlines'];
+        $opportunities = $engineStats['total_opportunities'];
 
         $risk = min(100, ($totalRisks * 12) + ($overdueDeadlines * 20));
         $urgency = min(100, ($overdueDeadlines * 25) + ($pendingDeadlines * 8) + ($highRisks * 10));

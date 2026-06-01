@@ -7,12 +7,17 @@ use Illuminate\Console\Command;
 
 class SetPromptStrategy extends Command
 {
-    protected $signature = 'prompt:set-strategy {prompt_id?} {strategy?}';
+    protected $signature = 'prompt:set-strategy {prompt_id?} {strategy? : hierarchical|evolutionary} {--force : Permite executar em produção sem confirmação interativa}';
 
     protected $description = 'Define a estratégia de análise para um prompt de IA';
 
     public function handle()
     {
+        if (app()->environment('production') && !$this->option('force')) {
+            $this->error('Em produção, use --force para alterar estratégias de prompt.');
+            return 1;
+        }
+
         // Lista os prompts disponíveis
         $prompts = AiPrompt::with('system')->get();
 
@@ -44,6 +49,11 @@ class SetPromptStrategy extends Command
         // Pega o ID do prompt (do argumento ou pergunta)
         $promptId = $this->argument('prompt_id');
         if (!$promptId) {
+            if (!$this->input->isInteractive()) {
+                $this->error('Informe {prompt_id} em modo não interativo.');
+                return 1;
+            }
+
             $promptId = $this->ask('Digite o ID do prompt que deseja configurar');
         }
 
@@ -56,6 +66,11 @@ class SetPromptStrategy extends Command
         // Pega a estratégia (do argumento ou pergunta)
         $strategy = $this->argument('strategy');
         if (!$strategy) {
+            if (!$this->input->isInteractive()) {
+                $this->error('Informe {strategy} (hierarchical|evolutionary) em modo não interativo.');
+                return 1;
+            }
+
             $strategy = $this->choice(
                 'Escolha a estratégia de análise',
                 ['hierarchical' => 'Pipeline Hierárquico (padrão)', 'evolutionary' => 'Resumo Evolutivo'],

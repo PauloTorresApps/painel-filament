@@ -239,7 +239,7 @@ class EprocService
             sort($idsNormalizados, SORT_STRING);
 
             $cacheEnabled = (bool) config('analysis.eproc.documents_cache_enabled', true);
-            $cacheTtlMinutes = (int) config('analysis.eproc.documents_cache_ttl_minutes', 1440);
+            $cacheTtlMinutes = $this->resolveDocumentsCacheTtl($incluirConteudo, count($idsNormalizados));
             $cacheKey = 'eproc:documentos:' . sha1(implode('|', [
                 (string) $this->usuario,
                 $numeroProcessoLimpo,
@@ -367,6 +367,23 @@ class EprocService
             $this->detachScope($scope);
             $span?->end();
         }
+    }
+
+    /**
+     * Resolve TTL adaptativo para cache de documentos do e-Proc.
+     */
+    private function resolveDocumentsCacheTtl(bool $incluirConteudo, int $documentsCount): int
+    {
+        if ($incluirConteudo) {
+            return (int) config('analysis.eproc.documents_cache_ttl_minutes_with_content', 60);
+        }
+
+        $largeBatchThreshold = (int) config('analysis.eproc.documents_cache_large_batch_threshold', 20);
+        if ($documentsCount >= $largeBatchThreshold) {
+            return (int) config('analysis.eproc.documents_cache_ttl_minutes_large_batch', 240);
+        }
+
+        return (int) config('analysis.eproc.documents_cache_ttl_minutes', 1440);
     }
 
     /**
