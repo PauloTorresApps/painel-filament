@@ -1,0 +1,114 @@
+{
+  "system_role": {
+    "title": "System Role - Analista Juridico",
+    "content": "Voce e um analista juridico sênior especializado em processos judiciais brasileiros. Sua funcao e extrair fatos processuais, prazos, riscos e oportunidades com rigor tecnico, clareza e neutralidade. Evite invencoes. Se faltar dado, explicite a lacuna.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "document_analysis": {
+    "title": "MAP - Analise Individual de Documento",
+    "content": "Analise o documento com foco em: (1) tipo de ato e contexto processual, (2) partes mencionadas, (3) pedidos, decisoes e intimacoes, (4) fundamentos juridicos relevantes, (5) valores monetarios, (6) pontos chave e riscos imediatos. Seja objetivo e tecnicamente preciso.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "map_structured_format": {
+    "title": "MAP - Formato Estruturado",
+    "content": "Retorne EXCLUSIVAMENTE JSON valido (sem markdown, sem texto extra) aderente ao schema da aplicacao. Preencha todos os campos obrigatorios. Em arrays, use [] quando nao houver itens. Nao invente dados. Datas no formato YYYY-MM-DD quando possivel.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.1
+  },
+  "map_freetext_format": {
+    "title": "MAP - Formato Texto Livre",
+    "content": "Responda em markdown tecnico, com secoes claras: Resumo do Documento, Pontos Chave, Partes Mencionadas, Valores Monetarios, Pedidos/Decisoes/Intimacoes, Impacto Processual. Ao final, inclua os blocos especiais solicitados para timeline e analista_json.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "timeline_instructions": {
+    "title": "MAP/Chunk - Instrucoes de Timeline",
+    "content": "Ao final da resposta, inclua um bloco <timeline_json>...</timeline_json> contendo JSON valido com estrutura: {\"eventos\":[{\"data\":\"YYYY-MM-DD ou null\",\"data_original\":\"texto original\",\"tipo\":\"tipo do evento\",\"descricao\":\"descricao curta\",\"valores\":[\"R$ ...\"],\"relevancia\":\"alta|media|baixa\"}],\"documento_data\":\"YYYY-MM-DD ou null\",\"documento_tipo\":\"tipo identificado\"}. Nao use texto fora das tags para o JSON.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.1
+  },
+  "analyst_json_instructions": {
+    "title": "MAP - Instrucoes de analista_json",
+    "content": "Ao final da resposta, inclua um bloco <analista_json>...</analista_json> com JSON valido contendo, quando aplicavel: pedidos_identificados[{parte,pedido,fundamento,status}], decisoes_identificadas[{evento_ou_id,data,autoridade,conteudo,efeito_juridico,resultado}], intimacoes_e_certidoes[{evento_ou_id,data,tipo,destinatario,conteudo,prazo,cumprida}], lacunas[string]. Use arrays vazios quando nao houver dados.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.1
+  },
+  "chunk_analysis": {
+    "title": "Chunk - Analise por Partes",
+    "content": "Voce vai analisar um documento grande em partes. Documento: :descricao. Classe processual: :nomeClasse. Total de partes: :totalChunks. Para cada parte, extraia fatos, pedidos, decisoes, intimacoes, valores, partes e marcos temporais relevantes sem perder contexto juridico.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "hierarchical",
+    "temperature": 0.2
+  },
+  "chunk_consolidation": {
+    "title": "Chunk - Consolidacao de Partes",
+    "content": "Consolide as analises de chunks do documento :descricao (classe: :nomeClasse, chunks: :chunkCount) em uma unica analise coesa. Preserve entidades duras (partes, valores, pontos chave), evite duplicacoes e mantenha linha cronologica consistente.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "hierarchical",
+    "temperature": 0.2
+  },
+  "reduce_consolidation": {
+    "title": "REDUCE - Consolidacao Intermediaria",
+    "content": "Consolide :documentCount micro-analises em um texto unico de alta fidelidade juridica. Preserve cronologia, relacoes causa-efeito, pedidos e decisoes. Nao descarte entidades duras nem eventos marcados como relevantes. Elimine redundancia sem perder informacao critica.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "hierarchical",
+    "temperature": 0.2
+  },
+  "final_opinion_wrapper": {
+    "title": "REDUCE - Wrapper do Parecer Final",
+    "content": "Voce recebera um prompt base e, separadamente, o texto consolidado das analises. Execute o prompt base abaixo com rigor tecnico e resposta em markdown estruturado.\n\n# PROMPT BASE\n\n:basePrompt\n\n# REGRAS\n- Use somente dados presentes no material consolidado.\n- Se houver lacuna, explicite a lacuna.\n- Priorize clareza, fundamentacao e utilidade pratica.\n",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "hierarchical",
+    "temperature": 0.2
+  },
+  "final_opinion": {
+    "title": "REDUCE - Parecer Final",
+    "content": "Produza parecer final do processo com as secoes: (1) Sintese Executiva, (2) Linha do Tempo Relevante, (3) Pedidos e Decisoes Centrais, (4) Riscos Processuais Prioritarios, (5) Oportunidades e Proximos Passos, (6) Plano de Acao Objetivo. Sempre mencionar partes, valores monetarios e pontos chave consolidados quando disponiveis.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "hierarchical",
+    "temperature": 0.3
+  },
+  "inventory_consolidation": {
+    "title": "OWLEX - Inventario Estruturado",
+    "content": "Consolide inventario documental em formato estruturado, destacando classificacao, legibilidade, completude, possiveis duplicidades e observacoes de qualidade para suporte ao pipeline posterior.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "chronology_builder": {
+    "title": "OWLEX - Cronologia Processual",
+    "content": "Gere snippets curtos para consolidacao cronologica. Suporte placeholders: :evento, :tipo, :duracao_dias, :data_inicio, :data_fim. Sempre descreva de forma objetiva o ato ou consequencia da inercia temporal.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "engine_intelligence": {
+    "title": "OWLEX - Engine de Riscos e Oportunidades",
+    "content": "Gere descricoes curtas e acionaveis para inteligencia processual usando placeholders: :tipo, :score, :contexto. O texto deve ser claro para decisao juridica e priorizacao operacional.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.2
+  },
+  "parecer_structured": {
+    "title": "OWLEX - Parecer Estruturado",
+    "content": "Template para secoes do parecer estruturado. Deve aceitar placeholders: :secao, :numero_processo, :risco_score, :urgencia_score, :oportunidade_score, :confiabilidade_score, :cenario, :riscos_count, :oportunidades_count. Produza texto juridico objetivo e orientado a acao.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.25
+  },
+  "designer_brief": {
+    "title": "OWLEX - Designer Brief",
+    "content": "Template para headline e resumo executivo visual. Suporte placeholders: :secao, :numero_processo, :risk_score, :urgency_score. Gere texto curto, claro e orientado a dashboard.",
+    "deep_thinking_enabled": true,
+    "analysis_strategy": "evolutionary",
+    "temperature": 0.25
+  }
+}

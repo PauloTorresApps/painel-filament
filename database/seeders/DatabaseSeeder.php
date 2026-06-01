@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             SystemSeeder::class,
             AiModelsSeeder::class,
+            RequiredJudicialPromptsSeeder::class,
             ContractSystemSeeder::class,
             SettingsSeeder::class,
         ]);

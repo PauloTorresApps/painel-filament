@@ -5,10 +5,11 @@ namespace App\Http\Responses;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse as FilamentLoginResponseContract;
 use Laravel\Fortify\Contracts\LoginResponse as FortifyLoginResponseContract;
 use Illuminate\Http\RedirectResponse;
+use Livewire\Features\SupportRedirects\Redirector;
 
 class LoginResponse implements FilamentLoginResponseContract, FortifyLoginResponseContract
 {
-    public function toResponse($request): RedirectResponse
+    public function toResponse($request): RedirectResponse|Redirector
     {
         $user = auth()->user();
 
