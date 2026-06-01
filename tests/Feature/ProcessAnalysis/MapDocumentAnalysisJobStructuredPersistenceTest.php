@@ -187,3 +187,24 @@ TEXT;
         ->and($decisao->data)->toBeNull()
         ->and($intimacao->cumprida)->toBeTrue();
 });
+
+test('normaliza chaves obrigatorias de entidades quando aggregated_entities e parcial', function () use ($makeAnalysisAndMicro) {
+    [, $micro] = $makeAnalysisAndMicro();
+
+    $micro->update([
+        'aggregated_entities' => [
+            'lacunas' => ['Documento ilegivel'],
+        ],
+    ]);
+
+    $entities = $micro->fresh()->getEntities();
+
+    expect($entities)->toHaveKeys([
+        'partes_mencionadas',
+        'valores_monetarios',
+        'pontos_chave',
+    ])
+        ->and($entities['partes_mencionadas'])->toBeArray()->toBe([])
+        ->and($entities['valores_monetarios'])->toBeArray()->toBe([])
+        ->and($entities['pontos_chave'])->toBeArray()->toBe([]);
+});

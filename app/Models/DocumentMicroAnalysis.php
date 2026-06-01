@@ -86,11 +86,27 @@ class DocumentMicroAnalysis extends Model
      */
     public function getEntities(): array
     {
-        return $this->aggregated_entities ?? [
+        $defaults = [
             'partes_mencionadas' => [],
             'valores_monetarios' => [],
             'pontos_chave' => [],
         ];
+
+        $entities = is_array($this->aggregated_entities)
+            ? $this->aggregated_entities
+            : [];
+
+        // Garante contrato estável para o pipeline (MAP/REDUCE/REFINE),
+        // mesmo quando aggregated_entities contém apenas chaves parciais (ex.: lacunas).
+        $normalized = array_merge($defaults, $entities);
+
+        foreach (array_keys($defaults) as $key) {
+            if (!is_array($normalized[$key])) {
+                $normalized[$key] = [];
+            }
+        }
+
+        return $normalized;
     }
 
     /**
