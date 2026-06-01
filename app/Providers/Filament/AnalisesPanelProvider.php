@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Analises\Pages\ContractAnalysis\ContractAnalysis as ContractAnalysisPage;
 use App\Filament\Analises\Pages\UserProfile;
 use App\Http\Middleware\FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -36,7 +37,9 @@ class AnalisesPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->discoverResources(in: app_path('Filament/Analises/Resources'), for: 'App\Filament\Analises\Resources')
             ->discoverPages(in: app_path('Filament/Analises/Pages'), for: 'App\Filament\Analises\Pages')
-            ->pages([])
+            ->pages([
+                ContractAnalysisPage::class,
+            ])
             ->discoverWidgets(in: app_path('Filament/Analises/Widgets'), for: 'App\Filament\Analises\Widgets')
             ->widgets([])
             ->userMenuItems([
