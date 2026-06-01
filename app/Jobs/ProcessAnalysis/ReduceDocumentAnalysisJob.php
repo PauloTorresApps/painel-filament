@@ -693,6 +693,10 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
             $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
             $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
 
+            $safePrompt = $this->sanitizeDebugText($prompt, 15000);
+            $safeConsolidatedText = $this->sanitizeDebugText($consolidatedText, 25000);
+            $safeFinalAnalysis = $this->sanitizeDebugText($finalAnalysis, 20000);
+
             $content = <<<MD
 # PARECER FINAL - Processo {$documentAnalysis->numero_processo}
 
@@ -729,20 +733,20 @@ class ReduceDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
 ## Prompt Enviado à IA (Parecer Final)
 
 ```
-{$prompt}
+{$safePrompt}
 ```
 
 ---
 
 ## Texto Consolidado Enviado à IA (entrada completa)
 
-{$consolidatedText}
+{$safeConsolidatedText}
 
 ---
 
 ## RESULTADO: PARECER FINAL
 
-{$finalAnalysis}
+{$safeFinalAnalysis}
 
 MD;
 
@@ -847,6 +851,19 @@ MD;
         }
 
         return $block;
+    }
+
+    private function sanitizeDebugText(string $value, int $maxChars = 15000): string
+    {
+        $sanitized = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '[email-redacted]', $value) ?? $value;
+        $sanitized = preg_replace('/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/', '[cpf-redacted]', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/\b\d{11}\b/', '[cpf-redacted]', $sanitized) ?? $sanitized;
+
+        if (mb_strlen($sanitized) <= $maxChars) {
+            return $sanitized;
+        }
+
+        return mb_substr($sanitized, 0, $maxChars) . "\n\n[truncated for debug safety]";
     }
 
 }

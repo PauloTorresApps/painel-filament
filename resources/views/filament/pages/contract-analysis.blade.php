@@ -123,7 +123,7 @@
                             </div>
 
                             <div class="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto">
-                                {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->analysis_result) !!}
+                                {!! \Illuminate\Support\Str::markdown($this->latestAnalysis->analysis_result, ['html_input' => 'strip', 'allow_unsafe_links' => false]) !!}
                             </div>
 
                             {{-- Metadados da IA (Análise) --}}

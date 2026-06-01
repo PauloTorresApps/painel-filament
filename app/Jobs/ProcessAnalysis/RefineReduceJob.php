@@ -120,10 +120,17 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             $totalDocs = $microAnalyses->count();
 
+            $storedStartFrom = max(
+                0,
+                (int) (($documentAnalysis->current_document_index ?? -1) + 1),
+                (int) (($documentAnalysis->job_parameters['refine_resume_from'] ?? 0))
+            );
+            $effectiveStartFrom = max($this->startFromIndex, $storedStartFrom);
+
             Log::info('RefineReduceJob: Iniciando refinamento sequencial', [
                 'analysis_id' => $this->documentAnalysisId,
                 'total_docs' => $totalDocs,
-                'start_from' => $this->startFromIndex,
+                'start_from' => $effectiveStartFrom,
             ]);
 
             // Atualiza fase
@@ -179,11 +186,11 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                 'resolved_model_id' => $resolvedModelId,
                 'total_chars' => $totalChars,
                 'direct_consolidation_limit' => $directConsolidationLimit,
-                'start_from_index' => $this->startFromIndex,
+                'start_from_index' => $effectiveStartFrom,
             ]);
 
             $canUseDirectConsolidation = (new DirectConsolidationFitsCondition())->evaluate(
-                startFromIndex: $this->startFromIndex,
+                startFromIndex: $effectiveStartFrom,
                 totalChars: $totalChars,
                 directConsolidationLimit: $directConsolidationLimit,
             );
@@ -204,7 +211,8 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                     $documentAnalysis,
                     $microAnalyses,
                     $finalOpinionPrompt,
-                    $totalDocs
+                    $totalDocs,
+                    $effectiveStartFrom
                 );
             }
 
@@ -228,6 +236,9 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
                 'last_processed_at' => now(),
                 'progress_message' => 'Análise concluída com sucesso!',
                 'evolutionary_summary' => $finalAnalysis,
+                'job_parameters' => $this->mergeJobParameters($documentAnalysis, [
+                    'refine_resume_from' => 0,
+                ]),
             ]);
 
             Log::info('RefineReduceJob: Análise concluída com sucesso', [
@@ -268,10 +279,15 @@ class RefineReduceJob implements ShouldQueue, ShouldBeUnique
 
             $documentAnalysis = DocumentAnalysis::find($this->documentAnalysisId);
             if ($documentAnalysis) {
+                $resumeFrom = max(0, (int) (($documentAnalysis->current_document_index ?? -1) + 1));
+
                 $documentAnalysis->update([
                     'status' => 'failed',
                     'error_message' => 'Erro no refinamento: ' . $e->getMessage(),
                     'is_resumable' => true, // Permite retomada
+                    'job_parameters' => $this->mergeJobParameters($documentAnalysis, [
+                        'refine_resume_from' => $resumeFrom,
+                    ]),
                 ]);
 
                 $this->notifyUser(
@@ -399,24 +415,29 @@ PROMPT;
         DocumentAnalysis $documentAnalysis,
         $microAnalyses,
         string $finalOpinionPrompt,
-        int $totalDocs
+        int $totalDocs,
+        int $startFromIndex
     ): string {
         // Estado evolutivo - começa vazio ou com resumo anterior
         $evolutiveSummary = '';
         $processedCount = 0;
 
-        if ($this->startFromIndex > 0) {
-            $evolutiveSummary = $this->recoverPreviousSummary($documentAnalysis, $this->startFromIndex);
+        if ($startFromIndex > 0) {
+            $evolutiveSummary = $this->recoverPreviousSummary($documentAnalysis, $startFromIndex);
         }
 
         Log::info('RefineReduceJob: Usando refinamento sequencial', [
             'analysis_id' => $this->documentAnalysisId,
             'total_docs' => $totalDocs,
-            'start_from' => $this->startFromIndex,
+            'start_from' => $startFromIndex,
         ]);
 
+        if ($startFromIndex >= $totalDocs) {
+            return $evolutiveSummary;
+        }
+
         foreach ($microAnalyses as $index => $microAnalysis) {
-            if ($index < $this->startFromIndex) {
+            if ($index < $startFromIndex) {
                 continue;
             }
 
@@ -721,7 +742,19 @@ CONTENT;
             'evolutionary_summary' => $summary,
             'current_document_index' => $index,
             'last_processed_at' => now(),
+            'job_parameters' => $this->mergeJobParameters($documentAnalysis, [
+                'refine_resume_from' => $index + 1,
+            ]),
         ]);
+    }
+
+    private function mergeJobParameters(DocumentAnalysis $documentAnalysis, array $updates): array
+    {
+        $jobParameters = is_array($documentAnalysis->job_parameters)
+            ? $documentAnalysis->job_parameters
+            : [];
+
+        return array_merge($jobParameters, $updates);
     }
 
     /**

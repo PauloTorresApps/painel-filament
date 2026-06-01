@@ -4,7 +4,9 @@ namespace App\Providers;
 
 use App\Services\OtelMetricsService;
 use App\Models\ContractAnalysis;
+use App\Models\User;
 use App\Policies\ContractAnalysis\ContractAnalysisPolicy;
+use App\Policies\UserPolicy;
 use App\Http\Responses\LoginResponse;
 use App\Http\Responses\LogoutResponse;
 use App\Traits\WithOtelTracing;
@@ -42,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(ContractAnalysis::class, ContractAnalysisPolicy::class);
+        Gate::policy(User::class, UserPolicy::class);
 
         Gate::after(function ($user, $ability): ?bool {
             return $user->hasRole('Admin') ? true : null;

@@ -1139,6 +1139,11 @@ PROMPT;
             $metaTokensTotal = $apiMetadata['total_tokens'] ?? 'N/A';
             $metaApiCalls = $apiMetadata['api_calls_count'] ?? 1;
 
+            $safeSystemPrompt = $this->sanitizeDebugText($systemPrompt, 12000);
+            $safeDocumentPrompt = $this->sanitizeDebugText($documentPrompt, 12000);
+            $safeExtractedText = $this->sanitizeDebugText((string) ($microAnalysis->extracted_text ?? ''), 16000);
+            $safeResult = $this->sanitizeDebugText($result, 16000);
+
             $content = <<<MD
 # Análise do Documento: {$microAnalysis->descricao}
 
@@ -1179,7 +1184,7 @@ PROMPT;
 ## System Prompt (contexto fixo - cacheável entre documentos)
 
 ```
-{$systemPrompt}
+{$safeSystemPrompt}
 ```
 
 ---
@@ -1187,7 +1192,7 @@ PROMPT;
 ## Document Prompt (variável por documento)
 
 ```
-{$documentPrompt}
+{$safeDocumentPrompt}
 ```
 
 ---
@@ -1195,14 +1200,14 @@ PROMPT;
 ## Texto Original do Documento
 
 ```
-{$microAnalysis->extracted_text}
+{$safeExtractedText}
 ```
 
 ---
 
 ## Resultado da Análise (micro_analysis)
 
-{$result}
+{$safeResult}
 
 MD;
 
@@ -1229,6 +1234,19 @@ MD;
         }
 
         Log::info($message, $context);
+    }
+
+    private function sanitizeDebugText(string $value, int $maxChars = 12000): string
+    {
+        $sanitized = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '[email-redacted]', $value) ?? $value;
+        $sanitized = preg_replace('/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/', '[cpf-redacted]', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/\b\d{11}\b/', '[cpf-redacted]', $sanitized) ?? $sanitized;
+
+        if (mb_strlen($sanitized) <= $maxChars) {
+            return $sanitized;
+        }
+
+        return mb_substr($sanitized, 0, $maxChars) . "\n\n[truncated for debug safety]";
     }
 
 }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AiModel;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use OpenTelemetry\API\Globals;
@@ -111,38 +112,49 @@ class OpenRouterService extends AbstractAIService
      */
     protected function callAPI(string $prompt, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
-            RateLimiterService::apply($this->getRateLimiterKey());
+        return $this->resolveLlmResponseCache(
+            'texto',
+            [
+                'prompt' => $prompt,
+                'system_prompt' => $systemPrompt,
+                'deep_thinking' => $deepThinkingEnabled,
+            ],
+            $deepThinkingEnabled,
+            function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
+                return $this->withRetry(function () use ($prompt, $deepThinkingEnabled, $systemPrompt) {
+                    RateLimiterService::apply($this->getRateLimiterKey());
 
-            $this->ensureModelIsConfigured();
+                    $this->ensureModelIsConfigured();
 
-            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+                    $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
-            Log::info('OpenRouter API - Iniciando chamada', [
-                'model' => $this->model,
-                'deep_thinking_requested' => $deepThinkingEnabled,
-                'reasoning_enabled' => $useReasoning,
-                'prompt_length' => mb_strlen($prompt),
-                'has_custom_system_prompt' => $systemPrompt !== null,
-            ]);
+                    Log::info('OpenRouter API - Iniciando chamada', [
+                        'model' => $this->model,
+                        'deep_thinking_requested' => $deepThinkingEnabled,
+                        'reasoning_enabled' => $useReasoning,
+                        'prompt_length' => mb_strlen($prompt),
+                        'has_custom_system_prompt' => $systemPrompt !== null,
+                    ]);
 
-            $systemContent = $systemPrompt
-                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
+                    $systemContent = $systemPrompt
+                        ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
 
-            $payload = [
-                'model' => $this->model,
-                'messages' => [
-                    $this->buildSystemMessage($systemContent),
-                    [
-                        'role' => 'user',
-                        'content' => $prompt,
-                    ],
-                ],
-                'max_tokens' => $this->getMaxTokens($useReasoning),
-            ];
+                    $payload = [
+                        'model' => $this->model,
+                        'messages' => [
+                            $this->buildSystemMessage($systemContent),
+                            [
+                                'role' => 'user',
+                                'content' => $prompt,
+                            ],
+                        ],
+                        'max_tokens' => $this->getMaxTokens($useReasoning),
+                    ];
 
-            return $this->executeAPICall($payload, 'texto', $useReasoning);
-        });
+                    return $this->executeAPICall($payload, 'texto', $useReasoning);
+                });
+            }
+        );
     }
 
     /**
@@ -159,41 +171,54 @@ class OpenRouterService extends AbstractAIService
             return parent::callAPIWithImage($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt);
         }
 
-        return $this->withRetry(function () use ($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt) {
-            RateLimiterService::apply($this->getRateLimiterKey());
-
-            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
-
-            Log::info('OpenRouter API - Iniciando chamada com imagem', [
-                'model' => $this->model,
+        return $this->resolveLlmResponseCache(
+            'imagem',
+            [
+                'prompt' => $prompt,
+                'system_prompt' => $systemPrompt,
                 'mimetype' => $mimetype,
-                'image_size' => strlen($imageBase64),
-                'reasoning_enabled' => $useReasoning,
-                'has_system_prompt' => $systemPrompt !== null,
-            ]);
+                'image_hash' => hash('sha256', $imageBase64),
+                'deep_thinking' => $deepThinkingEnabled,
+            ],
+            $deepThinkingEnabled,
+            function () use ($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt) {
+                return $this->withRetry(function () use ($prompt, $imageBase64, $mimetype, $deepThinkingEnabled, $systemPrompt) {
+                    RateLimiterService::apply($this->getRateLimiterKey());
 
-            $systemContent = $systemPrompt
-                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais e imagens. Forneça análises objetivas, estruturadas e fundamentadas.';
+                    $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
-            $imageDataUrl = "data:{$mimetype};base64,{$imageBase64}";
+                    Log::info('OpenRouter API - Iniciando chamada com imagem', [
+                        'model' => $this->model,
+                        'mimetype' => $mimetype,
+                        'image_size' => strlen($imageBase64),
+                        'reasoning_enabled' => $useReasoning,
+                        'has_system_prompt' => $systemPrompt !== null,
+                    ]);
 
-            $payload = [
-                'model' => $this->model,
-                'messages' => [
-                    $this->buildSystemMessage($systemContent),
-                    [
-                        'role' => 'user',
-                        'content' => [
-                            ['type' => 'text', 'text' => $prompt],
-                            ['type' => 'image_url', 'image_url' => ['url' => $imageDataUrl]],
+                    $systemContent = $systemPrompt
+                        ?? 'Você é um assistente jurídico especializado em análise de documentos processuais e imagens. Forneça análises objetivas, estruturadas e fundamentadas.';
+
+                    $imageDataUrl = "data:{$mimetype};base64,{$imageBase64}";
+
+                    $payload = [
+                        'model' => $this->model,
+                        'messages' => [
+                            $this->buildSystemMessage($systemContent),
+                            [
+                                'role' => 'user',
+                                'content' => [
+                                    ['type' => 'text', 'text' => $prompt],
+                                    ['type' => 'image_url', 'image_url' => ['url' => $imageDataUrl]],
+                                ],
+                            ],
                         ],
-                    ],
-                ],
-                'max_tokens' => $this->getMaxTokens($useReasoning),
-            ];
+                        'max_tokens' => $this->getMaxTokens($useReasoning),
+                    ];
 
-            return $this->executeAPICall($payload, 'imagem', $useReasoning);
-        });
+                    return $this->executeAPICall($payload, 'imagem', $useReasoning);
+                });
+            }
+        );
     }
 
     /**
@@ -202,50 +227,64 @@ class OpenRouterService extends AbstractAIService
      */
     protected function callAPIWithPdf(string $prompt, string $pdfBase64, string $filename, bool $isScanned = false, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt) {
-            RateLimiterService::apply($this->getRateLimiterKey());
-            $this->ensureModelIsConfigured();
-
-            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
-            $pdfEngine = $isScanned ? 'mistral-ocr' : 'pdf-text';
-
-            Log::info('OpenRouter API - Iniciando chamada com PDF nativo', [
-                'model' => $this->model,
+        return $this->resolveLlmResponseCache(
+            'pdf',
+            [
+                'prompt' => $prompt,
+                'system_prompt' => $systemPrompt,
                 'filename' => $filename,
                 'is_scanned' => $isScanned,
-                'pdf_engine' => $pdfEngine,
-                'pdf_size' => strlen($pdfBase64),
-                'reasoning_enabled' => $useReasoning,
-            ]);
+                'pdf_hash' => hash('sha256', $pdfBase64),
+                'deep_thinking' => $deepThinkingEnabled,
+            ],
+            $deepThinkingEnabled,
+            function () use ($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt) {
+                return $this->withRetry(function () use ($prompt, $pdfBase64, $filename, $isScanned, $deepThinkingEnabled, $systemPrompt) {
+                    RateLimiterService::apply($this->getRateLimiterKey());
+                    $this->ensureModelIsConfigured();
 
-            $systemContent = $systemPrompt
-                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
+                    $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+                    $pdfEngine = $isScanned ? 'mistral-ocr' : 'pdf-text';
 
-            $pdfDataUrl = "data:application/pdf;base64,{$pdfBase64}";
+                    Log::info('OpenRouter API - Iniciando chamada com PDF nativo', [
+                        'model' => $this->model,
+                        'filename' => $filename,
+                        'is_scanned' => $isScanned,
+                        'pdf_engine' => $pdfEngine,
+                        'pdf_size' => strlen($pdfBase64),
+                        'reasoning_enabled' => $useReasoning,
+                    ]);
 
-            $payload = [
-                'model' => $this->model,
-                'messages' => [
-                    $this->buildSystemMessage($systemContent),
-                    [
-                        'role' => 'user',
-                        'content' => [
-                            ['type' => 'text', 'text' => $prompt],
-                            ['type' => 'file', 'file' => [
-                                'filename' => $filename,
-                                'file_data' => $pdfDataUrl,
-                            ]],
+                    $systemContent = $systemPrompt
+                        ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas.';
+
+                    $pdfDataUrl = "data:application/pdf;base64,{$pdfBase64}";
+
+                    $payload = [
+                        'model' => $this->model,
+                        'messages' => [
+                            $this->buildSystemMessage($systemContent),
+                            [
+                                'role' => 'user',
+                                'content' => [
+                                    ['type' => 'text', 'text' => $prompt],
+                                    ['type' => 'file', 'file' => [
+                                        'filename' => $filename,
+                                        'file_data' => $pdfDataUrl,
+                                    ]],
+                                ],
+                            ],
                         ],
-                    ],
-                ],
-                'max_tokens' => $this->getMaxTokens($useReasoning),
-                'plugins' => $this->buildPlugins(
-                    [['id' => 'file-parser', 'pdf' => ['engine' => $pdfEngine]]],
-                ),
-            ];
+                        'max_tokens' => $this->getMaxTokens($useReasoning),
+                        'plugins' => $this->buildPlugins(
+                            [['id' => 'file-parser', 'pdf' => ['engine' => $pdfEngine]]],
+                        ),
+                    ];
 
-            return $this->executeAPICall($payload, "PDF ({$pdfEngine})", $useReasoning);
-        });
+                    return $this->executeAPICall($payload, "PDF ({$pdfEngine})", $useReasoning);
+                });
+            }
+        );
     }
 
     /**
@@ -254,44 +293,56 @@ class OpenRouterService extends AbstractAIService
      */
     protected function callAPIStructured(string $prompt, array $jsonSchema, bool $deepThinkingEnabled = false, ?string $systemPrompt = null): string
     {
-        return $this->withRetry(function () use ($prompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt) {
-            RateLimiterService::apply($this->getRateLimiterKey());
+        return $this->resolveLlmResponseCache(
+            'json_estruturado',
+            [
+                'prompt' => $prompt,
+                'system_prompt' => $systemPrompt,
+                'schema_hash' => hash('sha256', json_encode($jsonSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+                'deep_thinking' => $deepThinkingEnabled,
+            ],
+            $deepThinkingEnabled,
+            function () use ($prompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt) {
+                return $this->withRetry(function () use ($prompt, $jsonSchema, $deepThinkingEnabled, $systemPrompt) {
+                    RateLimiterService::apply($this->getRateLimiterKey());
 
-            $this->ensureModelIsConfigured();
+                    $this->ensureModelIsConfigured();
 
-            $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
+                    $useReasoning = $deepThinkingEnabled && $this->supportsReasoning();
 
-            Log::info('OpenRouter API - Iniciando chamada estruturada (JSON)', [
-                'model' => $this->model,
-                'schema_name' => $jsonSchema['name'] ?? 'unknown',
-                'reasoning_enabled' => $useReasoning,
-                'prompt_length' => mb_strlen($prompt),
-            ]);
+                    Log::info('OpenRouter API - Iniciando chamada estruturada (JSON)', [
+                        'model' => $this->model,
+                        'schema_name' => $jsonSchema['name'] ?? 'unknown',
+                        'reasoning_enabled' => $useReasoning,
+                        'prompt_length' => mb_strlen($prompt),
+                    ]);
 
-            $systemContent = $systemPrompt
-                ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas. Responda EXCLUSIVAMENTE no formato JSON solicitado.';
+                    $systemContent = $systemPrompt
+                        ?? 'Você é um assistente jurídico especializado em análise de documentos processuais. Forneça análises objetivas, estruturadas e fundamentadas. Responda EXCLUSIVAMENTE no formato JSON solicitado.';
 
-            $payload = [
-                'model' => $this->model,
-                'messages' => [
-                    $this->buildSystemMessage($systemContent),
-                    [
-                        'role' => 'user',
-                        'content' => $prompt,
-                    ],
-                ],
-                'max_tokens' => $this->getMaxTokens($useReasoning),
-                'response_format' => [
-                    'type' => 'json_schema',
-                    'json_schema' => $jsonSchema,
-                ],
-                'plugins' => $this->buildPlugins(
-                    [['id' => 'response-healing']],
-                ),
-            ];
+                    $payload = [
+                        'model' => $this->model,
+                        'messages' => [
+                            $this->buildSystemMessage($systemContent),
+                            [
+                                'role' => 'user',
+                                'content' => $prompt,
+                            ],
+                        ],
+                        'max_tokens' => $this->getMaxTokens($useReasoning),
+                        'response_format' => [
+                            'type' => 'json_schema',
+                            'json_schema' => $jsonSchema,
+                        ],
+                        'plugins' => $this->buildPlugins(
+                            [['id' => 'response-healing']],
+                        ),
+                    ];
 
-            return $this->executeAPICall($payload, 'JSON estruturado', $useReasoning);
-        });
+                    return $this->executeAPICall($payload, 'JSON estruturado', $useReasoning);
+                });
+            }
+        );
     }
 
     /**
@@ -545,6 +596,97 @@ class OpenRouterService extends AbstractAIService
         }
 
         return mb_substr($value, 0, self::OBSERVABILITY_TEXT_LIMIT) . '... [truncated]';
+    }
+
+    /**
+     * Resolve resposta da IA com cache opcional por hash de input.
+     */
+    private function resolveLlmResponseCache(string $callType, array $fingerprint, bool $deepThinkingEnabled, callable $resolver): string
+    {
+        if (!$this->shouldUseLlmCache($deepThinkingEnabled)) {
+            return (string) $resolver();
+        }
+
+        $cacheKey = $this->buildLlmCacheKey($callType, $fingerprint);
+        $cacheStoreName = (string) config('analysis.llm_cache.store', 'redis');
+        $ttlSeconds = (int) config('analysis.llm_cache.ttl_seconds', 604800);
+
+        try {
+            $cacheStore = Cache::store($cacheStoreName);
+        } catch (\Throwable $e) {
+            Log::warning('OpenRouter API - Store de cache indisponível, usando store padrão', [
+                'requested_store' => $cacheStoreName,
+                'error' => $e->getMessage(),
+            ]);
+
+            $cacheStore = Cache::store();
+        }
+
+        if ($cacheStore->has($cacheKey)) {
+            Log::info('OpenRouter API - Cache hit', [
+                'model' => $this->model,
+                'call_type' => $callType,
+                'cache_key' => $cacheKey,
+            ]);
+
+            return (string) $cacheStore->get($cacheKey);
+        }
+
+        $result = (string) $resolver();
+
+        if ($ttlSeconds > 0) {
+            $cacheStore->put($cacheKey, $result, now()->addSeconds($ttlSeconds));
+        }
+
+        Log::info('OpenRouter API - Cache miss', [
+            'model' => $this->model,
+            'call_type' => $callType,
+            'cache_key' => $cacheKey,
+            'ttl_seconds' => $ttlSeconds,
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Define se o cache LLM pode ser aplicado para a chamada atual.
+     */
+    private function shouldUseLlmCache(bool $deepThinkingEnabled): bool
+    {
+        if (!(bool) config('analysis.llm_cache.enabled', true)) {
+            return false;
+        }
+
+        if ($deepThinkingEnabled) {
+            return false;
+        }
+
+        $temperature = $this->temperatureOverride;
+        if ($temperature === null) {
+            $temperature = (float) config('services.openrouter.temperature', 0.3);
+        }
+
+        $maxTemperature = (float) config('analysis.llm_cache.max_temperature', 0.2);
+
+        return $temperature <= $maxTemperature;
+    }
+
+    /**
+     * Monta chave estável para cache LLM com base no input efetivo da chamada.
+     */
+    private function buildLlmCacheKey(string $callType, array $fingerprint): string
+    {
+        $context = [
+            'provider' => 'openrouter',
+            'call_type' => $callType,
+            'model' => $this->model,
+            'temperature' => $this->temperatureOverride ?? (float) config('services.openrouter.temperature', 0.3),
+            'max_tokens_override' => $this->maxTokensOverride,
+            'input_char_limit' => $this->inputCharLimit,
+            'fingerprint' => $fingerprint,
+        ];
+
+        return 'llm:openrouter:' . hash('sha256', json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     private function getResponseHandler(): OpenRouterResponseHandler

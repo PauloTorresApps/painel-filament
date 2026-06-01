@@ -17,6 +17,11 @@ class DebugSettings extends Page implements HasForms
 {
     use InteractsWithForms;
 
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->hasRole('Admin') ?? false;
+    }
+
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-bug-ant';
 
     protected string $view = 'filament.pages.debug-settings';

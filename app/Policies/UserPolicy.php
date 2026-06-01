@@ -48,6 +48,14 @@ class UserPolicy
     }
 
     /**
+     * Determine whether the user can delete any models.
+     */
+    public function deleteAny(User $user): bool
+    {
+        return $user->hasPermissionTo('user_delete');
+    }
+
+    /**
      * Determine whether the user can restore the model.
      */
     public function restore(User $user, User $model): bool

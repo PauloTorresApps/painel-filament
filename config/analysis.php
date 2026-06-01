@@ -148,6 +148,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | LLM Response Cache
+    |--------------------------------------------------------------------------
+    |
+    | Cache local de respostas por hash de input efetivo (modelo + prompt +
+    | parâmetros), para reduzir chamadas repetidas no provider.
+    |
+    */
+
+    'llm_cache' => [
+        'enabled' => (bool) env('ANALYSIS_LLM_CACHE_ENABLED', true),
+        'ttl_seconds' => (int) env('ANALYSIS_LLM_CACHE_TTL_SECONDS', 604800),
+        'store' => env('ANALYSIS_LLM_CACHE_STORE', 'redis'),
+        'max_temperature' => (float) env('ANALYSIS_LLM_CACHE_MAX_TEMPERATURE', 0.2),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Graph Runner (LangGraph-like abstraction)
     |--------------------------------------------------------------------------
     |

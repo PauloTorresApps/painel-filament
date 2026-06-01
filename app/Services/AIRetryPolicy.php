@@ -76,7 +76,10 @@ class AIRetryPolicy
 
     public function calculateBackoff(int $attempt): int
     {
-        return $this->rateLimitBackoffBaseMs * (int) pow(2, $attempt - 1);
+        $baseBackoff = $this->rateLimitBackoffBaseMs * (int) pow(2, $attempt - 1);
+        $jitterMs = random_int(0, 1000);
+
+        return $baseBackoff + $jitterMs;
     }
 
     private function sleep(int $milliseconds): void
