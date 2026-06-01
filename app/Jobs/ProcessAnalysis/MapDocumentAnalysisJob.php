@@ -10,8 +10,10 @@ use App\Models\DocumentMicroAnalysis;
 use App\Models\ProcessAnalysis\ProcessDecisao;
 use App\Models\ProcessAnalysis\ProcessIntimacao;
 use App\Models\ProcessAnalysis\ProcessPedido;
+use App\Pipeline\Graph\Conditions\CircuitBreakerTrippedCondition;
 use App\Models\Setting;
 use App\Services\AIServiceFactory;
+use App\Services\NotificationService;
 use App\Strategies\ProcessAnalysis\PdfNativeProcessingStrategy;
 use App\Strategies\ProcessAnalysis\TextProcessingStrategy;
 use App\Strategies\ProcessAnalysis\VisionProcessingStrategy;
@@ -428,6 +430,36 @@ class MapDocumentAnalysisJob implements ShouldQueue, ShouldBeUnique
             $completedCount = (clone $levelZero)->where('status', 'completed')->count();
             $failedCount = (clone $levelZero)->whereIn('status', ['failed', 'cancelled'])->count();
             $totalCount = $completedCount + $failedCount;
+
+            $threshold = (float) config('analysis.circuit_breaker.failure_threshold', 0.25);
+            $circuitBreaker = new CircuitBreakerTrippedCondition();
+
+            if ($circuitBreaker->evaluate($failedCount, $totalCount, $threshold)) {
+                $failedPct = $totalCount > 0
+                    ? round(($failedCount / $totalCount) * 100)
+                    : 0;
+                $thresholdPct = round($threshold * 100);
+
+                $documentAnalysis->markAsFailed(
+                    "Análise abortada: {$failedCount} de {$totalCount} documentos falharam ({$failedPct}%). Limite tolerado: {$thresholdPct}%."
+                );
+
+                NotificationService::error(
+                    $documentAnalysis->user,
+                    'Análise Abortada',
+                    "A análise do processo {$documentAnalysis->numero_processo} foi abortada: {$failedPct}% dos documentos falharam na fase MAP (limite: {$thresholdPct}%)."
+                );
+
+                Log::warning('MapDocumentAnalysisJob: Circuit breaker aplicado no self-healing MAP -> REDUCE', [
+                    'analysis_id' => $documentAnalysis->id,
+                    'failed_docs' => $failedCount,
+                    'total_docs' => $totalCount,
+                    'failure_rate' => "{$failedPct}%",
+                    'threshold' => "{$thresholdPct}%",
+                ]);
+
+                return;
+            }
 
             if ($completedCount === 0) {
                 $documentAnalysis->markAsFailed('Todos os documentos falharam na fase MAP.');

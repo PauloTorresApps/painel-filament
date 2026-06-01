@@ -8,6 +8,7 @@ use App\Models\DocumentAnalysis;
 use App\Models\Setting;
 use App\Models\User;
 use App\Mail\ProcessAnalysis\ProcessAnalysisCompleted;
+use App\Pipeline\Graph\Conditions\CircuitBreakerTrippedCondition;
 use App\Pipeline\Graph\Conditions\NeedsMoreReduceLevelsCondition;
 use App\Services\AIServiceFactory;
 use App\Services\NotificationService;
@@ -80,12 +81,49 @@ class CheckReduceLevelCompletionJob implements ShouldQueue
                 ->get();
 
             $completedCount = $completedReduces->count();
+            $failedCount = $documentAnalysis->microAnalyses()
+                ->reduceLevel($this->completedReduceLevel)
+                ->whereIn('status', ['failed', 'cancelled'])
+                ->count();
+            $totalCount = $completedCount + $failedCount;
 
             Log::info('CheckReduceLevelCompletionJob: Verificando conclusão do nível', [
                 'analysis_id' => $this->analysisId,
                 'reduce_level' => $this->completedReduceLevel,
                 'completed_count' => $completedCount,
+                'failed_count' => $failedCount,
             ]);
+
+            $threshold = (float) config('analysis.circuit_breaker.failure_threshold', 0.25);
+            $circuitBreaker = new CircuitBreakerTrippedCondition();
+
+            if ($circuitBreaker->evaluate($failedCount, $totalCount, $threshold)) {
+                $failedPct = $totalCount > 0
+                    ? round(($failedCount / $totalCount) * 100)
+                    : 0;
+                $thresholdPct = round($threshold * 100);
+
+                $message = "Consolidação abortada no nível {$this->completedReduceLevel}: {$failedCount} de {$totalCount} batches falharam ({$failedPct}%). Limite tolerado: {$thresholdPct}%.";
+
+                $documentAnalysis->markAsFailed($message);
+
+                NotificationService::error(
+                    User::find($documentAnalysis->user_id),
+                    'Consolidação Abortada',
+                    "A consolidação do processo {$documentAnalysis->numero_processo} foi abortada no nível {$this->completedReduceLevel}: {$failedPct}% dos batches falharam (limite: {$thresholdPct}%)."
+                );
+
+                Log::error('CheckReduceLevelCompletionJob: Circuit breaker ativado na verificação de nível', [
+                    'analysis_id' => $this->analysisId,
+                    'reduce_level' => $this->completedReduceLevel,
+                    'failed_count' => $failedCount,
+                    'total_count' => $totalCount,
+                    'failure_rate' => "{$failedPct}%",
+                    'threshold' => "{$thresholdPct}%",
+                ]);
+
+                return;
+            }
 
             if ($completedCount === 0) {
                 // Todos falharam neste nível
