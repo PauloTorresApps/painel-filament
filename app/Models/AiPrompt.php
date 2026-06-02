@@ -37,6 +37,7 @@ class AiPrompt extends Model
      */
     public const REQUIRED_JUDICIAL_PROMPT_TYPES = [
         self::TYPE_SYSTEM_ROLE,
+        self::TYPE_INVENTORY_CONSOLIDATION,
         self::TYPE_DOCUMENT_ANALYSIS,
         self::TYPE_MAP_STRUCTURED_FORMAT,
         self::TYPE_MAP_FREETEXT_FORMAT,
@@ -45,12 +46,11 @@ class AiPrompt extends Model
         self::TYPE_CHUNK_ANALYSIS,
         self::TYPE_CHUNK_CONSOLIDATION,
         self::TYPE_REDUCE_CONSOLIDATION,
-        self::TYPE_FINAL_OPINION_WRAPPER,
-        self::TYPE_FINAL_OPINION,
-        self::TYPE_INVENTORY_CONSOLIDATION,
         self::TYPE_CHRONOLOGY_BUILDER,
         self::TYPE_ENGINE_INTELLIGENCE,
         self::TYPE_PARECER_STRUCTURED,
+        self::TYPE_FINAL_OPINION_WRAPPER,
+        self::TYPE_FINAL_OPINION,
         self::TYPE_DESIGNER_BRIEF,
     ];
 
