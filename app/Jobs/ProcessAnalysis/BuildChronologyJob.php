@@ -41,15 +41,11 @@ class BuildChronologyJob implements ShouldQueue
             return;
         }
 
-        if (in_array($analysis->current_phase, [
-            DocumentAnalysis::PHASE_ENGINE,
-            DocumentAnalysis::PHASE_PARECER_STRUCTURED,
-            DocumentAnalysis::PHASE_DESIGN,
-            DocumentAnalysis::PHASE_COMPLETED,
-        ], true)) {
-            Log::info('BuildChronologyJob: Fase ja avancada, pulando reprocessamento', [
+        $eventsAlreadyBuilt = ProcessEvent::where('document_analysis_id', $analysis->id)->exists();
+
+        if ($eventsAlreadyBuilt) {
+            Log::info('BuildChronologyJob: Cronologia ja existente, pulando reprocessamento', [
                 'analysis_id' => $analysis->id,
-                'current_phase' => $analysis->current_phase,
             ]);
             return;
         }
@@ -247,10 +243,53 @@ class BuildChronologyJob implements ShouldQueue
     {
         $rendered = trim(strtr($template, $variables));
 
-        if ($rendered === '') {
-            return 'Consolidacao cronologica realizada com base na trilha documental.';
+        if ($rendered === '' || $this->isRawPromptOutput($rendered)) {
+            $event = (string) ($variables[':evento'] ?? 'evento nao identificado');
+            $type = (string) ($variables[':tipo'] ?? 'ato processual');
+            $days = (string) ($variables[':duracao_dias'] ?? '0');
+
+            if ($days !== '0') {
+                return "Periodo de inercia de {$days} dias identificado entre atos processuais relevantes.";
+            }
+
+            return "{$type} registrado sob referencia {$event}.";
         }
 
         return mb_substr($rendered, 0, 500);
+    }
+
+    private function isRawPromptOutput(string $text): bool
+    {
+        $trimmed = ltrim($text);
+        $lower = mb_strtolower($text);
+
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            return true;
+        }
+
+        $markers = [
+            '"role"',
+            '"inputs"',
+            '"function"',
+            '"objectives"',
+            'template para',
+            'deve aceitar placeholders',
+            'sua função é',
+            'sua funcao e',
+            ':secao',
+            ':tipo',
+            ':score',
+            ':contexto',
+            ':numero_processo',
+            ':duracao_dias',
+        ];
+
+        foreach ($markers as $marker) {
+            if (str_contains($lower, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

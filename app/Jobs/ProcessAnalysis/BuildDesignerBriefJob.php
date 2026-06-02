@@ -176,10 +176,48 @@ class BuildDesignerBriefJob implements ShouldQueue
     {
         $rendered = trim(strtr($template, $variables));
 
-        if ($rendered === '') {
-            return 'Panorama processual consolidado para tomada de decisao';
+        if ($rendered === '' || $this->isRawPromptOutput($rendered)) {
+            $risk = (string) ($variables[':risk_score'] ?? $variables[':risco_score'] ?? '0');
+            $urgency = (string) ($variables[':urgency_score'] ?? $variables[':urgencia_score'] ?? '0');
+            $process = (string) ($variables[':numero_processo'] ?? 'nao informado');
+
+            return "Panorama do processo {$process}: risco {$risk}, urgencia {$urgency}. Priorizar execucao imediata dos itens criticos e monitorar prazos.";
         }
 
         return mb_substr($rendered, 0, 500);
+    }
+
+    private function isRawPromptOutput(string $text): bool
+    {
+        $trimmed = ltrim($text);
+        $lower = mb_strtolower($text);
+
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            return true;
+        }
+
+        $markers = [
+            '"role"',
+            '"inputs"',
+            '"function"',
+            '"objectives"',
+            'template para',
+            'deve aceitar placeholders',
+            'sua função é',
+            'sua funcao e',
+            ':secao',
+            ':tipo',
+            ':score',
+            ':contexto',
+            ':numero_processo',
+        ];
+
+        foreach ($markers as $marker) {
+            if (str_contains($lower, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

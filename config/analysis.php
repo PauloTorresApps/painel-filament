@@ -206,7 +206,7 @@ return [
     */
 
     'owlex' => [
-        'enabled' => (bool) env('OWLEX_PIPELINE_ENABLED', false),
+        'enabled' => (bool) env('OWLEX_PIPELINE_ENABLED', true),
 
         'inventory' => [
             'duplicate_hash_algorithm' => env('ANALYSIS_INVENTORY_HASH_ALGO', 'sha256'),

@@ -44,13 +44,11 @@ class BuildStructuredOpinionJob implements ShouldQueue
             return;
         }
 
-        if (in_array($analysis->current_phase, [
-            DocumentAnalysis::PHASE_DESIGN,
-            DocumentAnalysis::PHASE_COMPLETED,
-        ], true)) {
-            Log::info('BuildStructuredOpinionJob: Fase ja avancada, pulando reprocessamento', [
+        $structuredOpinionAlreadyBuilt = ProcessStructuredOpinion::where('document_analysis_id', $analysis->id)->exists();
+
+        if ($structuredOpinionAlreadyBuilt) {
+            Log::info('BuildStructuredOpinionJob: Parecer estruturado ja existente, pulando reprocessamento', [
                 'analysis_id' => $analysis->id,
-                'current_phase' => $analysis->current_phase,
             ]);
             return;
         }
@@ -264,10 +262,50 @@ class BuildStructuredOpinionJob implements ShouldQueue
     {
         $rendered = trim(strtr($template, $variables));
 
-        if ($rendered === '') {
-            return 'Parecer estruturado consolidado com base em riscos, prazos e oportunidades.';
+        if ($rendered === '' || $this->isRawPromptOutput($rendered)) {
+            $section = (string) ($variables[':secao'] ?? 'secao');
+            $risk = (string) ($variables[':risco_score'] ?? '0');
+            $urgency = (string) ($variables[':urgencia_score'] ?? '0');
+            $opportunity = (string) ($variables[':oportunidade_score'] ?? '0');
+            $confidence = (string) ($variables[':confiabilidade_score'] ?? '0');
+
+            return "Secao {$section} consolidada com base nos indicadores do processo (risco {$risk}, urgencia {$urgency}, oportunidade {$opportunity}, confiabilidade {$confidence}).";
         }
 
         return mb_substr($rendered, 0, 3000);
+    }
+
+    private function isRawPromptOutput(string $text): bool
+    {
+        $trimmed = ltrim($text);
+        $lower = mb_strtolower($text);
+
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            return true;
+        }
+
+        $markers = [
+            '"role"',
+            '"inputs"',
+            '"function"',
+            '"objectives"',
+            'template para',
+            'deve aceitar placeholders',
+            'sua função é',
+            'sua funcao e',
+            ':secao',
+            ':tipo',
+            ':score',
+            ':contexto',
+            ':numero_processo',
+        ];
+
+        foreach ($markers as $marker) {
+            if (str_contains($lower, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

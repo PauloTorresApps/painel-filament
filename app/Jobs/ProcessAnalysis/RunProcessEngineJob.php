@@ -45,14 +45,11 @@ class RunProcessEngineJob implements ShouldQueue
             return;
         }
 
-        if (in_array($analysis->current_phase, [
-            DocumentAnalysis::PHASE_PARECER_STRUCTURED,
-            DocumentAnalysis::PHASE_DESIGN,
-            DocumentAnalysis::PHASE_COMPLETED,
-        ], true)) {
-            Log::info('RunProcessEngineJob: Fase ja avancada, pulando reprocessamento', [
+        $snapshotAlreadyBuilt = ProcessEngineSnapshot::where('document_analysis_id', $analysis->id)->exists();
+
+        if ($snapshotAlreadyBuilt) {
+            Log::info('RunProcessEngineJob: Snapshot ja existente, pulando reprocessamento', [
                 'analysis_id' => $analysis->id,
-                'current_phase' => $analysis->current_phase,
             ]);
             return;
         }
@@ -340,10 +337,48 @@ class RunProcessEngineJob implements ShouldQueue
     {
         $rendered = trim(strtr($template, $variables));
 
-        if ($rendered === '') {
-            return 'Engine processual executado com consolidacao de risco e oportunidade.';
+        if ($rendered === '' || $this->isRawPromptOutput($rendered)) {
+            $type = (string) ($variables[':tipo'] ?? 'evento_processual');
+            $score = (string) ($variables[':score'] ?? '50');
+            $context = (string) ($variables[':contexto'] ?? 'contexto nao informado');
+
+            return "{$type} identificado (score {$score}) no contexto: {$context}.";
         }
 
         return mb_substr($rendered, 0, 500);
+    }
+
+    private function isRawPromptOutput(string $text): bool
+    {
+        $trimmed = ltrim($text);
+        $lower = mb_strtolower($text);
+
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            return true;
+        }
+
+        $markers = [
+            '"role"',
+            '"inputs"',
+            '"function"',
+            '"objectives"',
+            'template para',
+            'deve aceitar placeholders',
+            'sua função é',
+            'sua funcao e',
+            ':secao',
+            ':tipo',
+            ':score',
+            ':contexto',
+            ':numero_processo',
+        ];
+
+        foreach ($markers as $marker) {
+            if (str_contains($lower, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
