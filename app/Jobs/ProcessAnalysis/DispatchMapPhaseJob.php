@@ -360,7 +360,7 @@ class DispatchMapPhaseJob implements ShouldQueue
                         $documentAnalysis->updateMapProgress($completed);
                     }
                 })
-                ->finally(function (Batch $batch) use ($analysisId, $userId) {
+                ->finally(function (Batch $batch) use ($analysisId, $userId, $aiProvider, $deepThinkingEnabled, $aiModelId, $contextoDados) {
                     Log::info('DispatchMapPhaseJob: Batch de MAPs finalizado', [
                         'analysis_id' => $analysisId,
                         'batch_id' => $batch->id,
@@ -388,7 +388,90 @@ class DispatchMapPhaseJob implements ShouldQueue
                                 "A análise do processo {$documentAnalysis->numero_processo} foi interrompida antecipadamente devido à alta taxa de erros da IA ({$failedPct}% de falhas). Verifique a conectividade da API ou seu limite de créditos."
                             );
                         }
+
+                        return;
                     }
+
+                    // Auto-healing: com allowFailures(), o callback then() não executa em falhas parciais.
+                    // Se houver MAP concluído e nenhum REDUCE iniciado, dispara transição para evitar estado zumbi em MAP.
+                    if ($batch->failedJobs <= 0) {
+                        return;
+                    }
+
+                    $documentAnalysis = DocumentAnalysis::find($analysisId);
+                    if (!$documentAnalysis) {
+                        return;
+                    }
+
+                    if (in_array($documentAnalysis->status, ['failed', 'cancelled', 'completed'], true)) {
+                        return;
+                    }
+
+                    if ($documentAnalysis->current_phase === DocumentAnalysis::PHASE_REDUCE) {
+                        return;
+                    }
+
+                    $completedCount = (int) $documentAnalysis->microAnalyses()
+                        ->where('status', 'completed')
+                        ->where('reduce_level', 0)
+                        ->count();
+
+                    if ($completedCount === 0) {
+                        $documentAnalysis->markAsFailed(
+                            "Nenhuma análise MAP concluída após falhas parciais do batch {$batch->id}."
+                        );
+
+                        NotificationService::error(
+                            User::find($userId),
+                            'Análise Falhou na Fase MAP',
+                            "A análise do processo {$documentAnalysis->numero_processo} não teve documentos processados com sucesso na fase MAP."
+                        );
+
+                        return;
+                    }
+
+                    $alreadyHasReduceOutputs = $documentAnalysis->microAnalyses()
+                        ->where('reduce_level', '>', 0)
+                        ->exists();
+
+                    if ($alreadyHasReduceOutputs) {
+                        return;
+                    }
+
+                    $completedChars = (int) $documentAnalysis->microAnalyses()
+                        ->where('status', 'completed')
+                        ->where('reduce_level', 0)
+                        ->sum(DB::raw('LENGTH(micro_analysis)'));
+
+                    $dispatchJob = new DispatchMapPhaseJob(
+                        $analysisId,
+                        $aiProvider,
+                        $deepThinkingEnabled,
+                        $contextoDados,
+                        $aiModelId,
+                        $userId,
+                        'auto'
+                    );
+
+                    $useRefineStrategy = $dispatchJob->shouldUseRefineStrategy($completedCount, $completedChars);
+
+                    Log::warning('DispatchMapPhaseJob: Auto-healing MAP->REDUCE após falha parcial', [
+                        'analysis_id' => $analysisId,
+                        'batch_id' => $batch->id,
+                        'failed_jobs' => $batch->failedJobs,
+                        'completed_docs' => $completedCount,
+                        'completed_chars' => $completedChars,
+                        'reduce_strategy' => $useRefineStrategy ? 'refine' : 'batch',
+                    ]);
+
+                    $dispatchJob->dispatchReducePhase(
+                        $useRefineStrategy,
+                        $analysisId,
+                        $aiProvider,
+                        $deepThinkingEnabled,
+                        $aiModelId,
+                        $contextoDados
+                    );
                 })
                 ->dispatch();
 

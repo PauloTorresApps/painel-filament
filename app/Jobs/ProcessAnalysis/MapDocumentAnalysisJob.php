@@ -1077,6 +1077,8 @@ PROMPT;
                 continue;
             }
 
+            $cumprida = $this->normalizeNullableBoolean($intimacao['cumprida'] ?? null);
+
             ProcessIntimacao::create([
                 'document_analysis_id' => $analysis->id,
                 'document_micro_analysis_id' => $microAnalysis->id,
@@ -1086,7 +1088,7 @@ PROMPT;
                 'destinatario' => $intimacao['destinatario'] ?? null,
                 'conteudo' => $intimacao['conteudo'] ?? null,
                 'prazo' => $intimacao['prazo'] ?? null,
-                'cumprida' => $intimacao['cumprida'] ?? null,
+                'cumprida' => $cumprida,
             ]);
         }
 
@@ -1118,6 +1120,57 @@ PROMPT;
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function normalizeNullableBoolean(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            if ((int) $value === 1) {
+                return true;
+            }
+
+            if ((int) $value === 0) {
+                return false;
+            }
+
+            return null;
+        }
+
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $normalized = mb_strtolower(trim($value));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (in_array($normalized, ['true', '1', 'sim', 's', 'yes', 'y'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['false', '0', 'nao', 'não', 'n', 'no'], true)) {
+            return false;
+        }
+
+        if (str_contains($normalized, 'nao identificado') || str_contains($normalized, 'não identificado')) {
+            return null;
+        }
+
+        if (str_contains($normalized, 'cumprida') || str_contains($normalized, 'cumprido')) {
+            return true;
+        }
+
+        if (str_contains($normalized, 'descumpr') || str_contains($normalized, 'nao cumpr') || str_contains($normalized, 'não cumpr')) {
+            return false;
+        }
+
+        return null;
     }
 
 
