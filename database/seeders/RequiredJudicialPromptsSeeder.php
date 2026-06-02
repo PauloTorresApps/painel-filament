@@ -45,7 +45,7 @@ class RequiredJudicialPromptsSeeder extends Seeder
             }
 
             $title = trim((string) ($entry['title'] ?? ''));
-            $content = trim((string) ($entry['content'] ?? ''));
+            $content = $this->normalizePromptContent($entry['content'] ?? null, $promptType);
 
             if ($title === '' || $content === '') {
                 throw new RuntimeException('Prompt obrigatorio com titulo/conteudo vazio: ' . $promptType);
@@ -78,6 +78,32 @@ class RequiredJudicialPromptsSeeder extends Seeder
                 ]
             );
         }
+    }
+
+    /**
+     * @param mixed $rawContent
+     */
+    private function normalizePromptContent(mixed $rawContent, string $promptType): string
+    {
+        if (is_string($rawContent)) {
+            return trim($rawContent);
+        }
+
+        if (is_array($rawContent)) {
+            try {
+                $encoded = json_encode($rawContent, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+            } catch (\JsonException $e) {
+                throw new RuntimeException('Falha ao serializar content JSON do prompt: ' . $promptType, previous: $e);
+            }
+
+            return trim($encoded);
+        }
+
+        if (is_scalar($rawContent)) {
+            return trim((string) $rawContent);
+        }
+
+        throw new RuntimeException('Campo content invalido para prompt: ' . $promptType);
     }
 
     private function resolveSystemId(): int
